@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
+import { fetchCached, invalidateCache } from "@/store";
 import { PageHeader } from "@/components/shared/page-header";
 import type { Product, Location, Customer, Purchase, Supplier, ProductStock } from "@/types";
 
@@ -117,20 +118,22 @@ export default function PurchasesStockPage() {
 
   const loadAllData = useCallback(async () => {
     try {
-      const [pRes, lRes, cRes, sRes, stRes, puRes] = await Promise.all([
-        fetch("/api/products").then(r => r.json()),
-        fetch("/api/locations").then(r => r.json()),
-        fetch("/api/customers?active=true").then(r => r.json()),
-        fetch("/api/suppliers").then(r => r.json()),
-        fetch("/api/stock").then(r => r.json()),
-        fetch(`/api/purchases?purchase_date_gte=${today}&purchase_date_lte=${today}`).then(r => r.json()),
+      const [pList, lList, cList, sList, stList] = await Promise.all([
+        fetchCached<Product>("products", "/api/products", "products"),
+        fetchCached<Location>("locations", "/api/locations", "locations"),
+        fetchCached<Customer>("customers", "/api/customers?active=true", "customers"),
+        fetchCached<Supplier>("suppliers", "/api/suppliers", "suppliers"),
+        fetchCached<ProductStock>("stock", "/api/stock", "stock"),
       ]);
-      setProducts(pRes.products ?? []);
-      setLocations(lRes.locations ?? []);
-      setCustomers(cRes.customers ?? []);
-      setSuppliers(sRes.suppliers ?? []);
-      setStockData(stRes.stock ?? []);
-      setPurchases(puRes.purchases ?? []);
+      // Purchases are date-specific, always fetch fresh
+      const puRes = await fetch(`/api/purchases?purchase_date_gte=${today}&purchase_date_lte=${today}`);
+      const puData = puRes.ok ? await puRes.json() : {};
+      setProducts(pList);
+      setLocations(lList);
+      setCustomers(cList);
+      setSuppliers(sList);
+      setStockData(stList);
+      setPurchases(puData.purchases ?? []);
     } catch {
       toast.error("Failed to load data");
     }
@@ -323,6 +326,8 @@ export default function PurchasesStockPage() {
         throw new Error(err.error || "Failed to record purchase");
       }
       resetForm();
+      invalidateCache("stock");
+      invalidateCache("suppliers");
       toast.success("Purchase recorded successfully!");
       await loadAllData();
     } catch (e: any) {

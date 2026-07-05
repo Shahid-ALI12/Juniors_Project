@@ -26,6 +26,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { fetchCached, invalidateCache } from "@/store";
 
 export default function ManageProducts() {
   const [loading, setLoading] = useState(true);
@@ -44,15 +45,14 @@ export default function ManageProducts() {
     (async () => {
       setLoading(true);
       try {
-        const [pRes, lRes, sRes] = await Promise.all([
-          fetch("/api/products").then(r => r.json()),
-          fetch("/api/locations").then(r => r.json()),
-          fetch("/api/stock").then(r => r.json()),
+        const [pList, lList, sList] = await Promise.all([
+          fetchCached<Product>("products", "/api/products", "products"),
+          fetchCached<Location>("locations", "/api/locations", "locations"),
+          fetchCached<ProductStock>("stock", "/api/stock", "stock"),
         ]);
-        const pList = pRes.products ?? [];
         setProducts(pList);
-        setLocations(lRes.locations ?? []);
-        setStockData(sRes.stock ?? []);
+        setLocations(lList);
+        setStockData(sList);
 
         const initial: Record<number, string> = {};
         pList.forEach((p: Product) => { initial[p.id] = String(p.default_rate); });
@@ -96,6 +96,7 @@ export default function ManageProducts() {
           prev.map((p) => (p.id === id ? { ...p, default_rate: rateValue } : p))
         );
         setUpdatedIds((prev) => new Set(prev).add(id));
+        invalidateCache("products");
         toast.success("Rate updated successfully!", {
           description: `New rate: Rs. ${rateValue.toLocaleString("en-PK")}/bag`,
         });
@@ -144,6 +145,7 @@ export default function ManageProducts() {
       setEditedRates((prev) => ({ ...prev, [newProduct.id]: String(rateValue) }));
       setNewName("");
       setNewRate("");
+      invalidateCache("products");
       toast.success(`"${trimmedName}" added successfully!`, {
         description: `Starting rate: Rs. ${rateValue.toLocaleString("en-PK")}/bag`,
       });

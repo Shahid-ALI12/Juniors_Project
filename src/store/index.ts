@@ -58,6 +58,51 @@ export const useAppStore = create<AppStore>((set) => ({
   setActivePage: (page) => set({ activePage: page }),
 }));
 
+// ─── Master Data Cache ───
+// Shared across pages so switching doesn't re-fetch products/locations/etc.
+
+interface CachedData<T> { data: T; fetchedAt: number }
+const CACHE_TTL = 60_000; // 60 seconds
+
+interface MasterDataCache {
+  products: CachedData<any[]> | null;
+  locations: CachedData<any[]> | null;
+  customers: CachedData<any[]> | null;
+  suppliers: CachedData<any[]> | null;
+  stock: CachedData<any[]> | null;
+}
+
+const masterCache: MasterDataCache = {
+  products: null, locations: null, customers: null, suppliers: null, stock: null,
+};
+
+export { masterCache };
+
+function isStale(entry: CachedData<any> | null): boolean {
+  return !entry || Date.now() - entry.fetchedAt > CACHE_TTL;
+}
+
+export async function fetchCached<T>(
+  key: keyof MasterDataCache,
+  url: string,
+  unwrapKey: string
+): Promise<T[]> {
+  if (!isStale(masterCache[key])) {
+    return masterCache[key]!.data as T[];
+  }
+  const res = await fetch(url);
+  if (!res.ok) return masterCache[key]?.data as T[] ?? [];
+  const json = await res.json();
+  const arr = json[unwrapKey] ?? [];
+  masterCache[key] = { data: arr, fetchedAt: Date.now() };
+  return arr as T[];
+}
+
+export function invalidateCache(key?: keyof MasterDataCache) {
+  if (key) { masterCache[key] = null; return; }
+  Object.keys(masterCache).forEach((k) => { masterCache[k as keyof MasterDataCache] = null; });
+}
+
 // ─── Customer Auth Store ───
 
 interface CustomerAuthStore {

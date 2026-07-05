@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { useCartStore } from "@/store";
+import { useCartStore, fetchCached, invalidateCache } from "@/store";
 import { PageHeader } from "@/components/shared/page-header";
 import type { CartItem, Sale, Expense, Product, Location, Customer, ProductStock } from "@/types";
 
@@ -92,16 +92,16 @@ export default function DailyEntryPage() {
 
   const loadMasterData = useCallback(async () => {
     try {
-      const [pRes, lRes, cRes, sRes] = await Promise.all([
-        fetch("/api/products").then(r => r.json()),
-        fetch("/api/locations").then(r => r.json()),
-        fetch("/api/customers?active=true").then(r => r.json()),
-        fetch("/api/stock").then(r => r.json()),
+      const [pList, lList, cList, sList] = await Promise.all([
+        fetchCached<Product>("products", "/api/products", "products"),
+        fetchCached<Location>("locations", "/api/locations", "locations"),
+        fetchCached<Customer>("customers", "/api/customers?active=true", "customers"),
+        fetchCached<ProductStock>("stock", "/api/stock", "stock"),
       ]);
-      setProducts(pRes.products ?? []);
-      setLocations(lRes.locations ?? []);
-      setCustomers(cRes.customers ?? []);
-      setStockData(sRes.stock ?? []);
+      setProducts(pList);
+      setLocations(lList);
+      setCustomers(cList);
+      setStockData(sList);
     } catch {
       toast.error("Failed to load master data");
     }
@@ -275,6 +275,8 @@ export default function DailyEntryPage() {
       setCustomerName("");
       setSelectedCustomerId("");
       toast.success(`Sale completed for ${customerName} — Rs. ${fmt(grandTotal)} total bill.`);
+      invalidateCache("stock");
+      invalidateCache("customers");
       await Promise.all([loadDayData(date), loadMasterData()]);
     } catch (e: any) {
       toast.error(e.message || "Failed to complete sale");

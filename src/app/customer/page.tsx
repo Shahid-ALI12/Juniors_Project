@@ -5,22 +5,26 @@ import { useRouter } from "next/navigation";
 import type { AppCustomer } from "@/types";
 import dynamic from "next/dynamic";
 import { cn } from "@/lib/utils";
-import { useAppStore } from "@/store";
+import { useAppStore, masterCache } from "@/store";
 import {
   LayoutDashboard, FileText, BookOpen, CheckCircle,
   Package, Settings, FlaskConical, Landmark, LogOut, User, Info,
 } from "lucide-react";
 import { toast } from "sonner";
 
-const Dashboard = dynamic(() => import("@/components/pages/dashboard"), { ssr: false });
-const DailyEntry = dynamic(() => import("@/components/pages/daily-entry"), { ssr: false });
-const CustomerKhata = dynamic(() => import("@/components/pages/customer-khata"), { ssr: false });
-const DayReconciliation = dynamic(() => import("@/components/pages/day-reconciliation"), { ssr: false });
-const CashManagement = dynamic(() => import("@/components/pages/cash-management"), { ssr: false });
-const ManageProducts = dynamic(() => import("@/components/pages/manage-products"), { ssr: false });
-const PurchasesStock = dynamic(() => import("@/components/pages/purchases-stock"), { ssr: false });
-const CustomMixOrder = dynamic(() => import("@/components/pages/custom-mix-order"), { ssr: false });
-const CustomerAbout = dynamic(() => import("@/components/pages/customer-about"), { ssr: false });
+const Dashboard = dynamic(() => import("@/components/pages/dashboard"), { ssr: false, loading: () => <PageLoader /> });
+const DailyEntry = dynamic(() => import("@/components/pages/daily-entry"), { ssr: false, loading: () => <PageLoader /> });
+const CustomerKhata = dynamic(() => import("@/components/pages/customer-khata"), { ssr: false, loading: () => <PageLoader /> });
+const DayReconciliation = dynamic(() => import("@/components/pages/day-reconciliation"), { ssr: false, loading: () => <PageLoader /> });
+const CashManagement = dynamic(() => import("@/components/pages/cash-management"), { ssr: false, loading: () => <PageLoader /> });
+const ManageProducts = dynamic(() => import("@/components/pages/manage-products"), { ssr: false, loading: () => <PageLoader /> });
+const PurchasesStock = dynamic(() => import("@/components/pages/purchases-stock"), { ssr: false, loading: () => <PageLoader /> });
+const CustomMixOrder = dynamic(() => import("@/components/pages/custom-mix-order"), { ssr: false, loading: () => <PageLoader /> });
+const CustomerAbout = dynamic(() => import("@/components/pages/customer-about"), { ssr: false, loading: () => <PageLoader /> });
+
+function PageLoader() {
+  return <div className="flex items-center justify-center py-20"><div className="animate-spin w-7 h-7 border-2 border-emerald-500 border-t-transparent rounded-full" /></div>;
+}
 
 const pageMap: Record<string, React.ComponentType<{ customer?: AppCustomer }>> = {
   about: CustomerAbout,
@@ -84,9 +88,17 @@ export default function CustomerPortal() {
     }
   };
 
+  // Prefetch master data in background after auth check
   useEffect(() => {
-    setActivePage("about");
-  }, [setActivePage]);
+    // Trigger background prefetch of commonly used data
+    Promise.all([
+      fetch("/api/products").then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch("/api/locations").then(r => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([p, l]) => {
+      if (p?.products) masterCache.products = { data: p.products, fetchedAt: Date.now() };
+      if (l?.locations) masterCache.locations = { data: l.locations, fetchedAt: Date.now() };
+    });
+  }, []);
 
   const handleLogout = async () => {
     setLoggingOut(true);

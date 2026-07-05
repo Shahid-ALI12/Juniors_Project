@@ -14,7 +14,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useMixStore } from "@/store";
+import { useMixStore, fetchCached, invalidateCache } from "@/store";
 import { PageHeader, MetricCard } from "@/components/shared/page-header";
 import type { MixIngredient, Product, Location } from "@/types";
 
@@ -74,15 +74,12 @@ export default function CustomMixOrder() {
     (async () => {
       setLoading(true);
       try {
-        const [pRes, lRes] = await Promise.all([
-          fetch("/api/products"),
-          fetch("/api/locations"),
+        const [pList, lList] = await Promise.all([
+          fetchCached<Product>("products", "/api/products", "products"),
+          fetchCached<Location>("locations", "/api/locations", "locations"),
         ]);
-        if (!pRes.ok || !lRes.ok) { toast.error("Failed to load master data"); return; }
-        const p = await pRes.json();
-        const l = await lRes.json();
-        setProducts(p.products ?? []);
-        setLocations(l.locations ?? []);
+        setProducts(pList);
+        setLocations(lList);
       } catch {
         toast.error("Failed to load data");
       } finally {
@@ -221,6 +218,7 @@ export default function CustomMixOrder() {
       setS1Date(today);
       setS1Target("");
       toast.success("Order finished & bill generated successfully!");
+      invalidateCache("stock");
       await reloadPastOrders();
     } catch (e: any) {
       toast.error(e.message || "Failed to save mix order");

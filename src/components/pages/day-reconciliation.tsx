@@ -63,8 +63,13 @@ export default function DayReconciliation() {
       try {
         const res = await fetch(
           `/api/reports/reconciliation?from=${dateRange.from}&to=${dateRange.to}`
-        ).then((r) => r.json());
-        setData(res);
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setData(data);
+        } else {
+          setData(null);
+        }
       } catch {
         toast.error("Failed to load reconciliation");
       } finally {
