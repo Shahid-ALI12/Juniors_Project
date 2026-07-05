@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
       rickshaw_fare: Number(rickshaw_fare) || 0,
       rickshaw_driver: rickshaw_driver || null,
       transaction_group_id: groupId,
-      entered_by: auth.ok ? `${auth.type}:${auth.user.id}` : null,
+      entered_by: `${auth.type}:${auth.user.id}`,
     });
 
     // Fetch the created sales for the client

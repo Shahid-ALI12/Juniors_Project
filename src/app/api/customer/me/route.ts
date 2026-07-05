@@ -41,6 +41,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (err) {
     console.error("Customer me error:", err);
-    return NextResponse.json({ customer: payload });
+    return NextResponse.json({ error: "Failed to fetch customer data" }, { status: 500 });
   }
 }

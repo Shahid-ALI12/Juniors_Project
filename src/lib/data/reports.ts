@@ -63,20 +63,9 @@ export async function getDashboardMetrics(today: string): Promise<DashboardMetri
   };
 }
 
-// ─── Day Reconciliation ───
-export interface ReconciliationData {
-  totalBagsSold: number;
-  totalBilled: number;
-  cashReceived: number;
-  fromCreditCustomers: number;
-  fromCashCustomers: number;
-  totalExpenses: number;
-  totalCashIn: number;
-  totalCashOut: number;
-  expectedCashInHand: number;
-}
+// ─── Day Reconciliation (returns snake_case keys to match frontend) ───
 
-export async function getReconciliation(fromDate: string, toDate: string): Promise<ReconciliationData> {
+export async function getReconciliation(fromDate: string, toDate: string): Promise<Record<string, any>> {
   const { data: sales, error: sErr } = await admin
     .from("sales")
     .select("quantity, rate_per_bag, rickshaw_fare, cash_received, unit_type, customers(type)")
@@ -86,40 +75,42 @@ export async function getReconciliation(fromDate: string, toDate: string): Promi
 
   const { data: expenses, error: eErr } = await admin
     .from("expenses")
-    .select("amount")
+    .select("*")
     .gte("expense_date", fromDate)
-    .lte("expense_date", toDate);
+    .lte("expense_date", toDate)
+    .order("expense_date", { ascending: true });
   if (eErr) throw eErr;
 
   const sl = sales || [];
   const ex = expenses || [];
 
-  const totalBagsSold = sl
+  const total_bags_sold = sl
     .filter((s) => s.unit_type === "bags")
     .reduce((sum, s) => sum + (s.quantity as number), 0);
 
-  const totalBilled = sl.reduce(
+  const total_billed = sl.reduce(
     (sum, s) => sum + (s.quantity as number) * (s.rate_per_bag as number) + (s.rickshaw_fare as number),
     0
   );
-  const cashReceived = sl.reduce((sum, s) => sum + (s.cash_received as number), 0);
-  const totalExpenses = ex.reduce((sum, e) => sum + (e.amount as number), 0);
+  const cash_received = sl.reduce((sum, s) => sum + (s.cash_received as number), 0);
+  const total_expenses = ex.reduce((sum, e) => sum + (e.amount as number), 0);
 
-  const fromCredit = sl
+  const from_credit_customers = sl
     .filter((s) => (s.customers as unknown as Record<string, unknown>)?.type === "credit")
     .reduce((sum, s) => sum + (s.quantity as number) * (s.rate_per_bag as number) + (s.rickshaw_fare as number), 0);
-  const fromCash = totalBilled - fromCredit;
+  const from_cash_customers = total_billed - from_credit_customers;
 
   return {
-    totalBagsSold,
-    totalBilled,
-    cashReceived,
-    fromCreditCustomers: fromCredit,
-    fromCashCustomers: fromCash,
-    totalExpenses,
-    totalCashIn: cashReceived,
-    totalCashOut: totalExpenses,
-    expectedCashInHand: cashReceived - totalExpenses,
+    total_bags_sold,
+    total_billed,
+    cash_received,
+    from_credit_customers,
+    from_cash_customers,
+    total_expenses,
+    total_cash_in: cash_received,
+    total_cash_out: total_expenses,
+    expected_cash_in_hand: cash_received - total_expenses,
+    expenses: ex,
   };
 }
 

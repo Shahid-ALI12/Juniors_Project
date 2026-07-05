@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
 import { getMixOrders, createMixOrderRPC, deleteMixOrder } from "@/lib/data/mix-orders";
-import { getSales, deleteSalesByMixOrder } from "@/lib/data/sales";
+import { deleteSalesByMixOrder } from "@/lib/data/sales";
+import { admin } from "@/lib/supabase/server-admin";
 
 export async function GET() {
   const auth = await requireUser();
@@ -9,13 +10,20 @@ export async function GET() {
 
   try {
     const orders = await getMixOrders();
-    // Also get sales for each mix order
-    const sales = await getSales({});
-    const salesByMix: Record<number, typeof sales> = {};
-    for (const s of sales) {
-      if (s.mix_order_id) {
-        if (!salesByMix[s.mix_order_id]) salesByMix[s.mix_order_id] = [];
-        salesByMix[s.mix_order_id].push(s);
+    const orderIds = orders.map(o => o.id);
+    const salesByMix: Record<number, any[]> = {};
+    if (orderIds.length > 0) {
+      const { data: allMixSales, error } = await admin
+        .from("sales")
+        .select("*, products(id,name), customers(id,name), locations(id,name)")
+        .in("mix_order_id", orderIds);
+      if (!error && allMixSales) {
+        for (const s of allMixSales) {
+          if (s.mix_order_id) {
+            if (!salesByMix[s.mix_order_id]) salesByMix[s.mix_order_id] = [];
+            salesByMix[s.mix_order_id].push(s);
+          }
+        }
       }
     }
     return NextResponse.json({ orders, salesByMix });
