@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getCustomerByEmail } from "@/lib/customer-db";
 import { signCustomerToken, CUSTOMER_COOKIE_NAME, COOKIE_MAX_AGE } from "@/lib/auth/cookie-sign";
 
 export async function POST(request: NextRequest) {
@@ -10,10 +10,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Email and password are required" }, { status: 400 });
     }
 
-    // Query database
-    const customer = await db.appCustomer.findUnique({
-      where: { email: email.trim() },
-    });
+    let customer: Awaited<ReturnType<typeof getCustomerByEmail>> = null;
+
+    try {
+      customer = await getCustomerByEmail(email.trim());
+    } catch (err) {
+      if (err instanceof Error && err.message === "TABLE_NOT_FOUND") {
+        return NextResponse.json({ error: "TABLE_NOT_FOUND" }, { status: 503 });
+      }
+      throw err;
+    }
 
     if (!customer) {
       return NextResponse.json({ error: "EMAIL_NOT_FOUND" }, { status: 401 });

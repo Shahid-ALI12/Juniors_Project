@@ -66,6 +66,9 @@ function CustomerLoginForm() {
           case "INVALID_PASSWORD":
             toast.error("Incorrect password");
             break;
+          case "TABLE_NOT_FOUND":
+            toast.error("Database not set up. Admin must create the table first in Supabase.");
+            break;
           default:
             toast.error(data.error || "Login failed. Please try again.");
         }

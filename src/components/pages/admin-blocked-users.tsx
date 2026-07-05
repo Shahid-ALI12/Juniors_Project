@@ -24,9 +24,13 @@ function getSubscriptionEnd(type: SubscriptionType, startDate: string, customDay
 
 async function fetchCustomers(): Promise<AppCustomer[]> {
   const res = await fetch("/api/admin/customers");
-  if (!res.ok) throw new Error("Failed to fetch");
-  const data = await res.json();
-  return data.customers.map((c: Record<string, unknown>) => ({
+  const json = await res.json();
+  if (!res.ok) {
+    if (json.error === "TABLE_NOT_FOUND") return [];
+    throw new Error(json.error || "Failed to fetch");
+  }
+  const data = json.customers;
+  return data.map((c: Record<string, unknown>) => ({
     id: c.id as string,
     name: c.name as string,
     email: c.email as string,

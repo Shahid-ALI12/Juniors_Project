@@ -26,24 +26,7 @@ function getSubscriptionEnd(type: SubscriptionType, startDate: string, customDay
 }
 
 // API helpers
-async function fetchCustomers(): Promise<AppCustomer[]> {
-  const res = await fetch("/api/admin/customers");
-  if (!res.ok) throw new Error("Failed to fetch");
-  const data = await res.json();
-  return data.customers.map((c: Record<string, unknown>) => ({
-    id: c.id as string,
-    name: c.name as string,
-    email: c.email as string,
-    password: c.password as string,
-    subscription_type: c.subscription_type as SubscriptionType,
-    subscription_start: c.subscription_start as string,
-    subscription_end: c.subscription_end as string,
-    is_active: c.is_active as boolean,
-    created_at: (c.created_at as string) || new Date().toISOString(),
-  }));
-}
-
-async function createCustomer(data: Record<string, unknown>): Promise<AppCustomer> {
+async function createCustomerApi(data: Record<string, unknown>): Promise<void> {
   const res = await fetch("/api/admin/customers", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -51,10 +34,9 @@ async function createCustomer(data: Record<string, unknown>): Promise<AppCustome
   });
   const json = await res.json();
   if (!res.ok) throw new Error(json.error || "Failed to create");
-  return json.customer;
 }
 
-async function updateCustomerApi(data: Record<string, unknown>): Promise<AppCustomer> {
+async function updateCustomerApi(data: Record<string, unknown>): Promise<void> {
   const res = await fetch("/api/admin/customers", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -62,7 +44,6 @@ async function updateCustomerApi(data: Record<string, unknown>): Promise<AppCust
   });
   const json = await res.json();
   if (!res.ok) throw new Error(json.error || "Failed to update");
-  return json.customer;
 }
 
 async function deleteCustomerApi(id: string): Promise<void> {
@@ -73,6 +54,8 @@ async function deleteCustomerApi(id: string): Promise<void> {
 export default function AdminCustomerManagement() {
   const [customers, setCustomers] = useState<AppCustomer[]>([]);
   const [loading, setLoading] = useState(true);
+  const [setupSql, setSetupSql] = useState<string | null>(null);
+  const [setupMsg, setSetupMsg] = useState("");
 
   // Add dialog
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -97,12 +80,30 @@ export default function AdminCustomerManagement() {
 
   const loadCustomers = useCallback(async () => {
     setLoading(true);
+    setSetupSql(null);
     try {
-      const data = await fetchCustomers();
+      const res = await fetch("/api/admin/customers");
+      const json = await res.json();
+      if (!res.ok) {
+        if (json.error === "TABLE_NOT_FOUND") {
+          setSetupSql(json.sql);
+          setSetupMsg(json.message);
+          toast.error("Database table not found. See setup instructions below.");
+          setCustomers([]);
+          return;
+        }
+        throw new Error(json.error || "Failed to fetch");
+      }
+      const data = json.customers.map((c: Record<string, unknown>) => ({
+        id: c.id as string, name: c.name as string, email: c.email as string,
+        password: c.password as string, subscription_type: c.subscription_type as SubscriptionType,
+        subscription_start: c.subscription_start as string, subscription_end: c.subscription_end as string,
+        is_active: c.is_active as boolean, created_at: (c.created_at as string) || new Date().toISOString(),
+      }));
       setCustomers(data);
     } catch (err) {
       console.error("Load customers error:", err);
-      toast.error("Failed to load customers");
+      toast.error(err instanceof Error ? err.message : "Failed to load customers");
     } finally {
       setLoading(false);
     }
@@ -119,7 +120,7 @@ export default function AdminCustomerManagement() {
     setSubmitting(true);
     try {
       const end = getSubscriptionEnd(subType, startDate, customDays ? parseInt(customDays) : undefined);
-      await createCustomer({
+      await createCustomerApi({
         name: name.trim(),
         email: email.trim(),
         password,
@@ -215,6 +216,36 @@ export default function AdminCustomerManagement() {
   return (
     <div className="space-y-6">
       <PageHeader title="Customer Management" description="Register new customers, edit their details, and manage access" />
+
+      {/* Setup banner — shown when Supabase table doesn't exist */}
+      {setupSql && (
+        <Card className="border-amber-300 bg-amber-50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base font-semibold text-amber-800 flex items-center gap-2">
+              <span className="text-xl">⚠️</span> Database Setup Required
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-amber-700">{setupMsg}</p>
+            <ol className="text-sm text-amber-800 list-decimal list-inside space-y-1">
+              <li>Open your <strong>Supabase Dashboard</strong></li>
+              <li>Go to <strong>SQL Editor</strong> (left sidebar)</li>
+              <li>Paste the SQL below and click <strong>Run</strong></li>
+              <li>Refresh this page after running</li>
+            </ol>
+            <pre className="bg-slate-900 text-green-400 text-xs p-4 rounded-lg overflow-x-auto max-h-64 relative">
+              <code>{setupSql}</code>
+              <button
+                onClick={() => { navigator.clipboard.writeText(setupSql); toast.success("SQL copied!"); }}
+                className="absolute top-2 right-2 bg-slate-700 hover:bg-slate-600 text-white text-xs px-2 py-1 rounded cursor-pointer"
+              >Copy</button>
+            </pre>
+            <Button onClick={loadCustomers} variant="outline" className="border-amber-300 text-amber-800 hover:bg-amber-100 cursor-pointer">
+              <Loader2 className="w-4 h-4 mr-2" />Refresh After Setup
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <MetricCard title="Total Customers" value={customers.length} icon={Users} color="text-blue-500" />

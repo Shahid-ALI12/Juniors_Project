@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyCustomerToken, CUSTOMER_COOKIE_NAME } from "@/lib/auth/cookie-sign";
-import { db } from "@/lib/db";
+import { getCustomerById } from "@/lib/customer-db";
 
 export async function GET(request: NextRequest) {
   const token = request.cookies.get(CUSTOMER_COOKIE_NAME)?.value;
@@ -14,17 +14,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Invalid session" }, { status: 401 });
   }
 
-  // Re-verify from database (subscription might have been changed by admin)
   try {
-    const customer = await db.appCustomer.findUnique({
-      where: { id: payload.id },
-    });
+    const customer = await getCustomerById(payload.id);
 
     if (!customer) {
       return NextResponse.json({ error: "Customer not found" }, { status: 401 });
     }
 
-    // Check if admin blocked or subscription expired
     if (!customer.is_active) {
       return NextResponse.json({ error: "ACCOUNT_BLOCKED" }, { status: 403 });
     }
@@ -45,7 +41,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (err) {
     console.error("Customer me error:", err);
-    // If DB fails, return cookie data as fallback
     return NextResponse.json({ customer: payload });
   }
 }
