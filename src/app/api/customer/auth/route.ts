@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyCustomerLogin, getCustomerByEmail, createCustomer } from "@/lib/customer-db";
+import { verifyCustomerLogin, getCustomerByEmail } from "@/lib/customer-db";
 import { signCustomerToken, CUSTOMER_COOKIE_NAME, COOKIE_MAX_AGE } from "@/lib/auth/cookie-sign";
 
 export async function POST(request: NextRequest) {
