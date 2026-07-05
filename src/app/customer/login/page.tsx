@@ -76,7 +76,7 @@ function CustomerLoginForm() {
         return;
       }
 
-      toast.success(`Welcome ${data.customer.name}!`);
+      toast.success(`Welcome ${data.customer?.name ?? "back"}!`);
       router.push("/customer");
     } catch {
       toast.error("Network error. Please try again.");

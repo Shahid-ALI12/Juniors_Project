@@ -42,9 +42,13 @@ export default function CustomerKhataPage() {
     (async () => {
       setLoading(true);
       try {
-        const cusRes = await fetch("/api/customers").then((r) => r.json());
-        setCustomers(cusRes.customers ?? cusRes ?? []);
-        const bal = await fetch("/api/reports/customer-balance").then((r) => r.json());
+        const cusRaw = await fetch("/api/customers");
+        if (!cusRaw.ok) { toast.error("Failed to load customers"); return; }
+        const cusRes = await cusRaw.json();
+        setCustomers(cusRes.customers ?? []);
+        const balRaw = await fetch("/api/reports/customer-balance");
+        if (!balRaw.ok) { toast.error("Failed to load balances"); return; }
+        const bal = await balRaw.json();
         setBalances(typeof bal === "object" && !Array.isArray(bal) ? bal : {});
       } catch {
         toast.error("Failed to load customer data");
@@ -63,8 +67,10 @@ export default function CustomerKhataPage() {
     (async () => {
       setLoadingDetail(true);
       try {
-        const res = await fetch(`/api/sales?customer_id=${selectedCustomerId}`).then((r) => r.json());
-        setSelectedSales(res.sales ?? res ?? []);
+        const resRaw = await fetch(`/api/sales?customer_id=${selectedCustomerId}`);
+        if (!resRaw.ok) { toast.error("Failed to load sales"); return; }
+        const res = await resRaw.json();
+        setSelectedSales(res.sales ?? []);
       } catch {
         toast.error("Failed to load customer history");
       } finally {

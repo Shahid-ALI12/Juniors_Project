@@ -139,7 +139,7 @@ export default function DailyEntryPage() {
     }
   }, [locations, locationChoice]);
 
-  const selectedLocation = locations.find((l) => l.name === locationChoice)!;
+  const selectedLocation = locations.find((l) => l.name === locationChoice);
   const selectedProduct = products.find((p) => String(p.id) === productId);
 
   const stockEntry = stockData.find(
@@ -238,8 +238,8 @@ export default function DailyEntryPage() {
         });
         if (!res.ok) throw new Error("Failed to create customer");
         const data = await res.json();
-        customerId = data.customer.id;
-        setCustomers((prev) => [...prev, data.customer]);
+        customerId = data.customer?.id;
+        if (data.customer) setCustomers((prev) => [...prev, data.customer]);
       }
 
       const items = cartItems.map((item) => ({

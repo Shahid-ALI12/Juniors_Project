@@ -73,14 +73,21 @@ export default function CashManagementPage() {
 
   const reloadData = async () => {
     try {
-      const [acc, bal, tr] = await Promise.all([
-        fetch("/api/cash/accounts").then((r) => r.json()),
-        fetch("/api/cash/balances").then((r) => r.json()),
-        fetch("/api/cash/transfer").then((r) => r.json()),
+      const [accRes, balRes, trRes] = await Promise.all([
+        fetch("/api/cash/accounts"),
+        fetch("/api/cash/balances"),
+        fetch("/api/cash/transfer"),
       ]);
-      setAccounts(acc.accounts ?? acc ?? []);
-      setBalances(bal.balances ?? bal ?? {});
-      setTransfers(tr.transfers ?? tr ?? []);
+      if (!accRes.ok || !balRes.ok || !trRes.ok) {
+        toast.error("Failed to load cash data");
+        return;
+      }
+      const acc = await accRes.json();
+      const bal = await balRes.json();
+      const tr = await trRes.json();
+      setAccounts(acc.accounts ?? []);
+      setBalances(bal.balances ?? {});
+      setTransfers(tr.transfers ?? []);
     } catch {
       toast.error("Failed to load cash data");
     }

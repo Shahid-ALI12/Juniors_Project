@@ -286,9 +286,13 @@ export default function PurchasesStockPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name: supplierName.trim() }),
         });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || "Failed to create supplier");
+        }
         const data = await res.json();
-        supplierId = data.supplier.id;
-        setSuppliers((prev) => [...prev, data.supplier]);
+        supplierId = data.supplier?.id;
+        if (data.supplier) setSuppliers((prev) => [...prev, data.supplier]);
       } catch {
         toast.error("Failed to create supplier");
         return;

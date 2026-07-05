@@ -74,12 +74,15 @@ export default function CustomMixOrder() {
     (async () => {
       setLoading(true);
       try {
-        const [p, l] = await Promise.all([
-          fetch("/api/products").then((r) => r.json()),
-          fetch("/api/locations").then((r) => r.json()),
+        const [pRes, lRes] = await Promise.all([
+          fetch("/api/products"),
+          fetch("/api/locations"),
         ]);
-        setProducts(p.products ?? p ?? []);
-        setLocations(l.locations ?? l ?? []);
+        if (!pRes.ok || !lRes.ok) { toast.error("Failed to load master data"); return; }
+        const p = await pRes.json();
+        const l = await lRes.json();
+        setProducts(p.products ?? []);
+        setLocations(l.locations ?? []);
       } catch {
         toast.error("Failed to load data");
       } finally {
@@ -96,8 +99,10 @@ export default function CustomMixOrder() {
 
   const reloadPastOrders = useCallback(async () => {
     try {
-      const res = await fetch("/api/mix-orders").then((r) => r.json());
-      setPastOrders(res.orders ?? res ?? []);
+      const resRaw = await fetch("/api/mix-orders");
+      if (!resRaw.ok) { toast.error("Failed to load past orders"); return; }
+      const res = await resRaw.json();
+      setPastOrders(res.orders ?? []);
     } catch {
       // silent
     }

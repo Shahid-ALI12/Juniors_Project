@@ -139,6 +139,7 @@ export default function ManageProducts() {
       if (!res.ok) throw new Error("Failed to create product");
       const data = await res.json();
       const newProduct = data.product;
+      if (!newProduct) throw new Error("Invalid response from server");
       setProducts((prev) => [...prev, newProduct]);
       setEditedRates((prev) => ({ ...prev, [newProduct.id]: String(rateValue) }));
       setNewName("");
