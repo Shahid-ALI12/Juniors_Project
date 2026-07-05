@@ -78,9 +78,9 @@ export default function CashManagementPage() {
         fetch("/api/cash/balances").then((r) => r.json()),
         fetch("/api/cash/transfer").then((r) => r.json()),
       ]);
-      setAccounts(acc ?? []);
-      setBalances(bal ?? {});
-      setTransfers(tr ?? []);
+      setAccounts(acc.accounts ?? acc ?? []);
+      setBalances(bal.balances ?? bal ?? {});
+      setTransfers(tr.transfers ?? tr ?? []);
     } catch {
       toast.error("Failed to load cash data");
     }

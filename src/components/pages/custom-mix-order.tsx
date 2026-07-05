@@ -78,8 +78,8 @@ export default function CustomMixOrder() {
           fetch("/api/products").then((r) => r.json()),
           fetch("/api/locations").then((r) => r.json()),
         ]);
-        setProducts(p ?? []);
-        setLocations(l ?? []);
+        setProducts(p.products ?? p ?? []);
+        setLocations(l.locations ?? l ?? []);
       } catch {
         toast.error("Failed to load data");
       } finally {
@@ -97,7 +97,7 @@ export default function CustomMixOrder() {
   const reloadPastOrders = useCallback(async () => {
     try {
       const res = await fetch("/api/mix-orders").then((r) => r.json());
-      setPastOrders(res ?? []);
+      setPastOrders(res.orders ?? res ?? []);
     } catch {
       // silent
     }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
-import { getCustomerBalance } from "@/lib/data/reports";
+import { getCustomerBalance, getAllCustomerBalances } from "@/lib/data/reports";
 
 export async function GET(request: NextRequest) {
   const auth = await requireUser();
@@ -8,10 +8,15 @@ export async function GET(request: NextRequest) {
 
   try {
     const url = new URL(request.url);
-    const customerId = Number(url.searchParams.get("customer_id"));
-    if (!customerId) return NextResponse.json({ error: "customer_id required" }, { status: 400 });
+    const customerId = url.searchParams.get("customer_id");
 
-    const balance = await getCustomerBalance(customerId);
+    // No customer_id → return all balances as a map
+    if (!customerId) {
+      const balances = await getAllCustomerBalances();
+      return NextResponse.json(balances);
+    }
+
+    const balance = await getCustomerBalance(Number(customerId));
     return NextResponse.json(balance);
   } catch (err) {
     console.error("Customer balance error:", err);

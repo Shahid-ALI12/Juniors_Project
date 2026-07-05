@@ -152,3 +152,38 @@ export async function getCustomerBalance(customerId: number): Promise<CustomerBa
     balance_due: total_bill - total_cash_paid - total_goods_value,
   };
 }
+
+// ─── All customer balances at once ───
+export async function getAllCustomerBalances(): Promise<Record<number, CustomerBalanceInfo>> {
+  const { data: sales, error } = await admin
+    .from("sales")
+    .select("customer_id, quantity, rate_per_bag, rickshaw_fare, cash_received");
+  if (error) throw error;
+
+  const map: Record<number, CustomerBalanceInfo> = {};
+  for (const s of sales || []) {
+    const cid = s.customer_id as number;
+    if (!map[cid]) map[cid] = { total_bill: 0, total_cash_paid: 0, total_goods_value: 0, balance_due: 0 };
+    map[cid].total_bill += (s.quantity as number) * (s.rate_per_bag as number) + (s.rickshaw_fare as number);
+    map[cid].total_cash_paid += s.cash_received as number;
+  }
+
+  // Fetch goods settlements for all customers
+  const { data: purchases } = await admin
+    .from("purchases")
+    .select("settled_by_customer_id, quantity, rate_per_bag")
+    .not("settled_by_customer_id", "is", null);
+  for (const p of purchases || []) {
+    const cid = p.settled_by_customer_id as number;
+    if (!map[cid]) map[cid] = { total_bill: 0, total_cash_paid: 0, total_goods_value: 0, balance_due: 0 };
+    map[cid].total_goods_value += (p.quantity as number) * (p.rate_per_bag as number);
+  }
+
+  // Calculate balance_due
+  for (const cid of Object.keys(map)) {
+    const b = map[Number(cid)];
+    b.balance_due = b.total_bill - b.total_cash_paid - b.total_goods_value;
+  }
+
+  return map;
+}

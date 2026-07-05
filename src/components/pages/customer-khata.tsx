@@ -42,10 +42,10 @@ export default function CustomerKhataPage() {
     (async () => {
       setLoading(true);
       try {
-        const cus = await fetch("/api/customers").then((r) => r.json());
-        setCustomers(cus ?? []);
+        const cusRes = await fetch("/api/customers").then((r) => r.json());
+        setCustomers(cusRes.customers ?? cusRes ?? []);
         const bal = await fetch("/api/reports/customer-balance").then((r) => r.json());
-        setBalances(bal ?? {});
+        setBalances(typeof bal === "object" && !Array.isArray(bal) ? bal : {});
       } catch {
         toast.error("Failed to load customer data");
       } finally {
@@ -64,7 +64,7 @@ export default function CustomerKhataPage() {
       setLoadingDetail(true);
       try {
         const res = await fetch(`/api/sales?customer_id=${selectedCustomerId}`).then((r) => r.json());
-        setSelectedSales(res ?? []);
+        setSelectedSales(res.sales ?? res ?? []);
       } catch {
         toast.error("Failed to load customer history");
       } finally {
