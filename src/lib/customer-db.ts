@@ -91,14 +91,29 @@ export async function getCustomerById(id: string): Promise<CustomerRow | null> {
   };
 }
 
-// ─── CREATE ───
-export async function createCustomer(data: Omit<CustomerRow, "id" | "created_at">): Promise<CustomerRow> {
+// ─── CREATE ─── generates id + created_at automatically
+export async function createCustomer(data: {
+  name: string;
+  email: string;
+  password: string;
+  subscription_type: string;
+  subscription_start: string;
+  subscription_end: string;
+  is_active: boolean;
+}): Promise<CustomerRow> {
+  const id = "cust_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+  const created_at = new Date().toISOString();
+
   if (isSupaReady()) {
-    const { data: row, error } = await supa().from("app_customers").insert(data).select().single();
+    const { data: row, error } = await supa()
+      .from("app_customers")
+      .insert({ ...data, id, created_at })
+      .select()
+      .single();
     if (error) throw error;
     return row as CustomerRow;
   }
-  const row = await db.appCustomer.create({ data });
+  const row = await db.appCustomer.create({ data: { ...data, id, created_at } });
   return {
     id: row.id, name: row.name, email: row.email, password: row.password,
     subscription_type: row.subscription_type, subscription_start: row.subscription_start,
@@ -132,9 +147,12 @@ export async function deleteCustomerById(id: string): Promise<void> {
   await db.appCustomer.delete({ where: { id } });
 }
 
-// ─── SQL to create the table (for Supabase SQL Editor) ───
-export const CREATE_TABLE_SQL = `-- Run this in Supabase SQL Editor (https://supabase.com/dashboard → SQL Editor)
-CREATE TABLE IF NOT EXISTS app_customers (
+// ─── SQL to create the table (PostgreSQL / Supabase) ───
+export const CREATE_TABLE_SQL = `-- Run this in Supabase SQL Editor
+-- Drop old table if needed (wipes data) and recreate with proper defaults:
+DROP TABLE IF EXISTS app_customers CASCADE;
+
+CREATE TABLE app_customers (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
@@ -143,13 +161,13 @@ CREATE TABLE IF NOT EXISTS app_customers (
   subscription_start TEXT NOT NULL,
   subscription_end TEXT NOT NULL,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- Enable Row Level Security
 ALTER TABLE app_customers ENABLE ROW LEVEL SECURITY;
 
--- Allow all operations (adjust for production)
+-- Allow all operations
 CREATE POLICY "Allow all operations on app_customers" ON app_customers
   FOR ALL USING (true) WITH CHECK (true);
 `;
