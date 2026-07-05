@@ -44,7 +44,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ id }, { status: 201 });
   } catch (err) {
     console.error("Create expense error:", err);
-    return NextResponse.json({ error: "Failed to create expense" }, { status: 500 });
+    const { getErrorDetail } = await import("@/lib/api-error");
+    return NextResponse.json({ error: "Failed to create expense", detail: getErrorDetail(err) }, { status: 500 });
   }
 }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
 import { getAllStock, upsertStock } from "@/lib/data/stock";
+import { getErrorDetail } from "@/lib/api-error";
 
 export async function GET() {
   const auth = await requireUser();
@@ -11,7 +12,7 @@ export async function GET() {
     return NextResponse.json({ stock });
   } catch (err) {
     console.error("Fetch stock error:", err);
-    return NextResponse.json({ error: "Failed to fetch stock" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to fetch stock", detail: getErrorDetail(err) }, { status: 500 });
   }
 }
 
@@ -37,6 +38,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ stock }, { status: 201 });
   } catch (err) {
     console.error("Upsert stock error:", err);
-    return NextResponse.json({ error: "Failed to update stock" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to update stock", detail: getErrorDetail(err) }, { status: 500 });
   }
 }

@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { useCartStore, fetchCached, invalidateCache } from "@/store";
+import { useCartStore, fetchCached, invalidateCache, apiError } from "@/store";
 import { PageHeader } from "@/components/shared/page-header";
 import type { CartItem, Sale, Expense, Product, Location, Customer, ProductStock } from "@/types";
 
@@ -236,7 +236,7 @@ export default function DailyEntryPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name: customerName.trim(), type: customerType }),
         });
-        if (!res.ok) throw new Error("Failed to create customer");
+        if (!res.ok) throw new Error(await apiError(res, "Failed to create customer"));
         const data = await res.json();
         customerId = data.customer?.id;
         if (data.customer) setCustomers((prev) => [...prev, data.customer]);
@@ -265,7 +265,7 @@ export default function DailyEntryPage() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Failed to complete sale");
+        throw new Error(err.detail || err.error || "Failed to complete sale");
       }
 
       clearCart();
@@ -288,22 +288,22 @@ export default function DailyEntryPage() {
   const handleDeleteSale = async (saleId: number) => {
     try {
       const res = await fetch(`/api/sales?id=${saleId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete sale");
+      if (!res.ok) throw new Error(await apiError(res, "Failed to delete sale"));
       setSales((prev) => prev.filter((s) => s.id !== saleId));
       toast.success("Sale deleted.");
-    } catch {
-      toast.error("Failed to delete sale");
+    } catch (e: any) {
+      toast.error(e.message || "Failed to delete sale");
     }
   };
 
   const handleDeleteMixOrder = async (mixOrderId: string) => {
     try {
       const res = await fetch(`/api/sales?group_id=${mixOrderId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete mix order");
+      if (!res.ok) throw new Error(await apiError(res, "Failed to delete mix order"));
       setSales((prev) => prev.filter((s) => s.transaction_group_id !== mixOrderId));
       toast.success("Mix order deleted.");
-    } catch {
-      toast.error("Failed to delete mix order");
+    } catch (e: any) {
+      toast.error(e.message || "Failed to delete mix order");
     }
   };
 
@@ -330,7 +330,7 @@ export default function DailyEntryPage() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Failed to add expense");
+        throw new Error(err.detail || err.error || "Failed to add expense");
       }
       setExpenseDesc("");
       setExpenseAmount("");
@@ -346,11 +346,11 @@ export default function DailyEntryPage() {
   const handleDeleteExpense = async (expId: number) => {
     try {
       const res = await fetch(`/api/expenses?id=${expId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete expense");
+      if (!res.ok) throw new Error(await apiError(res, "Failed to delete expense"));
       setExpenses((prev) => prev.filter((e) => e.id !== expId));
       toast.success("Expense deleted.");
-    } catch {
-      toast.error("Failed to delete expense");
+    } catch (e: any) {
+      toast.error(e.message || "Failed to delete expense");
     }
   };
 

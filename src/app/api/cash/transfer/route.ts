@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
 import { transferCashRPC } from "@/lib/data/cash";
+import { getErrorDetail } from "@/lib/api-error";
 
 export async function GET(request: NextRequest) {
   const auth = await requireUser();
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ transfers });
   } catch (err) {
     console.error("Fetch transfers error:", err);
-    return NextResponse.json({ error: "Failed to fetch transfers" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to fetch transfers", detail: getErrorDetail(err) }, { status: 500 });
   }
 }
 
@@ -46,6 +47,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ id }, { status: 201 });
   } catch (err) {
     console.error("Transfer cash error:", err);
-    return NextResponse.json({ error: "Failed to transfer cash" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to transfer cash", detail: getErrorDetail(err) }, { status: 500 });
   }
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
 import { getDashboardMetrics } from "@/lib/data/reports";
+import { getErrorDetail } from "@/lib/api-error";
 
 export async function GET() {
   const auth = await requireUser();
@@ -12,6 +13,6 @@ export async function GET() {
     return NextResponse.json(metrics);
   } catch (err) {
     console.error("Dashboard metrics error:", err);
-    return NextResponse.json({ error: "Failed to fetch dashboard metrics" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to fetch dashboard metrics", detail: getErrorDetail(err) }, { status: 500 });
   }
 }

@@ -14,7 +14,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useMixStore, fetchCached, invalidateCache } from "@/store";
+import { useMixStore, fetchCached, invalidateCache, apiError } from "@/store";
 import { PageHeader, MetricCard } from "@/components/shared/page-header";
 import type { MixIngredient, Product, Location } from "@/types";
 
@@ -190,22 +190,46 @@ export default function CustomMixOrder() {
 
     setSaving(true);
     try {
+      // Find or create customer to get customer_id (same pattern as daily-entry)
+      let customerId: number;
+      const existingCustomer = await fetchCached<any>("customers", "/api/customers", "customers");
+      const match = existingCustomer.find(
+        (c: any) => c.name.toLowerCase() === store.customerName.trim().toLowerCase()
+      );
+      if (match) {
+        customerId = match.id;
+      } else {
+        const custRes = await fetch("/api/customers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: store.customerName.trim(), type: store.customerType }),
+        });
+        if (!custRes.ok) throw new Error(await apiError(custRes, "Failed to create customer"));
+        const custData = await custRes.json();
+        customerId = custData.customer?.id;
+        if (!customerId) throw new Error("Customer creation returned no ID");
+        invalidateCache("customers");
+      }
+
       const res = await fetch("/api/mix-orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          customer_name: store.customerName,
-          customer_type: store.customerType,
+          customer_id: customerId,
           location_id: store.locationId,
           order_date: store.orderDate,
-          target_weight: store.targetWeight,
-          ingredients: store.ingredients,
+          target_weight_kg: store.targetWeight,
+          items: store.ingredients.map((ing) => ({
+            product_id: ing.product_id,
+            quantity: ing.weight_kg,
+            rate_per_kg: ing.rate_per_kg,
+          })),
           cash_received: store.customerType === "cash" ? Number(cashReceived) || 0 : 0,
         }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Failed to save mix order");
+        throw new Error(err.detail || err.error || "Failed to save mix order");
       }
       store.reset();
       setCashReceived("");

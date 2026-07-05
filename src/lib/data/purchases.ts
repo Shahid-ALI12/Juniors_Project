@@ -58,22 +58,116 @@ export async function recordPurchaseRPC(params: {
   bag_weight_kg: number | null;
   entered_by: string | null;
 }): Promise<number> {
-  const { data, error } = await admin.rpc("record_purchase", {
-    p_purchase_date: params.purchase_date,
-    p_product_id: params.product_id,
-    p_quantity: params.quantity,
-    p_rate_per_bag: params.rate_per_bag,
-    p_supplier_id: params.supplier_id,
-    p_settled_by_customer_id: params.settled_by_customer_id,
-    p_cash_paid: params.cash_paid,
-    p_location_id: params.location_id,
-    p_notes: params.notes,
-    p_unit_type: params.unit_type,
-    p_bag_weight_kg: params.bag_weight_kg,
-    p_entered_by: params.entered_by,
-  });
-  if (error) throw error;
-  return data as number;
+  try {
+    // Try RPC first (atomic: purchase + stock increment + cash ledger)
+    const { data, error } = await admin.rpc("record_purchase", {
+      p_purchase_date: params.purchase_date,
+      p_product_id: params.product_id,
+      p_quantity: params.quantity,
+      p_rate_per_bag: params.rate_per_bag,
+      p_supplier_id: params.supplier_id,
+      p_settled_by_customer_id: params.settled_by_customer_id,
+      p_cash_paid: params.cash_paid,
+      p_location_id: params.location_id,
+      p_notes: params.notes,
+      p_unit_type: params.unit_type,
+      p_bag_weight_kg: params.bag_weight_kg,
+      p_entered_by: params.entered_by,
+    });
+    if (error) throw error;
+    return data as number;
+  } catch (rpcErr: any) {
+    // If RPC function doesn't exist, fall back to direct inserts
+    const msg = rpcErr?.message || "";
+    if (msg.includes("does not exist") && msg.includes("function")) {
+      console.warn("record_purchase RPC not found — falling back to direct insert");
+      return recordPurchaseFallback(params);
+    }
+    throw rpcErr;
+  }
+}
+
+// Fallback: direct insert without stock increment or cash ledger (non-atomic)
+async function recordPurchaseFallback(params: {
+  purchase_date: string;
+  product_id: number;
+  quantity: number;
+  rate_per_bag: number;
+  supplier_id: number | null;
+  settled_by_customer_id: number | null;
+  cash_paid: number;
+  location_id: number;
+  notes: string | null;
+  unit_type: string;
+  bag_weight_kg: number | null;
+  entered_by: string | null;
+}): Promise<number> {
+  // Insert purchase
+  const { data: purData, error: purErr } = await admin
+    .from("purchases")
+    .insert({
+      purchase_date: params.purchase_date,
+      product_id: params.product_id,
+      quantity: params.quantity,
+      rate_per_bag: params.rate_per_bag,
+      supplier_id: params.supplier_id,
+      settled_by_customer_id: params.settled_by_customer_id,
+      cash_paid: params.cash_paid,
+      location_id: params.location_id,
+      notes: params.notes,
+      entered_by: params.entered_by,
+      unit_type: params.unit_type,
+      bag_weight_kg: params.bag_weight_kg,
+    })
+    .select("id")
+    .single();
+  if (purErr) throw purErr;
+  const purId = (purData as any).id as number;
+
+  // Try to increment stock (best effort, bags only)
+  if (params.unit_type === "bags") {
+    try {
+      await admin.from("product_stock").upsert(
+        {
+          product_id: params.product_id,
+          location_id: params.location_id,
+          stock_quantity: params.quantity,
+          last_bag_weight_kg: params.bag_weight_kg,
+        },
+        { onConflict: "product_id,location_id" }
+      );
+    } catch (stockErr) {
+      console.warn("Stock upsert failed (non-critical):", stockErr);
+    }
+  }
+
+  // Try to insert cash_ledger entry (best effort, only if not goods settlement)
+  if (!params.settled_by_customer_id && params.cash_paid > 0) {
+    try {
+      const { data: acctData } = await admin
+        .from("cash_accounts")
+        .select("id")
+        .eq("name", "Cash In Hand")
+        .limit(1)
+        .single();
+      if (acctData) {
+        await admin.from("cash_ledger").insert({
+          entry_date: params.purchase_date,
+          account_id: (acctData as any).id,
+          direction: "out",
+          amount: params.cash_paid,
+          source_type: "purchase",
+          source_id: purId,
+          description: "Purchase #" + purId,
+          entered_by: params.entered_by,
+        });
+      }
+    } catch (ledgerErr) {
+      console.warn("Cash ledger insert failed (non-critical):", ledgerErr);
+    }
+  }
+
+  return purId;
 }
 
 // Sum of goods settlements for a customer

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
 import { getAllProducts, createProduct, updateProduct } from "@/lib/data/products";
+import { getErrorDetail } from "@/lib/api-error";
 
 export async function GET() {
   const auth = await requireUser();
@@ -11,7 +12,7 @@ export async function GET() {
     return NextResponse.json({ products });
   } catch (err) {
     console.error("Fetch products error:", err);
-    return NextResponse.json({ error: "Failed to fetch products" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to fetch products", detail: getErrorDetail(err) }, { status: 500 });
   }
 }
 
@@ -32,7 +33,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ product }, { status: 201 });
   } catch (err) {
     console.error("Create product error:", err);
-    return NextResponse.json({ error: "Failed to create product" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to create product", detail: getErrorDetail(err) }, { status: 500 });
   }
 }
 
@@ -49,6 +50,6 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ product });
   } catch (err) {
     console.error("Update product error:", err);
-    return NextResponse.json({ error: "Failed to update product" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to update product", detail: getErrorDetail(err) }, { status: 500 });
   }
 }

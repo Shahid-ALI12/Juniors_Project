@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
 import { getSales, deleteSale, deleteSalesByGroup, deleteSalesByMixOrder, createSaleRPC } from "@/lib/data/sales";
+import { getErrorDetail } from "@/lib/api-error";
 
 export async function GET(request: NextRequest) {
   const auth = await requireUser();
@@ -19,7 +20,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ sales });
   } catch (err) {
     console.error("Fetch sales error:", err);
-    return NextResponse.json({ error: "Failed to fetch sales" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to fetch sales", detail: getErrorDetail(err) }, { status: 500 });
   }
 }
 
@@ -55,7 +56,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ sales: createdSales }, { status: 201 });
   } catch (err) {
     console.error("Create sale error:", err);
-    return NextResponse.json({ error: "Failed to create sale" }, { status: 500 });
+    const { getErrorDetail } = await import("@/lib/api-error");
+    return NextResponse.json({ error: "Failed to create sale", detail: getErrorDetail(err) }, { status: 500 });
   }
 }
 
@@ -78,6 +80,6 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("Delete sale error:", err);
-    return NextResponse.json({ error: "Failed to delete sale" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to delete sale", detail: getErrorDetail(err) }, { status: 500 });
   }
 }

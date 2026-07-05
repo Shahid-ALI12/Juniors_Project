@@ -26,7 +26,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { fetchCached, invalidateCache } from "@/store";
+import { fetchCached, invalidateCache, apiError } from "@/store";
 
 export default function ManageProducts() {
   const [loading, setLoading] = useState(true);
@@ -91,7 +91,7 @@ export default function ManageProducts() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id, default_rate: rateValue }),
         });
-        if (!res.ok) throw new Error("Failed to update rate");
+        if (!res.ok) throw new Error(await apiError(res, "Failed to update rate"));
         setProducts((prev) =>
           prev.map((p) => (p.id === id ? { ...p, default_rate: rateValue } : p))
         );
@@ -137,7 +137,7 @@ export default function ManageProducts() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: trimmedName, default_rate: rateValue }),
       });
-      if (!res.ok) throw new Error("Failed to create product");
+      if (!res.ok) throw new Error(await apiError(res, "Failed to create product"));
       const data = await res.json();
       const newProduct = data.product;
       if (!newProduct) throw new Error("Invalid response from server");
@@ -149,8 +149,8 @@ export default function ManageProducts() {
       toast.success(`"${trimmedName}" added successfully!`, {
         description: `Starting rate: Rs. ${rateValue.toLocaleString("en-PK")}/bag`,
       });
-    } catch {
-      toast.error("Failed to add product");
+    } catch (e: any) {
+      toast.error(e.message || "Failed to add product");
     } finally {
       setAdding(false);
     }

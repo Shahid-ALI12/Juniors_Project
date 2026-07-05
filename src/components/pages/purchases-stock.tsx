@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { fetchCached, invalidateCache } from "@/store";
+import { fetchCached, invalidateCache, apiError } from "@/store";
 import { PageHeader } from "@/components/shared/page-header";
 import type { Product, Location, Customer, Purchase, Supplier, ProductStock } from "@/types";
 
@@ -228,7 +228,7 @@ export default function PurchasesStockPage() {
     setSavedLocations((prev) => new Set(prev).add(locationName));
     try {
       for (const row of stock) {
-        await fetch("/api/stock", {
+        const res = await fetch("/api/stock", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -238,11 +238,15 @@ export default function PurchasesStockPage() {
             last_bag_weight_kg: row.bagWeight,
           }),
         });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || err.error || "Failed to update stock");
+        }
       }
       await loadAllData();
       toast.success(`${locationName} stock saved successfully!`);
-    } catch {
-      toast.error(`Failed to save ${locationName} stock`);
+    } catch (e: any) {
+      toast.error(e.message || `Failed to save ${locationName} stock`);
     }
     setSavedLocations((prev) => {
       const next = new Set(prev);
@@ -291,13 +295,13 @@ export default function PurchasesStockPage() {
         });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || "Failed to create supplier");
+          throw new Error(err.detail || err.error || "Failed to create supplier");
         }
         const data = await res.json();
         supplierId = data.supplier?.id;
         if (data.supplier) setSuppliers((prev) => [...prev, data.supplier]);
-      } catch {
-        toast.error("Failed to create supplier");
+      } catch (e: any) {
+        toast.error(e.message || "Failed to create supplier");
         return;
       }
     }
@@ -323,7 +327,7 @@ export default function PurchasesStockPage() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Failed to record purchase");
+        throw new Error(err.detail || err.error || "Failed to record purchase");
       }
       resetForm();
       invalidateCache("stock");
@@ -375,7 +379,7 @@ export default function PurchasesStockPage() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Failed to record settlement");
+        throw new Error(err.detail || err.error || "Failed to record settlement");
       }
       resetForm();
       toast.success("Settlement recorded successfully!");
@@ -390,11 +394,11 @@ export default function PurchasesStockPage() {
   const handleDeletePurchase = async (id: number) => {
     try {
       const res = await fetch(`/api/purchases?id=${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete purchase");
+      if (!res.ok) throw new Error(await apiError(res, "Failed to delete purchase"));
       setPurchases((prev) => prev.filter((p) => p.id !== id));
       toast.success("Purchase deleted.");
-    } catch {
-      toast.error("Failed to delete purchase");
+    } catch (e: any) {
+      toast.error(e.message || "Failed to delete purchase");
     }
   };
 

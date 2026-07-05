@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
 import { getAllCustomers, createCustomer as createBizCustomer, updateCustomer as updateBizCustomer, deleteCustomer } from "@/lib/data/customers";
+import { getErrorDetail } from "@/lib/api-error";
 
 export async function GET(request: NextRequest) {
   const auth = await requireUser();
@@ -13,7 +14,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ customers });
   } catch (err) {
     console.error("Fetch customers error:", err);
-    return NextResponse.json({ error: "Failed to fetch customers" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to fetch customers", detail: getErrorDetail(err) }, { status: 500 });
   }
 }
 
@@ -35,7 +36,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ customer }, { status: 201 });
   } catch (err) {
     console.error("Create customer error:", err);
-    return NextResponse.json({ error: "Failed to create customer" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to create customer", detail: getErrorDetail(err) }, { status: 500 });
   }
 }
 
@@ -52,7 +53,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ customer });
   } catch (err) {
     console.error("Update customer error:", err);
-    return NextResponse.json({ error: "Failed to update customer" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to update customer", detail: getErrorDetail(err) }, { status: 500 });
   }
 }
 
@@ -69,6 +70,6 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("Delete customer error:", err);
-    return NextResponse.json({ error: "Failed to delete customer" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to delete customer", detail: getErrorDetail(err) }, { status: 500 });
   }
 }

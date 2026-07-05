@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
 import { getAllSuppliers, createSupplier } from "@/lib/data/suppliers";
+import { getErrorDetail } from "@/lib/api-error";
 
 export async function GET(request: NextRequest) {
   const auth = await requireUser();
@@ -13,7 +14,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ suppliers });
   } catch (err) {
     console.error("Fetch suppliers error:", err);
-    return NextResponse.json({ error: "Failed to fetch suppliers" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to fetch suppliers", detail: getErrorDetail(err) }, { status: 500 });
   }
 }
 
@@ -30,6 +31,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ supplier }, { status: 201 });
   } catch (err) {
     console.error("Create supplier error:", err);
-    return NextResponse.json({ error: "Failed to create supplier" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to create supplier", detail: getErrorDetail(err) }, { status: 500 });
   }
 }

@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth/server-user";
 import { getMixOrders, createMixOrderRPC, deleteMixOrder } from "@/lib/data/mix-orders";
 import { deleteSalesByMixOrder } from "@/lib/data/sales";
 import { admin } from "@/lib/supabase/server-admin";
+import { getErrorDetail } from "@/lib/api-error";
 
 export async function GET() {
   const auth = await requireUser();
@@ -29,7 +30,7 @@ export async function GET() {
     return NextResponse.json({ orders, salesByMix });
   } catch (err) {
     console.error("Fetch mix orders error:", err);
-    return NextResponse.json({ error: "Failed to fetch mix orders" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to fetch mix orders", detail: getErrorDetail(err) }, { status: 500 });
   }
 }
 
@@ -63,7 +64,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ id }, { status: 201 });
   } catch (err) {
     console.error("Create mix order error:", err);
-    return NextResponse.json({ error: "Failed to create mix order" }, { status: 500 });
+    const { getErrorDetail } = await import("@/lib/api-error");
+    return NextResponse.json({ error: "Failed to create mix order", detail: getErrorDetail(err) }, { status: 500 });
   }
 }
 
@@ -81,6 +83,6 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("Delete mix order error:", err);
-    return NextResponse.json({ error: "Failed to delete mix order" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to delete mix order", detail: getErrorDetail(err) }, { status: 500 });
   }
 }

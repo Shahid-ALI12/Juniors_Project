@@ -152,7 +152,7 @@ export default function CashManagementPage() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Failed to record transfer");
+        throw new Error(err.detail || err.error || "Failed to record transfer");
       }
       setTransferAmount("");
       setTransferNotes("");
@@ -184,11 +184,11 @@ export default function CashManagementPage() {
       const res = await fetch("/api/cash/correction", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account_id: accId, new_balance: target }),
+        body: JSON.stringify({ account_id: accId, target }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Failed to apply correction");
+        throw new Error(err.detail || err.error || "Failed to apply correction");
       }
       setCorrectionTarget("");
       setCorrectionSuccess(true);

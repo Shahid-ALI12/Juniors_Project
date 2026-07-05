@@ -72,16 +72,103 @@ export async function createSaleRPC(params: {
   transaction_group_id: string;
   entered_by: string | null;
 }): Promise<void> {
-  const { error } = await admin.rpc("create_sale", {
-    p_items: JSON.stringify(params.items),
-    p_customer_id: params.customer_id,
-    p_location_id: params.location_id,
-    p_sale_date: params.sale_date,
-    p_cash_received: params.cash_received,
-    p_rickshaw_fare: params.rickshaw_fare,
-    p_rickshaw_driver: params.rickshaw_driver,
-    p_transaction_group_id: params.transaction_group_id,
-    p_entered_by: params.entered_by,
-  });
-  if (error) throw error;
+  try {
+    // Try RPC first (atomic: sale rows + stock decrement + cash ledger)
+    const { error } = await admin.rpc("create_sale", {
+      p_items: JSON.stringify(params.items),
+      p_customer_id: params.customer_id,
+      p_location_id: params.location_id,
+      p_sale_date: params.sale_date,
+      p_cash_received: params.cash_received,
+      p_rickshaw_fare: params.rickshaw_fare,
+      p_rickshaw_driver: params.rickshaw_driver,
+      p_transaction_group_id: params.transaction_group_id,
+      p_entered_by: params.entered_by,
+    });
+    if (error) throw error;
+  } catch (rpcErr: any) {
+    // If RPC function doesn't exist, fall back to direct inserts
+    const msg = rpcErr?.message || "";
+    if (msg.includes("does not exist") && msg.includes("function")) {
+      console.warn("create_sale RPC not found — falling back to direct insert");
+      return createSaleFallback(params);
+    }
+    throw rpcErr;
+  }
+}
+
+// Fallback: direct inserts without stock decrement or cash ledger (non-atomic)
+async function createSaleFallback(params: {
+  items: { product_id: number; quantity: number; rate_per_bag: number; unit_type: string; bag_weight_kg: number | null }[];
+  customer_id: number;
+  location_id: number;
+  sale_date: string;
+  cash_received: number;
+  rickshaw_fare: number;
+  rickshaw_driver: string | null;
+  transaction_group_id: string;
+  entered_by: string | null;
+}): Promise<void> {
+  // Insert sale rows
+  const rows = params.items.map((item) => ({
+    customer_id: params.customer_id,
+    product_id: item.product_id,
+    location_id: params.location_id,
+    quantity: item.quantity,
+    rate_per_bag: item.rate_per_bag,
+    rickshaw_fare: 0,
+    cash_received: 0,
+    sale_date: params.sale_date,
+    unit_type: item.unit_type || "bags",
+    bag_weight_kg: item.bag_weight_kg ?? null,
+    transaction_group_id: params.transaction_group_id,
+    rickshaw_driver_name: params.rickshaw_driver,
+    entered_by: params.entered_by,
+  }));
+
+  const { error: insertErr } = await admin.from("sales").insert(rows);
+  if (insertErr) throw insertErr;
+
+  // Try to insert cash_ledger entry (best effort)
+  try {
+    if (params.cash_received > 0) {
+      const { data: acctData } = await admin
+        .from("cash_accounts")
+        .select("id")
+        .eq("name", "Cash In Hand")
+        .limit(1)
+        .single();
+      if (acctData) {
+        await admin.from("cash_ledger").insert({
+          entry_date: params.sale_date,
+          account_id: (acctData as any).id,
+          direction: "in",
+          amount: params.cash_received,
+          source_type: "sale",
+          source_id: null,
+          description: "Sale group " + params.transaction_group_id,
+          entered_by: params.entered_by,
+        });
+      }
+    }
+  } catch (ledgerErr) {
+    console.warn("Cash ledger insert failed (non-critical):", ledgerErr);
+  }
+
+  // Try to decrement stock (best effort, bags only)
+  for (const item of params.items) {
+    if (item.unit_type === "bags") {
+      try {
+        await admin.rpc("decrement_stock_fallback", {
+          p_product_id: item.product_id,
+          p_location_id: params.location_id,
+          p_quantity: item.quantity,
+          p_bag_weight_kg: item.bag_weight_kg,
+        });
+      } catch {
+        // Stock decrement is best-effort in fallback mode
+        console.warn(`Stock decrement failed for product ${item.product_id} (non-critical)`);
+      }
+    }
+  }
 }

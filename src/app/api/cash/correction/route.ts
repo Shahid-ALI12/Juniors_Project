@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
 import { correctBalanceRPC } from "@/lib/data/cash";
+import { getErrorDetail } from "@/lib/api-error";
 
 export async function POST(request: NextRequest) {
   const auth = await requireUser();
@@ -24,6 +25,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ id }, { status: 201 });
   } catch (err) {
     console.error("Cash correction error:", err);
-    return NextResponse.json({ error: "Failed to correct balance" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to correct balance", detail: getErrorDetail(err) }, { status: 500 });
   }
 }

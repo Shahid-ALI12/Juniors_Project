@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
 import { getPurchases, recordPurchaseRPC, deletePurchase } from "@/lib/data/purchases";
+import { getErrorDetail } from "@/lib/api-error";
 
 export async function GET(request: NextRequest) {
   const auth = await requireUser();
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ purchases });
   } catch (err) {
     console.error("Fetch purchases error:", err);
-    return NextResponse.json({ error: "Failed to fetch purchases" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to fetch purchases", detail: getErrorDetail(err) }, { status: 500 });
   }
 }
 
@@ -51,7 +52,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ id }, { status: 201 });
   } catch (err) {
     console.error("Create purchase error:", err);
-    return NextResponse.json({ error: "Failed to create purchase" }, { status: 500 });
+    const { getErrorDetail } = await import("@/lib/api-error");
+    return NextResponse.json({ error: "Failed to create purchase", detail: getErrorDetail(err) }, { status: 500 });
   }
 }
 
@@ -68,6 +70,6 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("Delete purchase error:", err);
-    return NextResponse.json({ error: "Failed to delete purchase" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to delete purchase", detail: getErrorDetail(err) }, { status: 500 });
   }
 }

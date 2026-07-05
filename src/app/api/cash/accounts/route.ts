@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
 import { getCashAccounts, createCashAccount } from "@/lib/data/cash";
+import { getErrorDetail } from "@/lib/api-error";
 
 export async function GET() {
   const auth = await requireUser();
@@ -11,7 +12,7 @@ export async function GET() {
     return NextResponse.json({ accounts });
   } catch (err) {
     console.error("Fetch cash accounts error:", err);
-    return NextResponse.json({ error: "Failed to fetch cash accounts" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to fetch cash accounts", detail: getErrorDetail(err) }, { status: 500 });
   }
 }
 
@@ -28,6 +29,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ account }, { status: 201 });
   } catch (err) {
     console.error("Create cash account error:", err);
-    return NextResponse.json({ error: "Failed to create cash account" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to create cash account", detail: getErrorDetail(err) }, { status: 500 });
   }
 }

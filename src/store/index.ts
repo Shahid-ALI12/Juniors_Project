@@ -1,6 +1,17 @@
 import { create } from "zustand";
 import type { CartItem, MixIngredient, AppCustomer } from "@/types";
 
+// ─── Shared API error helper ───
+// Call after `!res.ok` to get a user-friendly message with the server detail.
+export async function apiError(res: Response, fallback: string): Promise<string> {
+  try {
+    const json = await res.json();
+    return (json.detail || json.error || fallback);
+  } catch {
+    return fallback;
+  }
+}
+
 interface CartStore {
   items: CartItem[];
   addItem: (item: CartItem) => void;
@@ -91,7 +102,15 @@ export async function fetchCached<T>(
     return masterCache[key]!.data as T[];
   }
   const res = await fetch(url);
-  if (!res.ok) return masterCache[key]?.data as T[] ?? [];
+  if (!res.ok) {
+    // Only return stale cache on network/5xx errors — throw on 401/403 so pages can redirect
+    if (res.status === 401 || res.status === 403) {
+      throw new Error(`Auth error (${res.status}) fetching ${url}`);
+    }
+    // For 500 and other errors, return stale cache if available, otherwise throw
+    if (masterCache[key]) return masterCache[key]!.data as T[];
+    throw new Error(`Failed to fetch ${url} (status ${res.status})`);
+  }
   const json = await res.json();
   const arr = json[unwrapKey] ?? [];
   masterCache[key] = { data: arr, fetchedAt: Date.now() };

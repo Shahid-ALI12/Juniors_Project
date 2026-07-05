@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
 import { getReconciliation } from "@/lib/data/reports";
+import { getErrorDetail } from "@/lib/api-error";
 
 export async function GET(request: NextRequest) {
   const auth = await requireUser();
@@ -15,6 +16,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(data);
   } catch (err) {
     console.error("Reconciliation error:", err);
-    return NextResponse.json({ error: "Failed to fetch reconciliation data" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to fetch reconciliation data", detail: getErrorDetail(err) }, { status: 500 });
   }
 }
