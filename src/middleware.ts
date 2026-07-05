@@ -5,11 +5,49 @@ import { verifyCustomerToken, CUSTOMER_COOKIE_NAME } from "@/lib/auth/cookie-sig
 const isPlaceholder = (url: string | undefined) =>
   !url || url.includes("placeholder");
 
+const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+/**
+ * CSRF protection: for state-changing API requests, the Origin (or Referer)
+ * header must match the request's own host. Browsers always send Origin on
+ * cross-site POST/PUT/PATCH/DELETE, so a mismatch means a cross-site request.
+ */
+function isCsrfSafe(request: NextRequest): boolean {
+  if (!MUTATING_METHODS.has(request.method)) return true;
+
+  const origin = request.headers.get("origin");
+  const referer = request.headers.get("referer");
+  const host = request.headers.get("host");
+  if (!host) return false;
+
+  const source = origin ?? referer;
+  // Same-origin requests from non-browser clients (curl, server-to-server)
+  // may omit both headers — allow those (they can't carry browser cookies cross-site).
+  if (!source) return true;
+
+  try {
+    return new URL(source).host === host;
+  } catch {
+    return false;
+  }
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // ─── Static assets / API — skip ───
-  if (pathname.startsWith("/_next") || pathname.startsWith("/api")) {
+  // ─── Static assets — skip ───
+  if (pathname.startsWith("/_next")) {
+    return NextResponse.next();
+  }
+
+  // ─── API routes — CSRF check on mutating requests, then skip ───
+  if (pathname.startsWith("/api")) {
+    if (!isCsrfSafe(request)) {
+      return NextResponse.json(
+        { error: "CSRF validation failed" },
+        { status: 403 }
+      );
+    }
     return NextResponse.next();
   }
 
