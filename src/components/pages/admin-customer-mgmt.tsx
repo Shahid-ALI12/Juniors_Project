@@ -13,7 +13,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { UserPlus, Users, ShieldCheck, Clock, CalendarDays, AlertTriangle, Trash2, Eye, EyeOff } from "lucide-react";
+import {
+  UserPlus, Users, ShieldCheck, Trash2, Eye, EyeOff,
+  Pencil, Ban, UserCheck,
+} from "lucide-react";
 
 function getSubscriptionEnd(type: SubscriptionType, startDate: string, customDays?: number): string {
   const start = new Date(startDate);
@@ -25,10 +28,10 @@ function getSubscriptionEnd(type: SubscriptionType, startDate: string, customDay
 
 export default function AdminCustomerManagement() {
   const { customers, addCustomer, updateCustomer, deleteCustomer, setCustomers } = useCustomerAuthStore();
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
 
-  // Form state
+  // Add dialog state
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [showAddPassword, setShowAddPassword] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -36,16 +39,21 @@ export default function AdminCustomerManagement() {
   const [startDate, setStartDate] = useState(new Date().toISOString().split("T")[0]);
   const [customDays, setCustomDays] = useState("");
 
-  // View detail
+  // View dialog
   const [viewCustomer, setViewCustomer] = useState<AppCustomer | null>(null);
 
+  // Edit dialog
+  const [editCustomer, setEditCustomer] = useState<AppCustomer | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editPassword, setEditPassword] = useState("");
+  const [showEditPassword, setShowEditPassword] = useState(false);
+
   useEffect(() => {
-    // Load from localStorage
     const saved = localStorage.getItem("app_customers");
     if (saved) {
       setCustomers(JSON.parse(saved));
     } else {
-      // Seed with sample data
       const today = new Date();
       const sample: AppCustomer[] = [
         {
@@ -93,16 +101,20 @@ export default function AdminCustomerManagement() {
     }
   }, [customers]);
 
+  const persistCustomers = (updated: AppCustomer[]) => {
+    localStorage.setItem("app_customers", JSON.stringify(updated));
+  };
+
+  // ─── Add Customer ───
   const handleAdd = () => {
     if (!name.trim() || !email.trim() || !password.trim()) {
-      toast.error("Name, email aur password zaruri hain");
+      toast.error("Name, email and password are required");
       return;
     }
     if (customers.some((c) => c.email === email.trim())) {
-      toast.error("Ye email pehle se registered hai");
+      toast.error("This email is already registered");
       return;
     }
-
     const end = getSubscriptionEnd(subType, startDate, customDays ? parseInt(customDays) : undefined);
     const newCustomer: AppCustomer = {
       id: `cust_${Date.now()}`,
@@ -115,22 +127,69 @@ export default function AdminCustomerManagement() {
       is_active: true,
       created_at: new Date().toISOString(),
     };
-
     addCustomer(newCustomer);
-    toast.success(`${name} ka account ban gaya! Subscription: ${subType}`);
-    resetForm();
-    setDialogOpen(false);
+    toast.success(`${name} registered successfully! Subscription: ${subType}`);
+    resetAddForm();
+    setAddDialogOpen(false);
   };
 
+  // ─── Edit Customer ───
+  const openEditDialog = (c: AppCustomer) => {
+    setEditCustomer(c);
+    setEditName(c.name);
+    setEditEmail(c.email);
+    setEditPassword(c.password);
+    setShowEditPassword(false);
+  };
+
+  const handleEdit = () => {
+    if (!editCustomer) return;
+    if (!editName.trim() || !editEmail.trim() || !editPassword.trim()) {
+      toast.error("Name, email and password are required");
+      return;
+    }
+    // Check email uniqueness (excluding current customer)
+    if (customers.some((c) => c.email === editEmail.trim() && c.id !== editCustomer.id)) {
+      toast.error("This email is already registered to another customer");
+      return;
+    }
+    const updated = customers.map((c) =>
+      c.id === editCustomer.id
+        ? { ...c, name: editName.trim(), email: editEmail.trim(), password: editPassword }
+        : c
+    );
+    setCustomers(updated);
+    persistCustomers(updated);
+    toast.success(`${editName}'s details updated successfully`);
+    setEditCustomer(null);
+  };
+
+  // ─── Block / Unblock Customer ───
+  const handleToggleBlock = (c: AppCustomer) => {
+    const newActive = !c.is_active;
+    const action = newActive ? "unblocked" : "blocked";
+    if (!newActive) {
+      if (!confirm(`Are you sure you want to block ${c.name}? They will not be able to login.`)) return;
+    }
+    const updated = customers.map((cust) =>
+      cust.id === c.id ? { ...cust, is_active: newActive } : cust
+    );
+    setCustomers(updated);
+    persistCustomers(updated);
+    toast.success(`${c.name} has been ${action}`);
+  };
+
+  // ─── Delete Customer ───
   const handleDelete = (id: string, customerName: string) => {
-    if (confirm(`Kya aap ${customerName} ko delete karna chahte hain?`)) {
+    if (confirm(`Are you sure you want to delete ${customerName}?`)) {
+      const updated = customers.filter((c) => c.id !== id);
       deleteCustomer(id);
-      localStorage.setItem("app_customers", JSON.stringify(customers.filter((c) => c.id !== id)));
-      toast.success(`${customerName} delete ho gaya`);
+      persistCustomers(updated);
+      toast.success(`${customerName} has been deleted`);
     }
   };
 
-  const resetForm = () => {
+  const resetAddForm = () => {
     setName("");
     setEmail("");
     setPassword("");
@@ -146,36 +205,21 @@ export default function AdminCustomerManagement() {
     <div className="space-y-6">
       <PageHeader
         title="Customer Management"
-        description="Register new customers and manage their subscriptions"
+        description="Register new customers, edit their details, and manage access"
       />
 
       {/* Metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <MetricCard
-          title="Total Customers"
-          value={customers.length}
-          icon={Users}
-          color="text-blue-500"
-        />
-        <MetricCard
-          title="Active"
-          value={activeCount}
-          icon={ShieldCheck}
-          color="text-emerald-500"
-        />
-        <MetricCard
-          title="Expired/Blocked"
-          value={blockedCount}
-          icon={AlertTriangle}
-          color="text-red-500"
-        />
+        <MetricCard title="Total Customers" value={customers.length} icon={Users} color="text-blue-500" />
+        <MetricCard title="Active" value={activeCount} icon={ShieldCheck} color="text-emerald-500" />
+        <MetricCard title="Blocked/Expired" value={blockedCount} icon={Ban} color="text-red-500" />
       </div>
 
-      {/* Add Customer */}
+      {/* Customer Table */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-3">
           <CardTitle className="text-base font-semibold">All Customers</CardTitle>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
             <DialogTrigger asChild>
               <Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer">
                 <UserPlus className="w-4 h-4 mr-2" />
@@ -189,46 +233,25 @@ export default function AdminCustomerManagement() {
               <div className="space-y-4 pt-2">
                 <div className="space-y-2">
                   <Label>Full Name</Label>
-                  <Input
-                    placeholder="Customer ka naam"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                  />
+                  <Input placeholder="Customer name" value={name} onChange={(e) => setName(e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <Label>Email</Label>
-                  <Input
-                    type="email"
-                    placeholder="customer@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
+                  <Input type="email" placeholder="customer@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <Label>Password</Label>
                   <div className="relative">
-                    <Input
-                      type={showPassword ? "text" : "password"}
-                      placeholder="Login password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="pr-10"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    <Input type={showAddPassword ? "text" : "password"} placeholder="Login password" value={password} onChange={(e) => setPassword(e.target.value)} className="pr-10" />
+                    <button type="button" onClick={() => setShowAddPassword(!showAddPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer">
+                      {showAddPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label>Subscription Type</Label>
                   <Select value={subType} onValueChange={(v) => setSubType(v as SubscriptionType)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="monthly">Monthly (1 Month)</SelectItem>
                       <SelectItem value="yearly">Yearly (1 Year)</SelectItem>
@@ -239,48 +262,20 @@ export default function AdminCustomerManagement() {
                 {subType === "custom" && (
                   <div className="space-y-2">
                     <Label>Custom Days</Label>
-                    <Input
-                      type="number"
-                      placeholder="Number of days"
-                      value={customDays}
-                      onChange={(e) => setCustomDays(e.target.value)}
-                      min={1}
-                      max={3650}
-                    />
+                    <Input type="number" placeholder="Number of days" value={customDays} onChange={(e) => setCustomDays(e.target.value)} min={1} max={3650} />
                   </div>
                 )}
                 <div className="space-y-2">
                   <Label>Start Date</Label>
-                  <Input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                  />
+                  <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
                 </div>
-
-                {/* Preview */}
                 <div className="bg-slate-50 rounded-lg p-3 text-sm space-y-1">
                   <div className="font-medium text-slate-700">Subscription Preview:</div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Type:</span>
-                    <span className="font-medium capitalize">{subType}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Start:</span>
-                    <span className="font-medium">{startDate}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">End:</span>
-                    <span className="font-medium text-emerald-600">
-                      {getSubscriptionEnd(subType, startDate, customDays ? parseInt(customDays) : undefined)}
-                    </span>
-                  </div>
+                  <div className="flex justify-between"><span className="text-slate-500">Type:</span><span className="font-medium capitalize">{subType}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">Start:</span><span className="font-medium">{startDate}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">End:</span><span className="font-medium text-emerald-600">{getSubscriptionEnd(subType, startDate, customDays ? parseInt(customDays) : undefined)}</span></div>
                 </div>
-
-                <Button
-                  onClick={handleAdd}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
-                >
+                <Button onClick={handleAdd} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer">
                   Register Customer
                 </Button>
               </div>
@@ -291,8 +286,8 @@ export default function AdminCustomerManagement() {
           {customers.length === 0 ? (
             <div className="text-center py-12 text-slate-400">
               <Users className="w-12 h-12 mx-auto mb-3 opacity-30" />
-              <p>Koi customer registered nahi hai</p>
-              <p className="text-sm mt-1">"Add Customer" button se naya customer register karo</p>
+              <p>No customers registered yet</p>
+              <p className="text-sm mt-1">Click "Add Customer" to register a new customer</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -302,8 +297,7 @@ export default function AdminCustomerManagement() {
                     <TableHead>Name</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Subscription</TableHead>
-                    <TableHead>Start</TableHead>
-                    <TableHead>End</TableHead>
+                    <TableHead>End Date</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -317,42 +311,35 @@ export default function AdminCustomerManagement() {
                         <TableCell className="font-medium">{c.name}</TableCell>
                         <TableCell className="text-slate-500 text-sm">{c.email}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className="capitalize text-xs">
-                            {c.subscription_type}
-                          </Badge>
+                          <Badge variant="outline" className="capitalize text-xs">{c.subscription_type}</Badge>
                         </TableCell>
-                        <TableCell className="text-sm text-slate-500">{c.subscription_start}</TableCell>
                         <TableCell className="text-sm text-slate-500">{c.subscription_end}</TableCell>
                         <TableCell>
-                          <Badge
-                            className={
-                              status === "active"
-                                ? "bg-emerald-100 text-emerald-700 border-emerald-200"
-                                : status === "expired"
-                                ? "bg-amber-100 text-amber-700 border-amber-200"
-                                : "bg-red-100 text-red-700 border-red-200"
-                            }
-                          >
+                          <Badge className={status === "active" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : status === "expired" ? "bg-amber-100 text-amber-700 border-amber-200" : "bg-red-100 text-red-700 border-red-200"}>
                             {status}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right space-x-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setViewCustomer(c)}
-                            className="h-8 text-xs cursor-pointer"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDelete(c.id, c.name)}
-                            className="h-8 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button variant="ghost" size="sm" onClick={() => setViewCustomer(c)} className="h-8 text-xs cursor-pointer" title="View Details">
+                              <Eye className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => openEditDialog(c)} className="h-8 text-xs text-blue-500 hover:text-blue-700 hover:bg-blue-50 cursor-pointer" title="Edit">
+                              <Pencil className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleToggleBlock(c)}
+                              className={`h-8 text-xs cursor-pointer ${c.is_active ? "text-orange-500 hover:text-orange-700 hover:bg-orange-50" : "text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50"}`}
+                              title={c.is_active ? "Block Customer" : "Unblock Customer"}
+                            >
+                              {c.is_active ? <Ban className="w-3.5 h-3.5" /> : <UserCheck className="w-3.5 h-3.5" />}
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => handleDelete(c.id, c.name)} className="h-8 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 cursor-pointer" title="Delete">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
@@ -364,67 +351,61 @@ export default function AdminCustomerManagement() {
         </CardContent>
       </Card>
 
-      {/* View Detail Dialog */}
+      {/* ─── View Detail Dialog ─── */}
       <Dialog open={!!viewCustomer} onOpenChange={() => setViewCustomer(null)}>
         <DialogContent className="sm:max-w-md bg-white">
-          <DialogHeader>
-            <DialogTitle>Customer Details</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Customer Details</DialogTitle></DialogHeader>
           {viewCustomer && (
             <div className="space-y-4 pt-2">
               <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <div className="text-slate-500 text-xs">Name</div>
-                  <div className="font-semibold">{viewCustomer.name}</div>
-                </div>
-                <div>
-                  <div className="text-slate-500 text-xs">Email</div>
-                  <div className="font-semibold">{viewCustomer.email}</div>
-                </div>
-                <div>
-                  <div className="text-slate-500 text-xs">Password</div>
-                  <div className="font-mono font-semibold">{viewCustomer.password}</div>
-                </div>
-                <div>
-                  <div className="text-slate-500 text-xs">Status</div>
-                  <div className="font-semibold">
-                    {!viewCustomer.is_active ? (
-                      <Badge className="bg-red-100 text-red-700">Blocked</Badge>
-                    ) : new Date(viewCustomer.subscription_end) <= new Date() ? (
-                      <Badge className="bg-amber-100 text-amber-700">Expired</Badge>
-                    ) : (
-                      <Badge className="bg-emerald-100 text-emerald-700">Active</Badge>
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-slate-500 text-xs">Subscription Type</div>
-                  <div className="font-semibold capitalize">{viewCustomer.subscription_type}</div>
-                </div>
-                <div>
-                  <div className="text-slate-500 text-xs">Days Remaining</div>
-                  <div className="font-semibold">
-                    {new Date(viewCustomer.subscription_end) <= new Date()
-                      ? "Expired"
-                      : Math.ceil(
-                          (new Date(viewCustomer.subscription_end).getTime() - Date.now()) /
-                            (1000 * 60 * 60 * 24)
-                        ) + " days"}
-                  </div>
-                </div>
+                <div><div className="text-slate-500 text-xs">Name</div><div className="font-semibold">{viewCustomer.name}</div></div>
+                <div><div className="text-slate-500 text-xs">Email</div><div className="font-semibold">{viewCustomer.email}</div></div>
+                <div><div className="text-slate-500 text-xs">Password</div><div className="font-mono font-semibold">{viewCustomer.password}</div></div>
+                <div><div className="text-slate-500 text-xs">Status</div><div className="font-semibold">{!viewCustomer.is_active ? <Badge className="bg-red-100 text-red-700">Blocked</Badge> : new Date(viewCustomer.subscription_end) <= new Date() ? <Badge className="bg-amber-100 text-amber-700">Expired</Badge> : <Badge className="bg-emerald-100 text-emerald-700">Active</Badge>}</div></div>
+                <div><div className="text-slate-500 text-xs">Subscription Type</div><div className="font-semibold capitalize">{viewCustomer.subscription_type}</div></div>
+                <div><div className="text-slate-500 text-xs">Days Remaining</div><div className="font-semibold">{new Date(viewCustomer.subscription_end) <= new Date() ? "Expired" : Math.ceil((new Date(viewCustomer.subscription_end).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) + " days"}</div></div>
               </div>
               <div className="grid grid-cols-2 gap-4 text-sm border-t pt-3">
-                <div>
-                  <div className="text-slate-500 text-xs">Start Date</div>
-                  <div className="font-semibold">{viewCustomer.subscription_start}</div>
-                </div>
-                <div>
-                  <div className="text-slate-500 text-xs">End Date</div>
-                  <div className="font-semibold">{viewCustomer.subscription_end}</div>
-                </div>
+                <div><div className="text-slate-500 text-xs">Start Date</div><div className="font-semibold">{viewCustomer.subscription_start}</div></div>
+                <div><div className="text-slate-500 text-xs">End Date</div><div className="font-semibold">{viewCustomer.subscription_end}</div></div>
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Edit Customer Dialog ─── */}
+      <Dialog open={!!editCustomer} onOpenChange={(open) => { if (!open) setEditCustomer(null); }}>
+        <DialogContent className="sm:max-w-md bg-white">
+          <DialogHeader><DialogTitle>Edit Customer — {editCustomer?.name}</DialogTitle></DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <Label>Full Name</Label>
+              <Input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Customer name" />
+            </div>
+            <div className="space-y-2">
+              <Label>Email</Label>
+              <Input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} placeholder="customer@example.com" />
+            </div>
+            <div className="space-y-2">
+              <Label>Password</Label>
+              <div className="relative">
+                <Input type={showEditPassword ? "text" : "password"} value={editPassword} onChange={(e) => setEditPassword(e.target.value)} placeholder="New password" className="pr-10" />
+                <button type="button" onClick={() => setShowEditPassword(!showEditPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer">
+                  {showEditPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-xs text-slate-400">Leave current password to keep it unchanged, or enter a new one.</p>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <Button onClick={handleEdit} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer">
+                <Pencil className="w-4 h-4 mr-2" />Save Changes
+              </Button>
+              <Button variant="outline" onClick={() => setEditCustomer(null)} className="flex-1 cursor-pointer">
+                Cancel
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

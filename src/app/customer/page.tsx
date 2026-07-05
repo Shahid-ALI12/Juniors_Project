@@ -17,16 +17,9 @@ import {
   FlaskConical,
   Landmark,
   LogOut,
-  Milk,
   User,
-  CalendarDays,
-  Clock,
-  ShieldCheck,
-  CheckCircle2,
-  TrendingUp,
-  AlertTriangle,
+  Info,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
 const Dashboard = dynamic(() => import("@/components/pages/dashboard"), { ssr: false });
@@ -37,8 +30,10 @@ const CashManagement = dynamic(() => import("@/components/pages/cash-management"
 const ManageProducts = dynamic(() => import("@/components/pages/manage-products"), { ssr: false });
 const PurchasesStock = dynamic(() => import("@/components/pages/purchases-stock"), { ssr: false });
 const CustomMixOrder = dynamic(() => import("@/components/pages/custom-mix-order"), { ssr: false });
+const CustomerAbout = dynamic(() => import("@/components/pages/customer-about"), { ssr: false });
 
 const pageMap: Record<string, React.ComponentType> = {
+  about: CustomerAbout,
   dashboard: Dashboard,
   "daily-entry": DailyEntry,
   "customer-khata": CustomerKhata,
@@ -50,6 +45,10 @@ const pageMap: Record<string, React.ComponentType> = {
 };
 
 const navSections = [
+  {
+    label: "Account",
+    items: [{ id: "about", label: "About", icon: Info }],
+  },
   {
     label: "Overview",
     items: [{ id: "dashboard", label: "Dashboard", icon: LayoutDashboard }],
@@ -92,19 +91,21 @@ export default function CustomerPortal() {
     }
     const parsed = JSON.parse(session) as AppCustomer;
     if (new Date(parsed.subscription_end) <= new Date() || !parsed.is_active) {
-      toast.error("Aapki subscription expire/block ho gayi hai");
+      toast.error("Your subscription has expired or your account is blocked.");
       localStorage.removeItem("customer_session");
       router.replace("/customer/login");
       return;
     }
     setCustomer(parsed);
-  }, [router]);
+    // Set default page to "about" on first load
+    setActivePage("about");
+  }, [router, setActivePage]);
 
   const handleLogout = () => {
     setLoggingOut(true);
     logoutCustomer();
     localStorage.removeItem("customer_session");
-    toast.success("Logout ho gaye");
+    toast.success("Logged out successfully");
     router.replace("/customer/login");
   };
 
@@ -116,17 +117,7 @@ export default function CustomerPortal() {
     );
   }
 
-  const daysRemaining = Math.ceil(
-    (new Date(customer.subscription_end).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-  );
-
-  const progressPercent = (() => {
-    const total = new Date(customer.subscription_end).getTime() - new Date(customer.subscription_start).getTime();
-    const elapsed = Date.now() - new Date(customer.subscription_start).getTime();
-    return Math.min(100, Math.max(0, Math.round((elapsed / total) * 100)));
-  })();
-
-  const PageComponent = pageMap[activePage] || Dashboard;
+  const PageComponent = pageMap[activePage] || CustomerAbout;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -223,37 +214,6 @@ export default function CustomerPortal() {
       {/* ─── Main Content ─── */}
       <main className="lg:ml-64 min-h-screen">
         <div className="p-4 pt-6 lg:p-8 lg:pt-8 max-w-[1400px] mx-auto">
-          {/* Welcome Banner */}
-          <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-5 sm:p-6 text-white mb-6 shadow-lg shadow-emerald-500/20">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2 text-emerald-100 text-sm mb-1.5">
-                  <CheckCircle2 className="w-4 h-4" />
-                  Subscription Active
-                </div>
-                <h1 className="text-xl sm:text-2xl font-bold">
-                  Welcome, {customer.name}!
-                </h1>
-                <p className="text-emerald-100 mt-0.5 text-sm">
-                  Aap ka account active hai. Aap apna data dekh sakte hain.
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="bg-white/15 backdrop-blur rounded-xl px-4 py-2.5 text-center">
-                  <div className="text-2xl font-bold">{daysRemaining}</div>
-                  <div className="text-emerald-100 text-[0.65rem] mt-0.5">Days Left</div>
-                </div>
-                {daysRemaining <= 7 && (
-                  <div className="hidden sm:flex items-center gap-2 bg-amber-500/20 backdrop-blur rounded-xl px-3 py-2.5">
-                    <AlertTriangle className="w-4 h-4 text-amber-300" />
-                    <span className="text-xs text-amber-200">Jaldi expire hogi</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Page Content */}
           <PageComponent />
         </div>
       </main>
