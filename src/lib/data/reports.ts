@@ -106,7 +106,7 @@ export async function getReconciliation(fromDate: string, toDate: string): Promi
   const totalExpenses = ex.reduce((sum, e) => sum + (e.amount as number), 0);
 
   const fromCredit = sl
-    .filter((s) => s.customers?.type === "credit")
+    .filter((s) => (s.customers as Record<string, unknown>)?.type === "credit")
     .reduce((sum, s) => sum + (s.quantity as number) * (s.rate_per_bag as number) + (s.rickshaw_fare as number), 0);
   const fromCash = totalBilled - fromCredit;
 

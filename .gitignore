@@ -62,4 +62,4 @@ db/
 # internal
 .zscripts/
 skills/
-dev.log
+dev.logskills/

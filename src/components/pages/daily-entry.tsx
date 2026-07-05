@@ -186,7 +186,7 @@ export default function DailyEntryPage() {
       toast.error("Quantity must be greater than 0.");
       return;
     }
-    if (unitType === "bags" && bagWeightNum <= 0) {
+    if (unitChoice === "bags" && bagWeightNum <= 0) {
       toast.error("Please enter a valid bag weight.");
       return;
     }
@@ -196,15 +196,15 @@ export default function DailyEntryPage() {
       location: selectedLocation?.name ?? "",
       location_id: selectedLocation?.id ?? 0,
       quantity: quantityNum,
-      unit_type: unitType,
-      bag_weight_kg: unitType === "bags" ? bagWeightNum : null,
+      unit_type: unitChoice,
+      bag_weight_kg: unitChoice === "bags" ? bagWeightNum : null,
       rate: rateNum,
       amount: lineAmount,
     };
     addItem(item);
     setQuantity("");
     setRate(String(selectedProduct.default_rate));
-    toast.success(`Added ${fmt(quantityNum)} ${unitType === "bags" ? "bag(s)" : "kg"} of ${selectedProduct.name}`);
+    toast.success(`Added ${fmt(quantityNum)} ${unitChoice === "bags" ? "bag(s)" : "kg"} of ${selectedProduct.name}`);
   };
 
   const handleCompleteSale = async () => {
@@ -462,10 +462,10 @@ export default function DailyEntryPage() {
 
               <div className="space-y-2">
                 <Label className="text-xs uppercase text-slate-500 font-semibold">
-                  {unitType === "bags" ? "Quantity (bags)" : "Quantity (kg)"}
+                  {unitChoice === "bags" ? "Quantity (bags)" : "Quantity (kg)"}
                 </Label>
-                <Input type="number" min="0" step={unitType === "bags" ? "1" : "5"} placeholder="0" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-                {unitType === "bags" && (
+                <Input type="number" min="0" step={unitChoice === "bags" ? "1" : "5"} placeholder="0" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+                {unitChoice === "bags" && (
                   <div className="mt-2">
                     <Label className="text-xs text-slate-400 mb-1 block">Bag Weight (kg)</Label>
                     <Input type="number" min="0" step="5" value={bagWeight} onChange={(e) => setBagWeight(e.target.value)} />
@@ -475,7 +475,7 @@ export default function DailyEntryPage() {
 
               <div className="space-y-2">
                 <Label className="text-xs uppercase text-slate-500 font-semibold">
-                  {unitType === "bags" ? "Rate per Bag (Rs.)" : "Rate per KG (Rs.)"}
+                  {unitChoice === "bags" ? "Rate per Bag (Rs.)" : "Rate per KG (Rs.)"}
                 </Label>
                 <Input type="number" min="0" step="10" placeholder="0" value={rate} onChange={(e) => setRate(e.target.value)} />
               </div>
