@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useCustomerAuthStore } from "@/store";
 import type { AppCustomer, SubscriptionType } from "@/types";
 import { PageHeader, MetricCard } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
@@ -15,9 +14,8 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import {
   UserPlus, Users, ShieldCheck, Trash2, Eye, EyeOff,
-  Pencil, Ban, UserCheck,
+  Pencil, Ban, UserCheck, Loader2,
 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
 
 function getSubscriptionEnd(type: SubscriptionType, startDate: string, customDays?: number): string {
   const start = new Date(startDate);
@@ -27,68 +25,54 @@ function getSubscriptionEnd(type: SubscriptionType, startDate: string, customDay
   return start.toISOString().split("T")[0];
 }
 
-const isSupabaseConfigured = () =>
-  process.env.NEXT_PUBLIC_SUPABASE_URL &&
-  !process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder");
-
-// Supabase sync helpers
-async function syncToSupabase(customer: AppCustomer) {
-  if (!isSupabaseConfigured()) return;
-  try {
-    const supabase = createClient();
-    await supabase.from("app_customers").upsert({
-      id: customer.id,
-      name: customer.name,
-      email: customer.email,
-      password: customer.password,
-      subscription_type: customer.subscription_type,
-      subscription_start: customer.subscription_start,
-      subscription_end: customer.subscription_end,
-      is_active: customer.is_active,
-      created_at: customer.created_at,
-    }, { onConflict: "id" });
-  } catch (err) {
-    console.error("Supabase sync error:", err);
-  }
+// API helpers
+async function fetchCustomers(): Promise<AppCustomer[]> {
+  const res = await fetch("/api/admin/customers");
+  if (!res.ok) throw new Error("Failed to fetch");
+  const data = await res.json();
+  return data.customers.map((c: Record<string, unknown>) => ({
+    id: c.id as string,
+    name: c.name as string,
+    email: c.email as string,
+    password: c.password as string,
+    subscription_type: c.subscription_type as SubscriptionType,
+    subscription_start: c.subscription_start as string,
+    subscription_end: c.subscription_end as string,
+    is_active: c.is_active as boolean,
+    created_at: (c.created_at as string) || new Date().toISOString(),
+  }));
 }
 
-async function deleteFromSupabase(id: string) {
-  if (!isSupabaseConfigured()) return;
-  try {
-    const supabase = createClient();
-    await supabase.from("app_customers").delete().eq("id", id);
-  } catch (err) {
-    console.error("Supabase delete error:", err);
-  }
+async function createCustomer(data: Record<string, unknown>): Promise<AppCustomer> {
+  const res = await fetch("/api/admin/customers", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || "Failed to create");
+  return json.customer;
 }
 
-async function loadFromSupabase(): Promise<AppCustomer[] | null> {
-  if (!isSupabaseConfigured()) return null;
-  try {
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from("app_customers")
-      .select("*")
-      .order("created_at", { ascending: true });
-    if (error || !data) return null;
-    return data.map((row: Record<string, unknown>) => ({
-      id: row.id as string,
-      name: row.name as string,
-      email: row.email as string,
-      password: row.password as string,
-      subscription_type: row.subscription_type as SubscriptionType,
-      subscription_start: row.subscription_start as string,
-      subscription_end: row.subscription_end as string,
-      is_active: row.is_active as boolean,
-      created_at: row.created_at as string,
-    }));
-  } catch {
-    return null;
-  }
+async function updateCustomerApi(data: Record<string, unknown>): Promise<AppCustomer> {
+  const res = await fetch("/api/admin/customers", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || "Failed to update");
+  return json.customer;
+}
+
+async function deleteCustomerApi(id: string): Promise<void> {
+  const res = await fetch(`/api/admin/customers?id=${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete");
 }
 
 export default function AdminCustomerManagement() {
-  const { customers, addCustomer, updateCustomer, deleteCustomer, setCustomers } = useCustomerAuthStore();
+  const [customers, setCustomers] = useState<AppCustomer[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // Add dialog
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -99,6 +83,7 @@ export default function AdminCustomerManagement() {
   const [subType, setSubType] = useState<SubscriptionType>("monthly");
   const [startDate, setStartDate] = useState(new Date().toISOString().split("T")[0]);
   const [customDays, setCustomDays] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   // View dialog
   const [viewCustomer, setViewCustomer] = useState<AppCustomer | null>(null);
@@ -111,47 +96,19 @@ export default function AdminCustomerManagement() {
   const [showEditPassword, setShowEditPassword] = useState(false);
 
   const loadCustomers = useCallback(async () => {
-    // Try Supabase first
-    const supabaseData = await loadFromSupabase();
-    if (supabaseData && supabaseData.length > 0) {
-      setCustomers(supabaseData);
-      return;
+    setLoading(true);
+    try {
+      const data = await fetchCustomers();
+      setCustomers(data);
+    } catch (err) {
+      console.error("Load customers error:", err);
+      toast.error("Failed to load customers");
+    } finally {
+      setLoading(false);
     }
-
-    // Fallback to localStorage
-    const saved = localStorage.getItem("app_customers");
-    if (saved) {
-      setCustomers(JSON.parse(saved));
-    } else {
-      // Seed sample data
-      const today = new Date();
-      const sample: AppCustomer[] = [
-        {
-          id: "cust_1", name: "Ahmed Khan", email: "ahmed@example.com", password: "pass123",
-          subscription_type: "monthly",
-          subscription_start: new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split("T")[0],
-          subscription_end: new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split("T")[0],
-          is_active: true, created_at: today.toISOString(),
-        },
-        {
-          id: "cust_2", name: "Ali Raza", email: "ali@example.com", password: "pass456",
-          subscription_type: "yearly",
-          subscription_start: "2026-01-01", subscription_end: "2026-12-31",
-          is_active: true, created_at: today.toISOString(),
-        },
-      ];
-      setCustomers(sample);
-      // Sync sample to Supabase
-      for (const c of sample) await syncToSupabase(c);
-    }
-  }, [setCustomers]);
+  }, []);
 
   useEffect(() => { loadCustomers(); }, [loadCustomers]);
-
-  // Persist to localStorage (fallback)
-  useEffect(() => {
-    if (customers.length > 0) localStorage.setItem("app_customers", JSON.stringify(customers));
-  }, [customers]);
 
   // ─── Add ───
   const handleAdd = async () => {
@@ -159,21 +116,26 @@ export default function AdminCustomerManagement() {
       toast.error("Name, email and password are required");
       return;
     }
-    if (customers.some((c) => c.email === email.trim())) {
-      toast.error("This email is already registered");
-      return;
+    setSubmitting(true);
+    try {
+      const end = getSubscriptionEnd(subType, startDate, customDays ? parseInt(customDays) : undefined);
+      await createCustomer({
+        name: name.trim(),
+        email: email.trim(),
+        password,
+        subscription_type: subType,
+        subscription_start: startDate,
+        subscription_end: end,
+      });
+      toast.success(`${name} registered successfully!`);
+      resetAddForm();
+      setAddDialogOpen(false);
+      await loadCustomers();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to register customer");
+    } finally {
+      setSubmitting(false);
     }
-    const end = getSubscriptionEnd(subType, startDate, customDays ? parseInt(customDays) : undefined);
-    const newCustomer: AppCustomer = {
-      id: `cust_${Date.now()}`, name: name.trim(), email: email.trim(), password,
-      subscription_type: subType, subscription_start: startDate, subscription_end: end,
-      is_active: true, created_at: new Date().toISOString(),
-    };
-    addCustomer(newCustomer);
-    await syncToSupabase(newCustomer);
-    toast.success(`${name} registered successfully!`);
-    resetAddForm();
-    setAddDialogOpen(false);
   };
 
   // ─── Edit ───
@@ -191,39 +153,47 @@ export default function AdminCustomerManagement() {
       toast.error("Name, email and password are required");
       return;
     }
-    if (customers.some((c) => c.email === editEmail.trim() && c.id !== editCustomer.id)) {
-      toast.error("This email is already registered to another customer");
-      return;
+    setSubmitting(true);
+    try {
+      await updateCustomerApi({
+        id: editCustomer.id,
+        name: editName.trim(),
+        email: editEmail.trim(),
+        password: editPassword,
+      });
+      toast.success(`${editName}'s details updated`);
+      setEditCustomer(null);
+      await loadCustomers();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update");
+    } finally {
+      setSubmitting(false);
     }
-    const updated: AppCustomer = { ...editCustomer, name: editName.trim(), email: editEmail.trim(), password: editPassword };
-    const updatedList = customers.map((c) => c.id === editCustomer.id ? updated : c);
-    setCustomers(updatedList);
-    localStorage.setItem("app_customers", JSON.stringify(updatedList));
-    await syncToSupabase(updated);
-    toast.success(`${editName}'s details updated`);
-    setEditCustomer(null);
   };
 
   // ─── Block/Unblock ───
   const handleToggleBlock = async (c: AppCustomer) => {
     const newActive = !c.is_active;
     if (!newActive && !confirm(`Block ${c.name}? They will not be able to login.`)) return;
-    const updated: AppCustomer = { ...c, is_active: newActive };
-    const updatedList = customers.map((cust) => cust.id === c.id ? updated : cust);
-    setCustomers(updatedList);
-    localStorage.setItem("app_customers", JSON.stringify(updatedList));
-    await syncToSupabase(updated);
-    toast.success(`${c.name} has been ${newActive ? "unblocked" : "blocked"}`);
+    try {
+      await updateCustomerApi({ id: c.id, is_active: newActive });
+      toast.success(`${c.name} has been ${newActive ? "unblocked" : "blocked"}`);
+      await loadCustomers();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update");
+    }
   };
 
   // ─── Delete ───
   const handleDelete = async (id: string, customerName: string) => {
     if (!confirm(`Delete ${customerName}?`)) return;
-    const updatedList = customers.filter((c) => c.id !== id);
-    deleteCustomer(id);
-    localStorage.setItem("app_customers", JSON.stringify(updatedList));
-    await deleteFromSupabase(id);
-    toast.success(`${customerName} deleted`);
+    try {
+      await deleteCustomerApi(id);
+      toast.success(`${customerName} deleted`);
+      await loadCustomers();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete");
+    }
   };
 
   const resetAddForm = () => {
@@ -233,6 +203,14 @@ export default function AdminCustomerManagement() {
 
   const activeCount = customers.filter((c) => c.is_active && new Date(c.subscription_end) > new Date()).length;
   const blockedCount = customers.filter((c) => !c.is_active || new Date(c.subscription_end) <= new Date()).length;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -299,7 +277,10 @@ export default function AdminCustomerManagement() {
                   <div className="flex justify-between"><span className="text-slate-500">Type:</span><span className="font-medium capitalize">{subType}</span></div>
                   <div className="flex justify-between"><span className="text-slate-500">End:</span><span className="font-medium text-emerald-600">{getSubscriptionEnd(subType, startDate, customDays ? parseInt(customDays) : undefined)}</span></div>
                 </div>
-                <Button onClick={handleAdd} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer">Register Customer</Button>
+                <Button onClick={handleAdd} disabled={submitting} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer">
+                  {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <UserPlus className="w-4 h-4 mr-2" />}
+                  {submitting ? "Registering..." : "Register Customer"}
+                </Button>
               </div>
             </DialogContent>
           </Dialog>
@@ -394,7 +375,10 @@ export default function AdminCustomerManagement() {
               </div>
             </div>
             <div className="flex gap-3 pt-2">
-              <Button onClick={handleEdit} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"><Pencil className="w-4 h-4 mr-2" />Save</Button>
+              <Button onClick={handleEdit} disabled={submitting} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer">
+                {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Pencil className="w-4 h-4 mr-2" />}
+                {submitting ? "Saving..." : "Save"}
+              </Button>
               <Button variant="outline" onClick={() => setEditCustomer(null)} className="flex-1 cursor-pointer">Cancel</Button>
             </div>
           </div>

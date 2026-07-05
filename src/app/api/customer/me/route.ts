@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyCustomerToken, CUSTOMER_COOKIE_NAME } from "@/lib/auth/cookie-sign";
-import { createClient } from "@/lib/supabase/server";
+import { db } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
   const token = request.cookies.get(CUSTOMER_COOKIE_NAME)?.value;
@@ -14,16 +14,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Invalid session" }, { status: 401 });
   }
 
-  // Re-verify from Supabase (subscription might have been changed by admin)
+  // Re-verify from database (subscription might have been changed by admin)
   try {
-    const supabase = createClient();
-    const { data: customer, error } = await supabase
-      .from("app_customers")
-      .select("id, name, email, subscription_type, subscription_start, subscription_end, is_active")
-      .eq("id", payload.id)
-      .single();
+    const customer = await db.appCustomer.findUnique({
+      where: { id: payload.id },
+    });
 
-    if (error || !customer) {
+    if (!customer) {
       return NextResponse.json({ error: "Customer not found" }, { status: 401 });
     }
 
@@ -35,9 +32,20 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "SUBSCRIPTION_EXPIRED" }, { status: 403 });
     }
 
-    return NextResponse.json({ customer });
-  } catch {
-    // If Supabase is not available, return cookie data (dev mode)
+    return NextResponse.json({
+      customer: {
+        id: customer.id,
+        name: customer.name,
+        email: customer.email,
+        subscription_type: customer.subscription_type,
+        subscription_start: customer.subscription_start,
+        subscription_end: customer.subscription_end,
+        is_active: customer.is_active,
+      },
+    });
+  } catch (err) {
+    console.error("Customer me error:", err);
+    // If DB fails, return cookie data as fallback
     return NextResponse.json({ customer: payload });
   }
 }

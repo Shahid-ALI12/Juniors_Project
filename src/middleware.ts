@@ -31,12 +31,7 @@ export async function middleware(request: NextRequest) {
       return NextResponse.next();
     }
 
-    // All other /customer/* routes require customer auth
-    if (!supabaseConfigured) {
-      // Dev mode — allow but no protection
-      return NextResponse.next();
-    }
-
+    // All other /customer/* routes require customer auth cookie
     const token = request.cookies.get(CUSTOMER_COOKIE_NAME)?.value;
     if (!token) {
       const url = request.nextUrl.clone();
