@@ -36,7 +36,6 @@ export default function CustomerLoginPage() {
       const customer = loginCustomer(email.trim(), password);
 
       if (!customer) {
-        // Check if user exists but is blocked/expired
         const allCustomers = JSON.parse(localStorage.getItem("app_customers") || "[]");
         const found = allCustomers.find((c: { email: string }) => c.email === email.trim());
 
@@ -53,14 +52,12 @@ export default function CustomerLoginPage() {
         return;
       }
 
-      // Check subscription
       if (new Date(customer.subscription_end) <= new Date()) {
         toast.error("Aapki subscription expire ho gayi hai. Admin se contact karo.");
         setLoading(false);
         return;
       }
 
-      // Success
       localStorage.setItem("customer_session", JSON.stringify(customer));
       toast.success(`Welcome ${customer.name}!`);
       router.push("/customer");

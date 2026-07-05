@@ -66,7 +66,7 @@ export default function AppSidebar() {
   const handleLogout = async () => {
     setLoggingOut(true);
     await signOut();
-    window.location.href = "/login";
+    window.location.href = "/admin/login";
   };
 
   return (

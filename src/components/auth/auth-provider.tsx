@@ -7,7 +7,9 @@ import React from "react";
 
 const isPlaceholder =
   !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-  process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder");
+  process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder") ||
+  !process.env.NEXT_PUBLIC_SUPABASE_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_KEY === "placeholder-key";
 
 interface AuthContextType {
   user: User | null;
@@ -56,12 +58,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     if (isPlaceholder) {
-      window.location.href = "/login";
+      window.location.href = "/admin/login";
       return;
     }
     await supabase.auth.signOut();
     setUser(null);
-    window.location.href = "/login";
+    window.location.href = "/admin/login";
   };
 
   return (

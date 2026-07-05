@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { ShieldCheck, Loader2, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 
-export default function LoginPage() {
+export default function AdminLoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -49,7 +49,6 @@ export default function LoginPage() {
 
       <Card className="w-full max-w-md relative z-10 border-slate-700 bg-slate-800/80 backdrop-blur-xl shadow-2xl">
         <CardHeader className="text-center space-y-4 pb-2">
-          {/* Logo / Icon */}
           <div className="mx-auto w-16 h-16 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center justify-center">
             <ShieldCheck className="w-8 h-8 text-emerald-400" />
           </div>
@@ -69,11 +68,11 @@ export default function LoginPage() {
         <CardContent className="pt-4">
           <form onSubmit={handleLogin} className="space-y-5">
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-slate-300 text-sm font-medium">
+              <Label htmlFor="admin-email" className="text-slate-300 text-sm font-medium">
                 Email Address
               </Label>
               <Input
-                id="email"
+                id="admin-email"
                 type="email"
                 placeholder="admin@example.com"
                 value={email}
@@ -85,12 +84,12 @@ export default function LoginPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-slate-300 text-sm font-medium">
+              <Label htmlFor="admin-password" className="text-slate-300 text-sm font-medium">
                 Password
               </Label>
               <div className="relative">
                 <Input
-                  id="password"
+                  id="admin-password"
                   type={showPassword ? "text" : "password"}
                   placeholder="Enter your password"
                   value={password}
@@ -102,7 +101,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-300 transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-300 transition-colors cursor-pointer"
                   tabIndex={-1}
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}

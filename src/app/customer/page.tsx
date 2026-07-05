@@ -28,7 +28,7 @@ export default function CustomerDashboard() {
   useEffect(() => {
     const session = localStorage.getItem("customer_session");
     if (!session) {
-      router.replace("/customer-login");
+      router.replace("/customer/login");
       return;
     }
     const parsed = JSON.parse(session) as AppCustomer;
@@ -37,7 +37,7 @@ export default function CustomerDashboard() {
     if (new Date(parsed.subscription_end) <= new Date() || !parsed.is_active) {
       toast.error("Aapki subscription expire/block ho gayi hai");
       localStorage.removeItem("customer_session");
-      router.replace("/customer-login");
+      router.replace("/customer/login");
       return;
     }
 
@@ -48,7 +48,7 @@ export default function CustomerDashboard() {
     logoutCustomer();
     localStorage.removeItem("customer_session");
     toast.success("Logout ho gaye");
-    router.replace("/customer-login");
+    router.replace("/customer/login");
   };
 
   if (!customer) {
