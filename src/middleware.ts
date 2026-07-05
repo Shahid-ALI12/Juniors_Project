@@ -13,9 +13,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // ─── Root — redirect to admin login ───
+  // ─── Root — always redirect to admin login ───
   if (pathname === "/") {
-    return NextResponse.next();
+    const url = request.nextUrl.clone();
+    url.pathname = "/admin/login";
+    return NextResponse.redirect(url);
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -48,7 +50,7 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    // Server-side subscription check (Fix #3)
+    // Server-side subscription check
     if (!payload.is_active) {
       const url = request.nextUrl.clone();
       url.pathname = "/customer/login";
@@ -70,9 +72,9 @@ export async function middleware(request: NextRequest) {
   // ADMIN ROUTES — /admin/login, /admin
   // ═══════════════════════════════════════════════════
   if (pathname.startsWith("/admin")) {
-    // Admin login page — always allow
+    // Admin login page
     if (pathname === "/admin/login") {
-      // If Supabase not configured, skip redirect
+      // If Supabase not configured, allow (dev mode — no auth available)
       if (!supabaseConfigured) {
         return NextResponse.next();
       }
@@ -99,11 +101,12 @@ export async function middleware(request: NextRequest) {
       return supabaseResponse;
     }
 
-    // All other /admin/* routes require admin auth
+    // All other /admin/* routes — MUST be authenticated
     if (!supabaseConfigured) {
-      // Dev mode — allow without protection
-      console.warn("⚠️ Admin routes are UNPROTECTED — Supabase not configured");
-      return NextResponse.next();
+      // Dev mode with no Supabase — redirect to login (shows login page, can't auth)
+      const url = request.nextUrl.clone();
+      url.pathname = "/admin/login";
+      return NextResponse.redirect(url);
     }
 
     let supabaseResponse = NextResponse.next({ request });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,19 +23,37 @@ const tabs = [
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<string>("customers");
-  const { user, signOut, loading: authLoading } = useAuth();
+  const { user, signOut, loading: authLoading, isConfigured } = useAuth();
   const [loggingOut, setLoggingOut] = useState(false);
+  const router = useRouter();
+
+  // Client-side auth guard — redirect if not logged in
+  useEffect(() => {
+    if (!authLoading && !user && isConfigured) {
+      router.replace("/admin/login");
+    }
+  }, [authLoading, user, isConfigured, router]);
 
   const handleLogout = async () => {
     setLoggingOut(true);
     await signOut();
-    window.location.href = "/admin/login";
+    router.replace("/admin/login");
   };
 
+  // Loading state
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
+      </div>
+    );
+  }
+
+  // Not authenticated (will redirect via useEffect)
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
       </div>
     );
   }
@@ -57,7 +76,7 @@ export default function AdminDashboard() {
           <div className="flex items-center gap-4">
             <div className="hidden sm:flex items-center gap-2 text-sm text-slate-500">
               <ShieldCheck className="w-4 h-4 text-emerald-500" />
-              <span>{user?.email || "Admin"}</span>
+              <span>{user.email}</span>
             </div>
             <Button
               variant="outline"
