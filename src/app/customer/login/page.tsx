@@ -1,72 +1,88 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { useCustomerAuthStore } from "@/store";
+import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LogIn, Loader2, Eye, EyeOff, Milk } from "lucide-react";
+import { LogIn, Loader2, Eye, EyeOff, Milk, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
+import { useEffect, Suspense } from "react";
 
-export default function CustomerLoginPage() {
+function getErrorMessage(reason: string | null): string {
+  switch (reason) {
+    case "invalid_session": return "Your session is invalid. Please login again.";
+    case "blocked": return "Your account has been blocked by the admin.";
+    case "expired": return "Your subscription has expired. Contact admin to renew.";
+    default: return "";
+  }
+}
+
+function CustomerLoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const { loginCustomer, setCustomers } = useCustomerAuthStore();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
-    const saved = localStorage.getItem("app_customers");
-    if (saved) setCustomers(JSON.parse(saved));
-  }, [setCustomers]);
+    const reason = searchParams.get("reason");
+    if (reason) {
+      toast.error(getErrorMessage(reason));
+    }
+  }, [searchParams]);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
-      toast.error("Email aur password daalo");
+      toast.error("Email and password are required");
       return;
     }
 
     setLoading(true);
 
-    setTimeout(() => {
-      const customer = loginCustomer(email.trim(), password);
+    try {
+      const res = await fetch("/api/customer/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), password }),
+      });
 
-      if (!customer) {
-        const allCustomers = JSON.parse(localStorage.getItem("app_customers") || "[]");
-        const found = allCustomers.find((c: { email: string }) => c.email === email.trim());
+      const data = await res.json();
 
-        if (!found) {
-          toast.error("Ye email registered nahi hai. Admin se contact karo.");
-        } else if (!found.is_active) {
-          toast.error("Aapka account block hai. Admin se contact karo.");
-        } else if (new Date(found.subscription_end) <= new Date()) {
-          toast.error("Aapki subscription expire ho gayi hai. Admin se renew karwao.");
-        } else {
-          toast.error("Password galat hai");
+      if (!res.ok) {
+        switch (data.error) {
+          case "EMAIL_NOT_FOUND":
+            toast.error("This email is not registered. Contact admin.");
+            break;
+          case "ACCOUNT_BLOCKED":
+            toast.error("Your account is blocked. Contact admin.");
+            break;
+          case "SUBSCRIPTION_EXPIRED":
+            toast.error("Your subscription has expired. Contact admin to renew.");
+            break;
+          case "INVALID_PASSWORD":
+            toast.error("Incorrect password");
+            break;
+          default:
+            toast.error(data.error || "Login failed. Please try again.");
         }
         setLoading(false);
         return;
       }
 
-      if (new Date(customer.subscription_end) <= new Date()) {
-        toast.error("Aapki subscription expire ho gayi hai. Admin se contact karo.");
-        setLoading(false);
-        return;
-      }
-
-      localStorage.setItem("customer_session", JSON.stringify(customer));
-      toast.success(`Welcome ${customer.name}!`);
+      toast.success(`Welcome ${data.customer.name}!`);
       router.push("/customer");
-    }, 800);
+    } catch {
+      toast.error("Network error. Please try again.");
+      setLoading(false);
+    }
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 via-white to-teal-50 p-4">
-      {/* Background decoration */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-96 h-96 bg-emerald-200/20 rounded-full blur-3xl" />
         <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-teal-200/20 rounded-full blur-3xl" />
@@ -151,10 +167,18 @@ export default function CustomerLoginPage() {
           </form>
 
           <p className="text-center text-xs text-slate-400 mt-6 pt-5 border-t border-slate-100">
-            Login credentials admin se milegi. Subscription active honi chahiye.
+            Login credentials are provided by admin. Subscription must be active.
           </p>
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function CustomerLoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="animate-spin w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full" /></div>}>
+      <CustomerLoginForm />
+    </Suspense>
   );
 }

@@ -13,7 +13,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { UserCheck, Ban, Clock, RefreshCw, CalendarDays, ShieldOff } from "lucide-react";
+import { UserCheck, Ban, Clock, RefreshCw, ShieldOff } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+
+const isSupabaseConfigured = () =>
+  process.env.NEXT_PUBLIC_SUPABASE_URL &&
+  !process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder");
 
 function getSubscriptionEnd(type: SubscriptionType, startDate: string, customDays?: number): string {
   const start = new Date(startDate);
@@ -38,30 +43,35 @@ export default function AdminBlockedUsers() {
     }
   }, [setCustomers]);
 
+  const syncToSupabase = async (customer: AppCustomer) => {
+    if (!isSupabaseConfigured()) return;
+    try {
+      const supabase = createClient();
+      await supabase.from("app_customers").upsert({
+        id: customer.id, name: customer.name, email: customer.email,
+        password: customer.password, subscription_type: customer.subscription_type,
+        subscription_start: customer.subscription_start, subscription_end: customer.subscription_end,
+        is_active: customer.is_active, created_at: customer.created_at,
+      }, { onConflict: "id" });
+    } catch (err) { console.error("Supabase sync error:", err); }
+  };
+
   const blockedCustomers = customers.filter(
     (c) => !c.is_active || new Date(c.subscription_end) <= new Date()
   );
 
-  const handleApprove = () => {
+  const handleApprove = async () => {
     if (!selectedCustomer) return;
     const end = getSubscriptionEnd(subType, startDate, customDays ? parseInt(customDays) : undefined);
-    updateCustomer(selectedCustomer.id, {
-      is_active: true,
-      subscription_type: subType,
-      subscription_start: startDate,
-      subscription_end: end,
-    });
-    localStorage.setItem(
-      "app_customers",
-      JSON.stringify(
-        customers.map((c) =>
-          c.id === selectedCustomer.id
-            ? { ...c, is_active: true, subscription_type: subType, subscription_start: startDate, subscription_end: end }
-            : c
-        )
-      )
-    );
-    toast.success(`${selectedCustomer.name} ka subscription approve ho gaya!`);
+    const updated: AppCustomer = {
+      ...selectedCustomer, is_active: true,
+      subscription_type: subType, subscription_start: startDate, subscription_end: end,
+    };
+    const updatedList = customers.map((c) => c.id === selectedCustomer.id ? updated : c);
+    setCustomers(updatedList);
+    localStorage.setItem("app_customers", JSON.stringify(updatedList));
+    await syncToSupabase(updated);
+    toast.success(`${selectedCustomer.name} has been re-approved!`);
     setDialogOpen(false);
     setSelectedCustomer(null);
     setSubType("monthly");
@@ -119,8 +129,8 @@ export default function AdminBlockedUsers() {
           {blockedCustomers.length === 0 ? (
             <div className="text-center py-12 text-slate-400">
               <ShieldOff className="w-12 h-12 mx-auto mb-3 opacity-30" />
-              <p>Koi blocked ya expired user nahi hai</p>
-              <p className="text-sm mt-1">Sab customers active hain!</p>
+              <p>No blocked or expired users</p>
+              <p className="text-sm mt-1">All customers are active!</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -185,8 +195,8 @@ export default function AdminBlockedUsers() {
                                 <div className="bg-slate-50 rounded-lg p-3 text-sm">
                                   <p className="text-slate-600">
                                     <span className="font-medium">{c.name}</span> ka subscription{" "}
-                                    {isAdminBlocked ? "admin ne block kiya tha" : "expire ho gaya tha"}.
-                                    Naya subscription do toh wo phir se login kar sakega.
+                                    {isAdminBlocked ? "was blocked by admin" : "subscription had expired"}.
+                                    Assign a new subscription to re-enable login access.
                                   </p>
                                 </div>
 

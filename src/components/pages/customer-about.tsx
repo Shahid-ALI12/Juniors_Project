@@ -1,41 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import type { AppCustomer } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  User,
-  CalendarDays,
-  Clock,
-  ShieldCheck,
-  CheckCircle2,
-  TrendingUp,
-  AlertTriangle,
-  Mail,
-  CreditCard,
+  User, CalendarDays, Clock, ShieldCheck,
+  CheckCircle2, TrendingUp, AlertTriangle, Mail, CreditCard,
 } from "lucide-react";
 
-export default function CustomerAbout() {
-  const [customer, setCustomer] = useState<AppCustomer | null>(null);
-  const router = useRouter();
+interface Props {
+  customer?: AppCustomer;
+}
 
-  useEffect(() => {
-    const session = localStorage.getItem("customer_session");
-    if (!session) {
-      router.replace("/customer/login");
-      return;
-    }
-    const parsed = JSON.parse(session) as AppCustomer;
-    if (new Date(parsed.subscription_end) <= new Date() || !parsed.is_active) {
-      localStorage.removeItem("customer_session");
-      router.replace("/customer/login");
-      return;
-    }
-    setCustomer(parsed);
-  }, [router]);
-
+export default function CustomerAbout({ customer }: Props) {
   if (!customer) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -71,9 +48,17 @@ export default function CustomerAbout() {
               Your account is active. You can access all features and manage your data.
             </p>
           </div>
-          <div className="bg-white/15 backdrop-blur rounded-xl px-5 py-3 text-center">
-            <div className="text-3xl font-bold">{daysRemaining}</div>
-            <div className="text-emerald-100 text-xs mt-0.5">Days Left</div>
+          <div className="flex items-center gap-3">
+            <div className="bg-white/15 backdrop-blur rounded-xl px-5 py-3 text-center">
+              <div className="text-3xl font-bold">{daysRemaining}</div>
+              <div className="text-emerald-100 text-xs mt-0.5">Days Left</div>
+            </div>
+            {daysRemaining <= 7 && (
+              <div className="hidden sm:flex items-center gap-2 bg-amber-500/20 backdrop-blur rounded-xl px-3 py-2.5">
+                <AlertTriangle className="w-4 h-4 text-amber-300" />
+                <span className="text-xs text-amber-200">Expiring soon</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -154,11 +139,9 @@ export default function CustomerAbout() {
             <div className="w-full bg-slate-100 rounded-full h-3">
               <div
                 className={`h-3 rounded-full transition-all duration-500 ${
-                  daysRemaining <= 7
-                    ? "bg-gradient-to-r from-red-400 to-red-500"
-                    : daysRemaining <= 15
-                    ? "bg-gradient-to-r from-amber-400 to-amber-500"
-                    : "bg-gradient-to-r from-emerald-400 to-teal-500"
+                  daysRemaining <= 7 ? "bg-gradient-to-r from-red-400 to-red-500"
+                  : daysRemaining <= 15 ? "bg-gradient-to-r from-amber-400 to-amber-500"
+                  : "bg-gradient-to-r from-emerald-400 to-teal-500"
                 }`}
                 style={{ width: `${progressPercent}%` }}
               />
