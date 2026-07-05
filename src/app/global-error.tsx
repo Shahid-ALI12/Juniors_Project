@@ -28,7 +28,7 @@ export default function GlobalError({
             fontFamily: "system-ui, sans-serif",
           }}
         >
-          <div style={{ maxWidth: "400px", textAlign: "center", spaceY: "16px" }}>
+          <div style={{ maxWidth: "400px", textAlign: "center" }}>
             <div style={{ fontSize: "64px", lineHeight: 1 }}>💥</div>
             <h1 style={{ fontSize: "24px", fontWeight: 700, color: "#0f172a", margin: "16px 0 8px" }}>
               Critical Error
