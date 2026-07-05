@@ -157,6 +157,8 @@ export default function DailyEntryPage() {
   const rickshawNum = parseFloat(rickshawFare) || 0;
   const grandTotal = cartTotal + rickshawNum;
 
+  const unitType = unitChoice;
+
   const filteredCustomers = useMemo(() => {
     if (!customerSearch.trim()) return customers.filter((c) => c.is_active);
     const q = customerSearch.toLowerCase();
