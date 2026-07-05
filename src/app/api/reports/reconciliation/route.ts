@@ -1,0 +1,20 @@
+import { NextRequest, NextResponse } from "next/server";
+import { requireUser } from "@/lib/auth/server-user";
+import { getReconciliation } from "@/lib/data/reports";
+
+export async function GET(request: NextRequest) {
+  const auth = await requireUser();
+  if (!auth.ok) return auth.response;
+
+  try {
+    const url = new URL(request.url);
+    const from = url.searchParams.get("from") || new Date().toISOString().split("T")[0];
+    const to = url.searchParams.get("to") || from;
+
+    const data = await getReconciliation(from, to);
+    return NextResponse.json(data);
+  } catch (err) {
+    console.error("Reconciliation error:", err);
+    return NextResponse.json({ error: "Failed to fetch reconciliation data" }, { status: 500 });
+  }
+}

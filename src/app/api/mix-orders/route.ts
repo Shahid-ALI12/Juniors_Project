@@ -1,0 +1,78 @@
+import { NextRequest, NextResponse } from "next/server";
+import { requireUser } from "@/lib/auth/server-user";
+import { getMixOrders, createMixOrderRPC, deleteMixOrder } from "@/lib/data/mix-orders";
+import { getSales, deleteSalesByMixOrder } from "@/lib/data/sales";
+
+export async function GET() {
+  const auth = await requireUser();
+  if (!auth.ok) return auth.response;
+
+  try {
+    const orders = await getMixOrders();
+    // Also get sales for each mix order
+    const sales = await getSales({});
+    const salesByMix: Record<number, typeof sales> = {};
+    for (const s of sales) {
+      if (s.mix_order_id) {
+        if (!salesByMix[s.mix_order_id]) salesByMix[s.mix_order_id] = [];
+        salesByMix[s.mix_order_id].push(s);
+      }
+    }
+    return NextResponse.json({ orders, salesByMix });
+  } catch (err) {
+    console.error("Fetch mix orders error:", err);
+    return NextResponse.json({ error: "Failed to fetch mix orders" }, { status: 500 });
+  }
+}
+
+// POST — atomic mix order via RPC (parent + sale lines)
+export async function POST(request: NextRequest) {
+  const auth = await requireUser();
+  if (!auth.ok) return auth.response;
+
+  try {
+    const body = await request.json();
+    const { customer_id, location_id, order_date, target_weight_kg, cash_received, items } = body;
+
+    if (!customer_id || !location_id || !items?.length) {
+      return NextResponse.json({ error: "customer_id, location_id, items required" }, { status: 400 });
+    }
+
+    const id = await createMixOrderRPC({
+      customer_id,
+      location_id,
+      order_date: order_date || new Date().toISOString().split("T")[0],
+      target_weight_kg: target_weight_kg || null,
+      cash_received: Number(cash_received) || 0,
+      entered_by: `${auth.type}:${auth.user.id}`,
+      items: items.map((i: any) => ({
+        product_id: i.product_id,
+        quantity: i.quantity,
+        rate_per_kg: i.rate_per_kg,
+      })),
+    });
+
+    return NextResponse.json({ id }, { status: 201 });
+  } catch (err) {
+    console.error("Create mix order error:", err);
+    return NextResponse.json({ error: "Failed to create mix order" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  const auth = await requireUser();
+  if (!auth.ok) return auth.response;
+
+  try {
+    const url = new URL(request.url);
+    const id = Number(url.searchParams.get("id"));
+    if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+
+    await deleteSalesByMixOrder(id);
+    await deleteMixOrder(id);
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error("Delete mix order error:", err);
+    return NextResponse.json({ error: "Failed to delete mix order" }, { status: 500 });
+  }
+}
