@@ -176,3 +176,24 @@ export interface AccountBalance {
 export const CREDIT_LIMIT = 3_000_000;
 
 export const UTILITY_BILL_TYPES = ["Electricity", "Gas", "Internet", "Water", "Rent", "Labour", "Other"];
+
+// ─── Customer Auth & Subscription ───
+
+export type SubscriptionType = "monthly" | "yearly" | "custom";
+
+export interface AppCustomer {
+  id: string;
+  name: string;
+  email: string;
+  password: string;
+  subscription_type: SubscriptionType;
+  subscription_start: string;
+  subscription_end: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface CustomerSession {
+  customer: AppCustomer;
+  isExpired: boolean;
+}

@@ -13,6 +13,9 @@ const ManageProducts = dynamic(() => import("@/components/pages/manage-products"
 const PurchasesStock = dynamic(() => import("@/components/pages/purchases-stock"), { ssr: false });
 const CustomMixOrder = dynamic(() => import("@/components/pages/custom-mix-order"), { ssr: false });
 
+import AdminCustomerMgmt from "@/components/pages/admin-customer-mgmt";
+import AdminBlockedUsers from "@/components/pages/admin-blocked-users";
+
 const pageMap: Record<string, React.ComponentType> = {
   dashboard: Dashboard,
   "daily-entry": DailyEntry,
@@ -22,6 +25,8 @@ const pageMap: Record<string, React.ComponentType> = {
   "manage-products": ManageProducts,
   "purchases-stock": PurchasesStock,
   "custom-mix": CustomMixOrder,
+  "admin-customers": AdminCustomerMgmt,
+  "admin-blocked": AdminBlockedUsers,
 };
 
 export default function Home() {

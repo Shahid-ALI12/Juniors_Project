@@ -4,11 +4,21 @@ import { createServerClient } from "@supabase/ssr";
 const isPlaceholder = (url: string | undefined) =>
   !url || url.includes("placeholder");
 
+// Routes that don't need admin auth
+const publicRoutes = ["/customer-login", "/customer"];
+
 export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Customer routes - no admin auth needed
+  if (pathname.startsWith("/customer")) {
+    return NextResponse.next();
+  }
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_KEY;
 
-  // If Supabase is not configured, skip auth (dev/preview mode)
+  // If Supabase not configured, skip admin auth (dev/preview)
   if (isPlaceholder(supabaseUrl) || isPlaceholder(supabaseKey)) {
     return NextResponse.next();
   }
@@ -32,22 +42,20 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  // Refresh session
   await supabase.auth.getUser();
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Protect all routes except /login
-  if (!user && !request.nextUrl.pathname.startsWith("/login")) {
+  // Protect admin routes
+  if (!user && !pathname.startsWith("/login")) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
 
-  // If logged in and visiting /login, redirect to /
-  if (user && request.nextUrl.pathname.startsWith("/login")) {
+  if (user && pathname.startsWith("/login")) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     return NextResponse.redirect(url);

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { CartItem, MixIngredient } from "@/types";
+import type { CartItem, MixIngredient, AppCustomer } from "@/types";
 
 interface CartStore {
   items: CartItem[];
@@ -56,4 +56,48 @@ interface AppStore {
 export const useAppStore = create<AppStore>((set) => ({
   activePage: "dashboard",
   setActivePage: (page) => set({ activePage: page }),
+}));
+
+// ─── Customer Auth Store ───
+
+interface CustomerAuthStore {
+  customers: AppCustomer[];
+  loggedInCustomer: AppCustomer | null;
+  setCustomers: (customers: AppCustomer[]) => void;
+  addCustomer: (customer: AppCustomer) => void;
+  updateCustomer: (id: string, updates: Partial<AppCustomer>) => void;
+  deleteCustomer: (id: string) => void;
+  loginCustomer: (email: string, password: string) => AppCustomer | null;
+  logoutCustomer: () => void;
+  isSubscriptionActive: (customer: AppCustomer) => boolean;
+}
+
+export const useCustomerAuthStore = create<CustomerAuthStore>((set, get) => ({
+  customers: [],
+  loggedInCustomer: null,
+  setCustomers: (customers) => set({ customers }),
+  addCustomer: (customer) => set((s) => ({ customers: [...s.customers, customer] })),
+  updateCustomer: (id, updates) =>
+    set((s) => ({
+      customers: s.customers.map((c) => (c.id === id ? { ...c, ...updates } : c)),
+      loggedInCustomer: s.loggedInCustomer?.id === id ? { ...s.loggedInCustomer, ...updates } : s.loggedInCustomer,
+    })),
+  deleteCustomer: (id) =>
+    set((s) => ({
+      customers: s.customers.filter((c) => c.id !== id),
+    })),
+  loginCustomer: (email, password) => {
+    const customer = get().customers.find(
+      (c) => c.email === email && c.password === password && c.is_active
+    );
+    if (customer) {
+      set({ loggedInCustomer: customer });
+      return customer;
+    }
+    return null;
+  },
+  logoutCustomer: () => set({ loggedInCustomer: null }),
+  isSubscriptionActive: (customer) => {
+    return new Date(customer.subscription_end) > new Date();
+  },
 }));

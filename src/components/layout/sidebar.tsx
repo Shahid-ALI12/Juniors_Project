@@ -14,6 +14,8 @@ import {
   Landmark,
   LogOut,
   Shield,
+  Users,
+  ShieldOff,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -44,6 +46,13 @@ const navSections = [
     items: [
       { id: "purchases-stock", label: "Purchases & Stock", icon: Package },
       { id: "manage-products", label: "Manage Products", icon: Settings },
+    ],
+  },
+  {
+    label: "User Management",
+    items: [
+      { id: "admin-customers", label: "Customer Accounts", icon: Users },
+      { id: "admin-blocked", label: "Blocked Users", icon: ShieldOff },
     ],
   },
 ];
@@ -88,9 +97,9 @@ export default function AppSidebar() {
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        <div className="p-4">
+        <div className="p-4 h-screen flex flex-col overflow-hidden">
           {/* Brand */}
-          <div className="flex items-center gap-3 pb-4 mb-4 border-b border-white/[0.08]">
+          <div className="flex items-center gap-3 pb-4 mb-4 border-b border-white/[0.08] shrink-0">
             <div className="w-10 h-10 min-w-[2.5rem] rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center text-lg shadow-lg shadow-blue-600/30">
               🐄
             </div>
@@ -100,8 +109,8 @@ export default function AppSidebar() {
             </div>
           </div>
 
-          {/* Navigation */}
-          <nav className="space-y-5">
+          {/* Navigation - scrollable */}
+          <nav className="space-y-5 overflow-y-auto flex-1 min-h-0 scrollbar-thin">
             {navSections.map((section) => (
               <div key={section.label}>
                 <div className="text-[0.68rem] font-bold tracking-wider uppercase text-slate-600 mb-1.5 ml-2">
