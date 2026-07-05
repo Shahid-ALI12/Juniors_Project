@@ -1,7 +1,7 @@
 // Cookie signing utilities for Edge runtime (middleware compatible)
 // Uses Web Crypto API — works in Next.js Edge middleware
 
-const SIGN_SECRET = (() => {
+function getSecret(): string {
   const secret = process.env.CUSTOMER_TOKEN_SECRET;
   if (!secret) {
     if (process.env.NODE_ENV === "production") {
@@ -11,7 +11,7 @@ const SIGN_SECRET = (() => {
     return "dev-only-fallback-secret-do-not-use-in-production";
   }
   return secret;
-})();
+}
 
 export interface CustomerPayload {
   id: string;
@@ -40,7 +40,7 @@ async function hmacSha256(message: string, secret: string): Promise<string> {
 export async function signCustomerToken(payload: CustomerPayload): Promise<string> {
   const json = JSON.stringify(payload);
   const encoded = btoa(json);
-  const signature = await hmacSha256(encoded, SIGN_SECRET);
+  const signature = await hmacSha256(encoded, getSecret());
   return `${encoded}.${signature}`;
 }
 
@@ -54,7 +54,7 @@ export async function verifyCustomerToken(
     const encoded = token.slice(0, dotIndex);
     const signature = token.slice(dotIndex + 1);
 
-    const expected = await hmacSha256(encoded, SIGN_SECRET);
+    const expected = await hmacSha256(encoded, getSecret());
     if (signature !== expected) return null;
 
     const json = atob(encoded);

@@ -537,3 +537,6 @@ Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allow
 ○ Compiling /admin/login ...
  GET /admin/login 200 in 4.6s (compile: 4.2s, proxy.ts: 77ms, render: 241ms)
  GET /admin/login 200 in 60ms (compile: 4ms, proxy.ts: 6ms, render: 50ms)
+ GET /admin/login 200 in 110ms (compile: 5ms, proxy.ts: 3ms, render: 102ms)
+ GET /admin/login 200 in 57ms (compile: 8ms, proxy.ts: 6ms, render: 43ms)
+✓ Compiled in 120ms
