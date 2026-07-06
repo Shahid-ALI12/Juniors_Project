@@ -1,10 +1,11 @@
+import { requireAdminUser, requireAdmin } from "@/lib/auth/server-user";
 import { NextRequest, NextResponse } from "next/server";
-import { requireUser, requireAdmin } from "@/lib/auth/server-user";
+
 import { getCashAccounts, createCashAccount } from "@/lib/data/cash";
 import { getErrorDetail } from "@/lib/api-error";
 
 export async function GET() {
-  const auth = await requireUser();
+  const auth = await requireAdminUser();
   if (!auth.ok) return auth.response;
 
   try {

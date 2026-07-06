@@ -1,5 +1,6 @@
+import { requireAdminUser, requireAdmin } from "@/lib/auth/server-user";
 import { NextRequest, NextResponse } from "next/server";
-import { requireUser, requireAdmin } from "@/lib/auth/server-user";
+
 import { getMixOrders, createMixOrderRPC, deleteMixOrder } from "@/lib/data/mix-orders";
 import { deleteSalesByMixOrder } from "@/lib/data/sales";
 import { admin } from "@/lib/supabase/server-admin";
@@ -9,7 +10,7 @@ import { getErrorDetail } from "@/lib/api-error";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const auth = await requireUser();
+  const auth = await requireAdminUser();
   if (!auth.ok) return auth.response;
 
   try {

@@ -7,19 +7,11 @@ import dynamic from "next/dynamic";
 import { cn } from "@/lib/utils";
 import { useAppStore, masterCache } from "@/store";
 import {
-  LayoutDashboard, FileText, BookOpen, CheckCircle,
-  Package, Settings, FlaskConical, Landmark, LogOut, User, Info,
+  BookOpen, LogOut, User, Info,
 } from "lucide-react";
 import { toast } from "sonner";
 
-const Dashboard = dynamic(() => import("@/components/pages/dashboard"), { ssr: false, loading: () => <PageLoader /> });
-const DailyEntry = dynamic(() => import("@/components/pages/daily-entry"), { ssr: false, loading: () => <PageLoader /> });
 const CustomerKhata = dynamic(() => import("@/components/pages/customer-khata"), { ssr: false, loading: () => <PageLoader /> });
-const DayReconciliation = dynamic(() => import("@/components/pages/day-reconciliation"), { ssr: false, loading: () => <PageLoader /> });
-const CashManagement = dynamic(() => import("@/components/pages/cash-management"), { ssr: false, loading: () => <PageLoader /> });
-const ManageProducts = dynamic(() => import("@/components/pages/manage-products"), { ssr: false, loading: () => <PageLoader /> });
-const PurchasesStock = dynamic(() => import("@/components/pages/purchases-stock"), { ssr: false, loading: () => <PageLoader /> });
-const CustomMixOrder = dynamic(() => import("@/components/pages/custom-mix-order"), { ssr: false, loading: () => <PageLoader /> });
 const CustomerAbout = dynamic(() => import("@/components/pages/customer-about"), { ssr: false, loading: () => <PageLoader /> });
 
 function PageLoader() {
@@ -28,36 +20,12 @@ function PageLoader() {
 
 const pageMap: Record<string, React.ComponentType<{ customer?: AppCustomer }>> = {
   about: CustomerAbout,
-  dashboard: Dashboard,
-  "daily-entry": DailyEntry,
-  "customer-khata": CustomerKhata,
-  reconciliation: DayReconciliation,
-  "cash-mgmt": CashManagement,
-  "manage-products": ManageProducts,
-  "purchases-stock": PurchasesStock,
-  "custom-mix": CustomMixOrder,
+  "my-khata": CustomerKhata,
 };
 
 const navSections = [
   { label: "Account", items: [{ id: "about", label: "About", icon: Info }] },
-  { label: "Overview", items: [{ id: "dashboard", label: "Dashboard", icon: LayoutDashboard }] },
-  {
-    label: "Daily Operations",
-    items: [
-      { id: "daily-entry", label: "Daily Entry", icon: FileText },
-      { id: "custom-mix", label: "Custom Mix Order", icon: FlaskConical },
-      { id: "reconciliation", label: "Day Reconciliation", icon: CheckCircle },
-      { id: "cash-mgmt", label: "Cash Management", icon: Landmark },
-    ],
-  },
-  { label: "Customers", items: [{ id: "customer-khata", label: "Customer Khata", icon: BookOpen }] },
-  {
-    label: "Inventory",
-    items: [
-      { id: "purchases-stock", label: "Purchases & Stock", icon: Package },
-      { id: "manage-products", label: "Manage Products", icon: Settings },
-    ],
-  },
+  { label: "My Data", items: [{ id: "my-khata", label: "My Khata", icon: BookOpen }] },
 ];
 
 export default function CustomerPortal() {
@@ -88,23 +56,18 @@ export default function CustomerPortal() {
     }
   };
 
-  // Prefetch master data in background after auth check
-  useEffect(() => {
-    // Trigger background prefetch of commonly used data
-    Promise.all([
-      fetch("/api/products").then(r => r.ok ? r.json() : null).catch(() => null),
-      fetch("/api/locations").then(r => r.ok ? r.json() : null).catch(() => null),
-    ]).then(([p, l]) => {
-      if (p?.products) masterCache.products = { data: p.products, fetchedAt: Date.now() };
-      if (l?.locations) masterCache.locations = { data: l.locations, fetchedAt: Date.now() };
-    });
-  }, []);
+  // No master data prefetch needed — customer portal only shows about & khata
 
   const handleLogout = async () => {
     setLoggingOut(true);
     try {
       await fetch("/api/customer/auth", { method: "DELETE" });
     } catch {}
+    // Clear all client-side state
+    setCustomer(null);
+    masterCache.products = null as any;
+    masterCache.locations = null as any;
+    setActivePage("about");
     toast.success("Logged out successfully");
     router.replace("/customer/login");
   };

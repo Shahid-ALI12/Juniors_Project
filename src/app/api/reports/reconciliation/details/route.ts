@@ -1,5 +1,6 @@
+import { requireAdminUser } from "@/lib/auth/server-user";
 import { NextRequest, NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth/server-user";
+
 import { admin } from "@/lib/supabase/server-admin";
 import { getErrorDetail } from "@/lib/api-error";
 
@@ -12,7 +13,7 @@ function pktToday(): string {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireUser();
+  const auth = await requireAdminUser();
   if (!auth.ok) return auth.response;
 
   const type = request.nextUrl.searchParams.get("type") || "";

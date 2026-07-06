@@ -1,5 +1,6 @@
+import { requireAdminUser } from "@/lib/auth/server-user";
 import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth/server-user";
+
 import { getAllLocations } from "@/lib/data/locations";
 import { getErrorDetail } from "@/lib/api-error";
 
@@ -7,7 +8,7 @@ import { getErrorDetail } from "@/lib/api-error";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const auth = await requireUser();
+  const auth = await requireAdminUser();
   if (!auth.ok) return auth.response;
 
   try {

@@ -578,3 +578,14 @@ create index if not exists idx_sales_voided_at on sales (voided_at) where voided
 create index if not exists idx_purchases_voided_at on purchases (voided_at) where voided_at is not null;
 create index if not exists idx_expenses_voided_at on expenses (voided_at) where voided_at is not null;
 create index if not exists idx_mix_orders_voided_at on mix_orders (voided_at) where voided_at is not null;
+
+-- ============================================================
+-- CUSTOMER PORTAL DATA ISOLATION
+-- Links each portal user (app_customers) to a business customer
+-- so they can only see their own khata/balance data.
+-- ============================================================
+do $$ begin
+  if not exists (select 1 from information_schema.columns where table_name = 'app_customers' and column_name = 'linked_customer_id') then
+    alter table app_customers add column linked_customer_id bigint references customers(id) on delete set null;
+  end if;
+end $$;
