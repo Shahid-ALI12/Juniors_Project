@@ -1,153 +1,155 @@
 import { NextResponse } from "next/server";
 import { admin } from "@/lib/supabase/server-admin";
 
-// Diagnostic endpoint — tests specific queries that Purchases & Stock page makes.
+// Diagnostic endpoint — tests Supabase connection, table existence, and RPC functions.
 // Call: GET /api/debug/db-check
-// No auth required — debugging only.
+// No auth required — this is for debugging only. Remove in production if desired.
 
 const TABLES = [
-  "app_customers", "products", "locations", "customers", "suppliers",
-  "product_stock", "sales", "expenses", "purchases",
-  "cash_accounts", "cash_ledger", "cash_transfers", "mix_orders",
+  "app_customers",
+  "products",
+  "locations",
+  "customers",
+  "suppliers",
+  "product_stock",
+  "sales",
+  "expenses",
+  "purchases",
+  "cash_accounts",
+  "cash_ledger",
+  "cash_transfers",
+  "mix_orders",
 ] as const;
 
+const RPC_FUNCTIONS = [
+  "verify_customer_login",
+  "create_sale",
+  "record_purchase",
+  "record_expense",
+  "transfer_cash",
+  "correct_cash_balance",
+  "create_mix_order",
+] as const;
+
+interface CheckResult {
+  table: string;
+  exists: boolean;
+  rowCount?: number;
+  error?: string;
+}
+
+interface RpcCheckResult {
+  function: string;
+  exists: boolean;
+  error?: string;
+}
+
 export async function GET() {
-  const queryTests: { name: string; ok: boolean; error?: string; rows?: number }[] = [];
+  const results: {
+    env: Record<string, boolean>;
+    connection: { ok: boolean; error?: string };
+    tables: CheckResult[];
+    rpcs: RpcCheckResult[];
+    seedData: Record<string, boolean>;
+  } = {
+    env: {
+      NEXT_PUBLIC_SUPABASE_URL: !!(process.env.NEXT_PUBLIC_SUPABASE_URL && !process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder")),
+      NEXT_PUBLIC_SUPABASE_KEY: !!(process.env.NEXT_PUBLIC_SUPABASE_KEY && !process.env.NEXT_PUBLIC_SUPABASE_KEY.includes("placeholder")),
+      SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      CUSTOMER_TOKEN_SECRET: !!process.env.CUSTOMER_TOKEN_SECRET,
+    },
+    connection: { ok: false },
+    tables: [],
+    rpcs: [],
+    seedData: {},
+  };
 
-  // ─── Test 1: Purchases with explicit columns + joins + order ───
+  // Test connection
   try {
-    const { data, error } = await admin
-      .from("purchases")
-      .select("id, purchase_date, product_id, quantity, rate_per_bag, supplier_id, settled_by_customer_id, cash_paid, location_id, notes, entered_by, unit_type, bag_weight_kg, created_at, products(id,name), suppliers(id,name), customers(id,name), locations(id,name)")
-      .order("created_at", { ascending: false });
-    if (error) throw error;
-    queryTests.push({ name: "purchases (explicit cols + 4 joins + order created_at)", ok: true, rows: (data || []).length });
-  } catch (e: any) {
-    queryTests.push({ name: "purchases (explicit cols + 4 joins + order created_at)", ok: false, error: e.message || String(e) });
+    const { error } = await admin.from("app_customers").select("id").limit(1);
+    if (error) {
+      results.connection = { ok: false, error: error.message };
+    } else {
+      results.connection = { ok: true };
+    }
+  } catch (err: any) {
+    results.connection = { ok: false, error: err.message || String(err) };
   }
 
-  // ─── Test 2: Purchases with NO order ───
-  try {
-    const { data, error } = await admin
-      .from("purchases")
-      .select("id, purchase_date, product_id, quantity, rate_per_bag, supplier_id, settled_by_customer_id, cash_paid, location_id, notes, entered_by, unit_type, bag_weight_kg, created_at, products(id,name), suppliers(id,name), customers(id,name), locations(id,name)");
-    if (error) throw error;
-    queryTests.push({ name: "purchases (explicit cols + 4 joins, NO order)", ok: true, rows: (data || []).length });
-  } catch (e: any) {
-    queryTests.push({ name: "purchases (explicit cols + 4 joins, NO order)", ok: false, error: e.message || String(e) });
+  // Check tables
+  for (const table of TABLES) {
+    try {
+      const { count, error } = await admin
+        .from(table)
+        .select("*", { count: "exact", head: true });
+      if (error) {
+        results.tables.push({ table, exists: false, error: error.message });
+      } else {
+        results.tables.push({ table, exists: true, rowCount: count ?? 0 });
+      }
+    } catch (err: any) {
+      results.tables.push({ table, exists: false, error: err.message || String(err) });
+    }
   }
 
-  // ─── Test 3: Stock with explicit columns + joins + order ───
-  try {
-    const { data, error } = await admin
-      .from("product_stock")
-      .select("id, product_id, location_id, stock_quantity, last_bag_weight_kg, created_at, products(id,name), locations(id,name)")
-      .order("product_id", { ascending: true });
-    if (error) throw error;
-    queryTests.push({ name: "stock (explicit cols + 2 joins + order product_id)", ok: true, rows: (data || []).length });
-  } catch (e: any) {
-    queryTests.push({ name: "stock (explicit cols + 2 joins + order product_id)", ok: false, error: e.message || String(e) });
+  // Check RPC functions
+  for (const fn of RPC_FUNCTIONS) {
+    try {
+      const { error } = await admin.rpc(fn);
+      if (error) {
+        const msg = error.message;
+        const fnMissing = msg.includes("does not exist") && msg.includes("function");
+        results.rpcs.push({
+          function: fn,
+          exists: !fnMissing,
+          error: fnMissing ? "Function does not exist in database" : `Exists (test call error: ${msg})`,
+        });
+      } else {
+        results.rpcs.push({ function: fn, exists: true });
+      }
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      const fnMissing = msg.includes("does not exist") && msg.includes("function");
+      results.rpcs.push({
+        function: fn,
+        exists: !fnMissing,
+        error: fnMissing ? "Function does not exist in database" : `Exists (test call error: ${msg})`,
+      });
+    }
   }
 
-  // ─── Test 4: Stock with NO order ───
+  // Check seed data
   try {
-    const { data, error } = await admin
-      .from("product_stock")
-      .select("id, product_id, location_id, stock_quantity, last_bag_weight_kg, created_at, products(id,name), locations(id,name)");
-    if (error) throw error;
-    queryTests.push({ name: "stock (explicit cols + 2 joins, NO order)", ok: true, rows: (data || []).length });
-  } catch (e: any) {
-    queryTests.push({ name: "stock (explicit cols + 2 joins, NO order)", ok: false, error: e.message || String(e) });
+    const { data: locs } = await admin.from("locations").select("name");
+    const locNames = new Set((locs || []).map((l: any) => l.name));
+    results.seedData["locations (Farm, Shop)"] = locNames.has("Farm") && locNames.has("Shop");
+
+    const { data: accts } = await admin.from("cash_accounts").select("name");
+    const acctNames = new Set((accts || []).map((a: any) => a.name));
+    results.seedData["cash_accounts (Cash In Hand)"] = acctNames.has("Cash In Hand");
+
+    const { count: prodCount } = await admin.from("products").select("*", { count: "exact", head: true });
+    results.seedData["products (seeded)"] = (prodCount ?? 0) > 0;
+  } catch {
+    results.seedData = { error: "Could not check seed data" } as any;
   }
 
-  // ─── Test 5: Purchases with * + joins + order (THE OLD BUGGY QUERY) ───
-  try {
-    const { data, error } = await admin
-      .from("purchases")
-      .select("*, products(id,name), suppliers(id,name), customers(id,name), locations(id,name)")
-      .order("created_at", { ascending: false });
-    if (error) throw error;
-    queryTests.push({ name: "purchases (* + 4 joins + order created_at) — OLD BUGGY", ok: true, rows: (data || []).length });
-  } catch (e: any) {
-    queryTests.push({ name: "purchases (* + 4 joins + order created_at) — OLD BUGGY", ok: false, error: e.message || String(e) });
-  }
+  // Summary
+  const missingTables = results.tables.filter((t) => !t.exists).map((t) => t.table);
+  const missingRpcs = results.rpcs.filter((r) => !r.exists).map((r) => r.function);
 
-  // ─── Test 6: Stock with * + joins + order (THE OLD BUGGY QUERY) ───
-  try {
-    const { data, error } = await admin
-      .from("product_stock")
-      .select("*, products(id,name), locations(id,name)")
-      .order("product_id", { ascending: true });
-    if (error) throw error;
-    queryTests.push({ name: "stock (* + 2 joins + order product_id) — OLD BUGGY", ok: true, rows: (data || []).length });
-  } catch (e: any) {
-    queryTests.push({ name: "stock (* + 2 joins + order product_id) — OLD BUGGY", ok: false, error: e.message || String(e) });
-  }
-
-  // ─── Test 7: Simple selects (no joins) ───
-  try {
-    const { data, error } = await admin.from("products").select("*").order("name", { ascending: true });
-    if (error) throw error;
-    queryTests.push({ name: "products (select * + order name)", ok: true, rows: (data || []).length });
-  } catch (e: any) {
-    queryTests.push({ name: "products (select * + order name)", ok: false, error: e.message || String(e) });
-  }
-
-  try {
-    const { data, error } = await admin.from("customers").select("*").order("name", { ascending: true });
-    if (error) throw error;
-    queryTests.push({ name: "customers (select * + order name)", ok: true, rows: (data || []).length });
-  } catch (e: any) {
-    queryTests.push({ name: "customers (select * + order name)", ok: false, error: e.message || String(e) });
-  }
-
-  try {
-    const { data, error } = await admin.from("suppliers").select("*").order("name");
-    if (error) throw error;
-    queryTests.push({ name: "suppliers (select * + order name)", ok: true, rows: (data || []).length });
-  } catch (e: any) {
-    queryTests.push({ name: "suppliers (select * + order name)", ok: false, error: e.message || String(e) });
-  }
-
-  try {
-    const { data, error } = await admin.from("locations").select("*").order("name");
-    if (error) throw error;
-    queryTests.push({ name: "locations (select * + order name)", ok: true, rows: (data || []).length });
-  } catch (e: any) {
-    queryTests.push({ name: "locations (select * + order name)", ok: false, error: e.message || String(e) });
-  }
-
-  // ─── Test 8: Sales with explicit cols + joins (used on other pages) ───
-  try {
-    const { data, error } = await admin
-      .from("sales")
-      .select("id, customer_id, product_id, location_id, quantity, rate_per_bag, rickshaw_fare, cash_received, sale_date, unit_type, bag_weight_kg, mix_order_id, transaction_group_id, rickshaw_driver_name, entered_by, created_at, customers(id,name,type), products(id,name), locations(id,name)")
-      .order("created_at", { ascending: true });
-    if (error) throw error;
-    queryTests.push({ name: "sales (explicit cols + 3 joins + order created_at)", ok: true, rows: (data || []).length });
-  } catch (e: any) {
-    queryTests.push({ name: "sales (explicit cols + 3 joins + order created_at)", ok: false, error: e.message || String(e) });
-  }
-
-  // ─── Test 9: Check for any VIEWS that might shadow tables ───
-  try {
-    const { data, error } = await admin
-      .from("purchases")
-      .select("id")
-      .limit(1);
-    if (error) throw error;
-    queryTests.push({ name: "purchases (simple select id, no joins)", ok: true, rows: (data || []).length });
-  } catch (e: any) {
-    queryTests.push({ name: "purchases (simple select id, no joins)", ok: false, error: e.message || String(e) });
-  }
-
-  const failing = queryTests.filter(t => !t.ok);
-  const passing = queryTests.filter(t => t.ok);
+  const summary: string[] = [];
+  if (!results.env.NEXT_PUBLIC_SUPABASE_URL) summary.push("NEXT_PUBLIC_SUPABASE_URL not set");
+  if (!results.env.NEXT_PUBLIC_SUPABASE_KEY) summary.push("NEXT_PUBLIC_SUPABASE_KEY not set");
+  if (!results.env.SUPABASE_SERVICE_ROLE_KEY) summary.push("SUPABASE_SERVICE_ROLE_KEY not set");
+  if (!results.env.CUSTOMER_TOKEN_SECRET) summary.push("CUSTOMER_TOKEN_SECRET not set");
+  if (!results.connection.ok) summary.push(`Connection failed: ${results.connection.error}`);
+  if (missingTables.length > 0) summary.push(`Missing tables: ${missingTables.join(", ")}`);
+  if (missingRpcs.length > 0) summary.push(`Missing RPC functions: ${missingRpcs.join(", ")}`);
 
   return NextResponse.json({
-    status: failing.length === 0 ? "ALL QUERIES PASS" : `${failing.length} QUERY(IES) FAIL`,
-    passing: passing.length,
-    failing: failing.length,
-    tests: queryTests,
+    status: summary.length === 0 ? "ALL OK" : "ISSUES FOUND",
+    summary: summary.length > 0 ? summary : undefined,
+    ...results,
   });
 }
