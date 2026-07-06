@@ -1,6 +1,3 @@
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
-
 interface BillData {
   orderId: string;
   customerName: string;
@@ -13,7 +10,11 @@ interface BillData {
   cashReceived?: number;
 }
 
-export function generateMixBillPDF(bill: BillData) {
+export async function generateMixBillPDF(bill: BillData) {
+  // Dynamic imports to avoid SSR crash on Vercel (jsPDF needs window/document)
+  const { default: jsPDF } = await import("jspdf");
+  const { default: autoTable } = await import("jspdf-autotable");
+
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pw = doc.internal.pageSize.getWidth();
   const m = 15;

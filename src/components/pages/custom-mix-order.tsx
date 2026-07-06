@@ -247,7 +247,7 @@ export default function CustomMixOrder() {
         cashReceived: store.customerType === "cash" ? Number(cashReceived) || 0 : undefined,
       };
       store.reset();
-      generateMixBillPDF(billData);
+      generateMixBillPDF(billData).catch(() => toast.error("PDF bill generate nahi ho saki"));
       setCashReceived("");
       setAddProduct("");
       setAddWeight("");
@@ -685,8 +685,8 @@ function PastMixOrdersSection({
                       items,
                       totalWeight: items.reduce((s, i) => s + i.weight_kg, 0),
                       totalAmount: items.reduce((s, i) => s + i.amount, 0),
-                    });
-                    toast.success("Bill PDF download ho rahi hai!");
+                    }).then(() => toast.success("Bill PDF download ho rahi hai!"))
+                    .catch(() => toast.error("PDF bill generate nahi ho saki"));
                   }}
                 >
                   <Download className="w-3.5 h-3.5 mr-1" />
