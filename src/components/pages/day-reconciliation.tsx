@@ -14,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import * as XLSX from "xlsx";
 import {
   CalendarDays,
   CreditCard,
@@ -25,6 +26,7 @@ import {
   ChevronDown,
   FileText,
   X,
+  Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Expense } from "@/types";
@@ -134,6 +136,19 @@ const cardLabels: Record<ReconcileCardKey, string> = {
   "cash-in": "Total Cash In",
   "cash-out": "Total Cash Out / Expenses",
 };
+
+/* ─── Excel download helper ─── */
+function downloadExcel(rows: Record<string, any>[], cols: Col[], fileName: string) {
+  const headers = cols.map(c => c.label);
+  const data = rows.map(row => cols.map(c => {
+    const raw = row[c.key];
+    return c.fmt ? c.fmt(raw) : String(raw ?? "");
+  }));
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Records");
+  XLSX.writeFile(wb, `${fileName.replace(/\s+/g, "_")}.xlsx`);
+}
 
 /* ─── API type mapping (some cards share same API type) ─── */
 const apiTypeMap: Record<ReconcileCardKey, string> = {
@@ -394,17 +409,19 @@ export default function DayReconciliation() {
                 </div>
 
                 <div className="max-h-[420px] overflow-y-auto">
-                  {detailLoading ? (
+                  {detailLoading && (
                     <div className="flex items-center justify-center py-16">
                       <Loader2 className="w-6 h-6 animate-spin text-emerald-500" />
                       <span className="ml-2 text-sm text-slate-400">Loading...</span>
                     </div>
-                  ) : detailRows.length === 0 ? (
+                  )}
+                  {!detailLoading && detailRows.length === 0 && (
                     <div className="flex flex-col items-center justify-center py-16 text-slate-400">
                       <FileText className="w-10 h-10 mb-2 opacity-40" />
                       <p className="text-sm font-medium">No records found</p>
                     </div>
-                  ) : (
+                  )}
+                  {!detailLoading && detailRows.length > 0 && (
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-slate-50/80 hover:bg-slate-50/80">
@@ -443,6 +460,18 @@ export default function DayReconciliation() {
                     </Table>
                   )}
                 </div>
+
+                {detailRows.length > 0 && !detailLoading && (
+                  <div style={{display:"flex",justifyContent:"flex-end",padding:"8px 20px",borderTop:"1px solid #f1f5f9",background:"#fafbfc"}}>
+                    <button
+                      onClick={() => downloadExcel(detailRows, cols, detailLabel)}
+                      style={{display:"flex",alignItems:"center",gap:"6px",fontSize:"12px",fontWeight:600,color:"#475569",background:"white",border:"1px solid #e2e8f0",borderRadius:"8px",padding:"6px 12px",cursor:"pointer"}}
+                    >
+                      <Download style={{width:"14px",height:"14px"}} />
+                      <span>Download Excel ({detailRows.length} records)</span>
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 

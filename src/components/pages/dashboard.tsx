@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useEffect, useState, useCallback } from "react";
+import * as XLSX from "xlsx";
 import {
   FileText, FlaskConical, BookOpen, CheckCircle,
-  Package, Settings, Loader2, ChevronDown, ChevronUp, X,
+  Package, Settings, Loader2, ChevronDown, ChevronUp, X, Download,
 } from "lucide-react";
 import { useAppStore } from "@/store";
 import { cn } from "@/lib/utils";
@@ -118,6 +119,19 @@ const cardLabels: Record<CardKey, string> = {
   "outstanding": "Total Outstanding / Khata",
   "over-credit": "Over Credit Limit",
 };
+
+/* ─── Excel download helper ─── */
+function downloadExcel(rows: Record<string, any>[], cols: Col[], fileName: string) {
+  const headers = cols.map(c => c.label);
+  const data = rows.map(row => cols.map(c => {
+    const raw = row[c.key];
+    return c.fmt ? c.fmt(raw) : String(raw ?? "");
+  }));
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Records");
+  XLSX.writeFile(wb, `${fileName.replace(/\s+/g, "_")}.xlsx`);
+}
 
 export default function Dashboard() {
   const setActivePage = useAppStore((s) => s.setActivePage);
@@ -303,6 +317,19 @@ export default function Dashboard() {
                 </Table>
               )}
             </div>
+
+            {/* Download Excel button */}
+            {!detailLoading && detailRows.length > 0 && (
+              <div className="flex justify-end px-5 py-3 border-t border-slate-100 bg-slate-50/30">
+                <button
+                  onClick={() => downloadExcel(detailRows, cols, detailLabel)}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-emerald-600 bg-white border border-slate-200 rounded-lg px-3 py-2 hover:border-emerald-300 hover:bg-emerald-50 transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Download Excel ({detailRows.length} records)
+                </button>
+              </div>
+            )}
           </div>
         )}
 
