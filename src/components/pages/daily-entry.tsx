@@ -309,24 +309,18 @@ export default function DailyEntryPage() {
   };
 
   const handleDeleteMixOrder = (mixOrderId: string) => {
-    // Find the actual mix_order_id (number) from the grouped sales
-    const groupLines = mixGroups.get(mixOrderId);
-    const dbMixOrderId = groupLines?.[0]?.mix_order_id;
+    // mixOrderId is now String(mix_order_id) from the group key
+    const dbMixOrderId = Number(mixOrderId);
 
-    askConfirm("Delete Mix Order", `Mix Order ko database se delete karna hai?`, async () => {
+    askConfirm("Delete Mix Order", `Mix Order #${mixOrderId} ko database se delete karna hai?`, async () => {
       setConfirmLoading(true);
       try {
-        let res: Response;
-        if (dbMixOrderId) {
-          // Use /api/mix-orders DELETE — cleans BOTH sales + mix_orders tables
-          res = await fetch(`/api/mix-orders?id=${dbMixOrderId}`, { method: "DELETE" });
-        } else {
-          // Fallback: delete by transaction_group_id from sales only
-          res = await fetch(`/api/sales?group_id=${mixOrderId}`, { method: "DELETE" });
-        }
+        // Use /api/mix-orders DELETE — cleans BOTH sales + mix_orders tables
+        const res = await fetch(`/api/mix-orders?id=${dbMixOrderId}`, { method: "DELETE" });
         if (!res.ok) throw new Error(await apiError(res, "Failed"));
-        setSales((prev) => prev.filter((s) => s.transaction_group_id !== mixOrderId && s.mix_order_id !== dbMixOrderId));
-        toast.success("Mix Order delete ho gaya");
+        // Remove only this mix order's sales from local state
+        setSales((prev) => prev.filter((s) => String(s.mix_order_id) !== mixOrderId));
+        toast.success("Mix Order #" + mixOrderId + " delete ho gaya");
       } catch (e: any) { toast.error(e.message || "Database me delete nahi hua"); }
       finally { setConfirmLoading(false); setConfirmOpen(false); }
     });
@@ -385,9 +379,11 @@ export default function DailyEntryPage() {
   const mixSales = sales.filter((s) => !!s.mix_order_id);
 
   const mixGroups = useMemo(() => {
+    // Group by mix_order_id (DB foreign key — unique per mix order)
+    // NOT by transaction_group_id which can be shared across different orders
     const map = new Map<string, Sale[]>();
     for (const s of mixSales) {
-      const key = s.transaction_group_id ?? `mix-${s.id}`;
+      const key = s.mix_order_id != null ? String(s.mix_order_id) : `mix-${s.id}`;
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(s);
     }
