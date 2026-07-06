@@ -79,7 +79,7 @@ export async function recordPurchaseRPC(params: {
   } catch (rpcErr: any) {
     // If RPC function doesn't exist, fall back to direct inserts
     const msg = rpcErr?.message || "";
-    if (msg.includes("does not exist") && msg.includes("function")) {
+    if ((msg.includes("does not exist") || msg.includes("Could not find the function")) && msg.includes("function")) {
       console.warn("record_purchase RPC not found — falling back to direct insert");
       return recordPurchaseFallback(params);
     }

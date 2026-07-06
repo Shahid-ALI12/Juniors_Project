@@ -125,7 +125,7 @@ export async function GET(request: NextRequest) {
       case "expenses": {
         const { data, error } = await admin
           .from("expenses")
-          .select("id, expense_date, description, amount, expense_category, created_at")
+          .select("id, expense_date, description, amount, created_at")
           .gte("expense_date", from).lte("expense_date", to)
           .order("created_at", { ascending: false });
         if (error) throw error;
@@ -133,7 +133,7 @@ export async function GET(request: NextRequest) {
           id: e.id,
           date: e.expense_date,
           description: e.description || "N/A",
-          category: e.expense_category || "N/A",
+          category: "N/A",
           amount: e.amount,
         }));
         return NextResponse.json({ rows, label: "Total Expenses" });

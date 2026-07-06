@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { fetchCached, invalidateCache, apiError } from "@/store";
 import { PageHeader } from "@/components/shared/page-header";
 import type { Product, Location, Customer, Purchase, Supplier, ProductStock } from "@/types";
+import * as XLSX from "xlsx";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,6 +48,7 @@ import {
   Store,
   Scale,
   Loader2,
+  Download,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -99,7 +101,7 @@ export default function PurchasesStockPage() {
   const [cashPaid, setCashPaid] = useState("");
   const [notes, setNotes] = useState("");
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60 + 30) * 60000).toISOString().split("T")[0]; })();
 
   const buildStockRows = useCallback((locationId: number): StockRow[] => {
     return products.map((p) => {
@@ -534,7 +536,7 @@ export default function PurchasesStockPage() {
               </RadioGroup>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4">
               <div className="space-y-2">
                 <Label className="text-sm font-semibold text-slate-700">Location</Label>
                 <RadioGroup value={purchaseLocation} onValueChange={(v) => setPurchaseLocation(v)} className="flex gap-3">
@@ -754,6 +756,34 @@ export default function PurchasesStockPage() {
                 <div className="flex items-center justify-between rounded-xl bg-slate-100/80 px-5 py-3.5 border border-slate-200/60">
                   <span className="text-sm font-bold text-slate-600 uppercase tracking-wide">Total Cash Paid Today</span>
                   <span className="text-xl font-extrabold text-slate-900">Rs. {fmt(totalCashPaid)}</span>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => {
+                      const rows: Record<string, any>[] = purchases.map((p) => {
+                        const source = p.settled_by_customer_id ? (p.customers?.name ?? "—") : (p.suppliers?.name ?? "—");
+                        return {
+                          "Source": source,
+                          "Type": p.settled_by_customer_id ? "Settlement" : "Supplier",
+                          "Product": p.products?.name ?? "—",
+                          "Location": p.locations?.name ?? "—",
+                          "Quantity": p.unit_type === "kg" ? `${p.quantity} kg` : `${p.quantity} bags`,
+                          "Rate": p.rate_per_bag,
+                          "Value": p.quantity * p.rate_per_bag,
+                          "Cash Paid": p.cash_paid,
+                        };
+                      });
+                      const ws = XLSX.utils.json_to_sheet(rows);
+                      const wb = XLSX.utils.book_new();
+                      XLSX.utils.book_append_sheet(wb, ws, "Purchases");
+                      XLSX.writeFile(wb, `Purchases_${today}.xlsx`);
+                      toast.success("Purchases downloaded!");
+                    }}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-emerald-600 bg-white border border-slate-200 rounded-lg px-3 py-2 hover:border-emerald-300 hover:bg-emerald-50 transition-colors"
+                  >
+                    <Download className="size-3.5" />
+                    Download Excel ({purchases.length} records)
+                  </button>
                 </div>
               </>
             )}

@@ -1,3 +1,0 @@
--- ⚠️ DEPRECATED — this file is kept only for backwards reference.
--- The full schema (including app_customers) now lives in `schema.sql`.
--- Run `supabase/schema.sql` in the Supabase SQL Editor instead.
