@@ -400,12 +400,23 @@ export default function DayReconciliation() {
                       <p className="text-xs text-slate-400">{detailRows.length} records</p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => { setActiveCard(null); setDetailRows([]); }}
-                    className="p-1.5 rounded-lg hover:bg-slate-200 transition-colors"
-                  >
-                    <X className="w-4 h-4 text-slate-400" />
-                  </button>
+                  <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
+                    {detailRows.length > 0 && (
+                      <button
+                        onClick={() => downloadExcel(detailRows, cols, detailLabel)}
+                        style={{display:"flex",alignItems:"center",gap:"5px",fontSize:"11px",fontWeight:600,color:"#059669",background:"#ecfdf5",border:"1px solid #a7f3d0",borderRadius:"6px",padding:"4px 10px",cursor:"pointer"}}
+                      >
+                        <Download style={{width:"13px",height:"13px"}} />
+                        <span>Excel ({detailRows.length})</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => { setActiveCard(null); setDetailRows([]); }}
+                      style={{padding:"6px",borderRadius:"8px",background:"transparent",border:"none",cursor:"pointer"}}
+                    >
+                      <X style={{width:"16px",height:"16px",color:"#94a3b8"}} />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="max-h-[420px] overflow-y-auto">
@@ -460,18 +471,6 @@ export default function DayReconciliation() {
                     </Table>
                   )}
                 </div>
-
-                {detailRows.length > 0 && !detailLoading && (
-                  <div style={{display:"flex",justifyContent:"flex-end",padding:"8px 20px",borderTop:"1px solid #f1f5f9",background:"#fafbfc"}}>
-                    <button
-                      onClick={() => downloadExcel(detailRows, cols, detailLabel)}
-                      style={{display:"flex",alignItems:"center",gap:"6px",fontSize:"12px",fontWeight:600,color:"#475569",background:"white",border:"1px solid #e2e8f0",borderRadius:"8px",padding:"6px 12px",cursor:"pointer"}}
-                    >
-                      <Download style={{width:"14px",height:"14px"}} />
-                      <span>Download Excel ({detailRows.length} records)</span>
-                    </button>
-                  </div>
-                )}
               </div>
             )}
 
