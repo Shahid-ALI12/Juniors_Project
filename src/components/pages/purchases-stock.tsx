@@ -48,6 +48,7 @@ import {
   Scale,
   Loader2,
   Download,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { pktToday } from "@/lib/pkt-date";
@@ -73,6 +74,7 @@ interface StockRow {
 export default function PurchasesStockPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [loadErrors, setLoadErrors] = useState<string[]>([]);
 
   // Master data
   const [products, setProducts] = useState<Product[]>([]);
@@ -118,26 +120,69 @@ export default function PurchasesStockPage() {
     });
   }, [products, stockData]);
 
+  // Load each data source independently — one failure must not block the rest
   const loadAllData = useCallback(async () => {
+    const errors: string[] = [];
+
+    // Products
     try {
-      const [pList, lList, cList, sList, stList] = await Promise.all([
-        fetchCached<Product>("products", "/api/products", "products"),
-        fetchCached<Location>("locations", "/api/locations", "locations"),
-        fetchCached<Customer>("customers", "/api/customers?active=true", "customers"),
-        fetchCached<Supplier>("suppliers", "/api/suppliers", "suppliers"),
-        fetchCached<ProductStock>("stock", "/api/stock", "stock"),
-      ]);
-      // Purchases are date-specific, always fetch fresh
+      const list = await fetchCached<Product>("products", "/api/products", "products");
+      setProducts(list);
+    } catch (e: any) {
+      errors.push("Products: " + (e.message || "unknown error"));
+    }
+
+    // Locations
+    try {
+      const list = await fetchCached<Location>("locations", "/api/locations", "locations");
+      setLocations(list);
+    } catch (e: any) {
+      errors.push("Locations: " + (e.message || "unknown error"));
+    }
+
+    // Customers
+    try {
+      const list = await fetchCached<Customer>("customers", "/api/customers?active=true", "customers");
+      setCustomers(list);
+    } catch (e: any) {
+      errors.push("Customers: " + (e.message || "unknown error"));
+    }
+
+    // Suppliers
+    try {
+      const list = await fetchCached<Supplier>("suppliers", "/api/suppliers", "suppliers");
+      setSuppliers(list);
+    } catch (e: any) {
+      errors.push("Suppliers: " + (e.message || "unknown error"));
+    }
+
+    // Stock
+    try {
+      const list = await fetchCached<ProductStock>("stock", "/api/stock", "stock");
+      setStockData(list);
+    } catch (e: any) {
+      errors.push("Stock: " + (e.message || "unknown error"));
+    }
+
+    // Purchases (date-specific, always fetch fresh)
+    try {
       const puRes = await fetch(`/api/purchases?purchase_date_gte=${today}&purchase_date_lte=${today}`);
-      const puData = puRes.ok ? await puRes.json() : {};
-      setProducts(pList);
-      setLocations(lList);
-      setCustomers(cList);
-      setSuppliers(sList);
-      setStockData(stList);
-      setPurchases(puData.purchases ?? []);
-    } catch {
-      toast.error("Failed to load data");
+      if (puRes.ok) {
+        const puData = await puRes.json();
+        setPurchases(puData.purchases ?? []);
+      } else {
+        const errDetail = await apiError(puRes, "Failed to fetch purchases");
+        errors.push("Purchases: " + errDetail);
+      }
+    } catch (e: any) {
+      errors.push("Purchases: " + (e.message || "unknown error"));
+    }
+
+    setLoadErrors(errors);
+    if (errors.length > 0 && errors.length < 6) {
+      toast.error(`${errors.length} data source(s) failed to load`);
+    } else if (errors.length >= 6) {
+      toast.error("All data sources failed — check your connection");
     }
   }, [today]);
 
@@ -150,10 +195,10 @@ export default function PurchasesStockPage() {
   }, [loadAllData]);
 
   useEffect(() => {
-    if (products.length > 0) {
-      setFarmStock(buildStockRows(1));
-      setShopStock(buildStockRows(2));
-    }
+    // Build stock rows whenever products or stock data changes
+    // (works even with 0 products — just shows empty tables)
+    setFarmStock(buildStockRows(1));
+    setShopStock(buildStockRows(2));
   }, [products, stockData, buildStockRows]);
 
   const goodsValue = useMemo(() => {
@@ -567,6 +612,29 @@ export default function PurchasesStockPage() {
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 space-y-8">
         <PageHeader title="Purchases & Stock" subtitle="Danish Cattle Feed — Daily Register" />
+
+        {/* Error banner */}
+        {loadErrors.length > 0 && (
+          <Alert className="border-amber-300 bg-amber-50 text-amber-800 mb-6">
+            <AlertTriangle className="size-4 text-amber-600" />
+            <AlertDescription>
+              <div className="space-y-1">
+                <p className="font-semibold text-sm">Some data failed to load:</p>
+                <ul className="list-disc list-inside text-xs space-y-0.5 text-amber-700">
+                  {loadErrors.map((e, i) => <li key={i}>{e}</li>)}
+                </ul>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-2 gap-1.5 text-amber-800 border-amber-400 hover:bg-amber-100"
+                  onClick={async () => { setLoading(true); setLoadErrors([]); await loadAllData(); setLoading(false); }}
+                >
+                  <RefreshCw className="size-3.5" /> Retry
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
 
         <Card className="rounded-2xl border-slate-200/60 shadow-sm bg-white">
           <CardHeader className="pb-2">
