@@ -141,11 +141,19 @@ async function recordPurchaseFallback(params: {
   // Try to increment stock (best effort, bags only)
   if (params.unit_type === "bags") {
     try {
+      // Fetch current stock first to ADD to it, not overwrite
+      const { data: existing } = await admin
+        .from("product_stock")
+        .select("stock_quantity")
+        .eq("product_id", params.product_id)
+        .eq("location_id", params.location_id)
+        .maybeSingle();
+      const currentQty = (existing as any)?.stock_quantity ?? 0;
       await admin.from("product_stock").upsert(
         {
           product_id: params.product_id,
           location_id: params.location_id,
-          stock_quantity: params.quantity,
+          stock_quantity: currentQty + params.quantity,
           last_bag_weight_kg: params.bag_weight_kg,
         },
         { onConflict: "product_id,location_id" }
