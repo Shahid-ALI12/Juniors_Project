@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { pktToday, toPktDate } from "@/lib/pkt-date";
 import {
   UserPlus, Users, ShieldCheck, Trash2, Eye, EyeOff,
   Pencil, Ban, UserCheck, Loader2,
@@ -22,7 +23,7 @@ function getSubscriptionEnd(type: SubscriptionType, startDate: string, customDay
   if (type === "monthly") start.setMonth(start.getMonth() + 1);
   else if (type === "yearly") start.setFullYear(start.getFullYear() + 1);
   else if (type === "custom" && customDays) start.setDate(start.getDate() + customDays);
-  return start.toISOString().split("T")[0];
+  return toPktDate(start);
 }
 
 // API helpers
@@ -64,7 +65,7 @@ export default function AdminCustomerManagement() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [subType, setSubType] = useState<SubscriptionType>("monthly");
-  const [startDate, setStartDate] = useState(new Date().toISOString().split("T")[0]);
+  const [startDate, setStartDate] = useState(pktToday());
   const [customDays, setCustomDays] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -199,7 +200,7 @@ export default function AdminCustomerManagement() {
 
   const resetAddForm = () => {
     setName(""); setEmail(""); setPassword(""); setSubType("monthly");
-    setStartDate(new Date().toISOString().split("T")[0]); setCustomDays("");
+    setStartDate(pktToday()); setCustomDays("");
   };
 
   const activeCount = customers.filter((c) => c.is_active && new Date(c.subscription_end) > new Date()).length;

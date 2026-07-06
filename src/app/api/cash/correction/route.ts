@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
 import { correctBalanceRPC } from "@/lib/data/cash";
 import { getErrorDetail } from "@/lib/api-error";
+import { pktToday } from "@/lib/pkt-date";
 
 export async function POST(request: NextRequest) {
   const auth = await requireUser();
@@ -18,7 +19,7 @@ export async function POST(request: NextRequest) {
     const id = await correctBalanceRPC({
       account_id,
       target: Number(target),
-      correction_date: correction_date || new Date().toISOString().split("T")[0],
+      correction_date: correction_date || pktToday(),
       entered_by: `${auth.type}:${auth.user.id}`,
     });
 

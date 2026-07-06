@@ -49,6 +49,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { pktToday } from "@/lib/pkt-date";
 
 const DEFAULT_BAG_WEIGHT = 50;
 
@@ -99,7 +100,7 @@ export default function PurchasesStockPage() {
   const [cashPaid, setCashPaid] = useState("");
   const [notes, setNotes] = useState("");
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = pktToday();
 
   const buildStockRows = useCallback((locationId: number): StockRow[] => {
     return products.map((p) => {

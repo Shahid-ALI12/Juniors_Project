@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
 import { transferCashRPC } from "@/lib/data/cash";
 import { getErrorDetail } from "@/lib/api-error";
+import { pktToday } from "@/lib/pkt-date";
 
 export async function GET(request: NextRequest) {
   const auth = await requireUser();
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest) {
       from_account_id,
       to_account_id,
       amount: Number(amount),
-      transfer_date: transfer_date || new Date().toISOString().split("T")[0],
+      transfer_date: transfer_date || pktToday(),
       notes: notes?.trim() || null,
       entered_by: `${auth.type}:${auth.user.id}`,
     });

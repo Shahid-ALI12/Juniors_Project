@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
 import { admin } from "@/lib/supabase/server-admin";
 import { getErrorDetail } from "@/lib/api-error";
+import { pktToday } from "@/lib/pkt-date";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +11,7 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) return auth.response;
 
   const type = request.nextUrl.searchParams.get("type") || "";
-  const from = request.nextUrl.searchParams.get("from") || new Date().toISOString().split("T")[0];
+  const from = request.nextUrl.searchParams.get("from") || pktToday();
   const to = request.nextUrl.searchParams.get("to") || from;
 
   try {

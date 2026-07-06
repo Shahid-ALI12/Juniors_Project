@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
 import { getPurchases, recordPurchaseRPC, deletePurchase } from "@/lib/data/purchases";
 import { getErrorDetail } from "@/lib/api-error";
+import { pktToday } from "@/lib/pkt-date";
 
 // Prevent Next.js from caching GET responses
 export const dynamic = "force-dynamic";
@@ -38,7 +39,7 @@ export async function POST(request: NextRequest) {
     }
 
     const id = await recordPurchaseRPC({
-      purchase_date: purchase_date || new Date().toISOString().split("T")[0],
+      purchase_date: purchase_date || pktToday(),
       product_id,
       quantity: Number(quantity),
       rate_per_bag: Number(rate_per_bag) || 0,

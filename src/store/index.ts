@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { CartItem, MixIngredient, AppCustomer } from "@/types";
+import { pktToday } from "@/lib/pkt-date";
 
 // ─── Shared API error helper ───
 // Call after `!res.ok` to get a user-friendly message with the server detail.
@@ -47,14 +48,14 @@ export const useMixStore = create<MixStore>((set, get) => ({
   targetWeight: null,
   customerName: "",
   customerType: "credit",
-  orderDate: new Date().toISOString().split("T")[0],
+  orderDate: pktToday(),
   locationId: null,
   ingredients: [],
   startOrder: (name, type, date, locId, target) =>
     set({ targetWeight: target, customerName: name, customerType: type, orderDate: date, locationId: locId, ingredients: [] }),
   addIngredient: (ing) => set((s) => ({ ingredients: [...s.ingredients, ing] })),
   removeIngredient: (index) => set((s) => ({ ingredients: s.ingredients.filter((_, i) => i !== index) })),
-  reset: () => set({ targetWeight: null, customerName: "", customerType: "credit", orderDate: new Date().toISOString().split("T")[0], locationId: null, ingredients: [] }),
+  reset: () => set({ targetWeight: null, customerName: "", customerType: "credit", orderDate: pktToday(), locationId: null, ingredients: [] }),
   getUsedWeight: () => get().ingredients.reduce((sum, i) => sum + i.weight_kg, 0),
   getTotalAmount: () => get().ingredients.reduce((sum, i) => sum + i.amount, 0),
 }));

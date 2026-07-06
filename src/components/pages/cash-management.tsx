@@ -38,6 +38,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { pktToday } from "@/lib/pkt-date";
 import type { CashAccount, CashTransfer } from "@/types";
 
 const HAND_ACCOUNT_NAME = "Cash In Hand";
@@ -57,7 +58,7 @@ export default function CashManagementPage() {
 
   // Transfer form state
   const [transferDirection, setTransferDirection] = useState<"locker-to-hand" | "hand-to-locker">("locker-to-hand");
-  const [transferDate, setTransferDate] = useState(new Date().toISOString().split("T")[0]);
+  const [transferDate, setTransferDate] = useState(pktToday());
   const [transferAmount, setTransferAmount] = useState("");
   const [transferNotes, setTransferNotes] = useState("");
   const [transferSuccess, setTransferSuccess] = useState(false);

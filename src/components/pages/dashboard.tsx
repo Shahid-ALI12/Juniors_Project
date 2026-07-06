@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { pktToday, pktFormatted } from "@/lib/pkt-date";
 
 const quickLinks = [
   { label: "Add a Sale / Expense", page: "daily-entry", icon: FileText },
@@ -144,11 +145,8 @@ export default function Dashboard() {
   const [detailLabel, setDetailLabel] = useState("");
   const [detailLoading, setDetailLoading] = useState(false);
 
-  // Use PKT (Asia/Karachi) date so it matches what the user sees
-  const pktDate = useMemo(() => {
-    const d = new Date();
-    return new Date(d.getTime() + (5 * 60 + 30) * 60000).toISOString().split("T")[0];
-  }, []);
+  // Use PKT date — matches server-side pktToday()
+  const pktDate = useMemo(() => pktToday(), []);
 
   useEffect(() => {
     async function load() {
@@ -227,7 +225,7 @@ export default function Dashboard() {
           <div>
             <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 leading-tight">Dashboard</h1>
             <p className="text-sm text-slate-500 mt-1">
-              Daily Register — {new Date().toLocaleDateString("en-PK", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+              Daily Register — {pktFormatted(new Date(), { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
             </p>
           </div>
         </div>

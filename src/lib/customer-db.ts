@@ -1,6 +1,7 @@
 // App customer data access — Supabase only (Prisma removed)
 import { admin } from "@/lib/supabase/server-admin";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
+import { pktToday, toPktDate } from "@/lib/pkt-date";
 
 export interface CustomerRow {
   id: string;
@@ -60,8 +61,8 @@ export async function createCustomer(data: {
     email: data.email,
     password: hashed,
     subscription_type: data.subscription_type || "monthly",
-    subscription_start: data.subscription_start || new Date().toISOString().split("T")[0],
-    subscription_end: data.subscription_end || new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
+    subscription_start: data.subscription_start || pktToday(),
+    subscription_end: data.subscription_end || toPktDate(new Date(Date.now() + 30 * 86400000)),
     is_active: data.is_active !== undefined ? data.is_active : true,
   };
 

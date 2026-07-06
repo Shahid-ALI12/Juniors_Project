@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
 import { getDashboardMetrics } from "@/lib/data/reports";
 import { getErrorDetail } from "@/lib/api-error";
+import { pktToday } from "@/lib/pkt-date";
 
 // Prevent Next.js from caching GET responses
 export const dynamic = "force-dynamic";
@@ -11,7 +12,7 @@ export async function GET() {
   if (!auth.ok) return auth.response;
 
   try {
-    const today = new Date().toISOString().split("T")[0];
+    const today = pktToday();
     const metrics = await getDashboardMetrics(today);
     return NextResponse.json(metrics);
   } catch (err) {

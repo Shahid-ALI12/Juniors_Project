@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth/server-user";
 import { getAllCustomers, createCustomer, updateCustomer, deleteCustomerById, getCustomerByEmail } from "@/lib/customer-db";
+import { pktToday, toPktDate } from "@/lib/pkt-date";
 
 // GET — fetch all app_customers
 export async function GET() {
@@ -48,8 +49,8 @@ export async function POST(request: NextRequest) {
       email: email.trim(),
       password,
       subscription_type: subscription_type || "monthly",
-      subscription_start: subscription_start || new Date().toISOString().split("T")[0],
-      subscription_end: subscription_end || new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
+      subscription_start: subscription_start || pktToday(),
+      subscription_end: subscription_end || toPktDate(new Date(Date.now() + 30 * 86400000)),
       is_active: true,
     });
 

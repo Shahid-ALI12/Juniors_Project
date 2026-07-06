@@ -56,7 +56,6 @@ export async function GET(request: NextRequest) {
       .from("sales")
       .select("*, customers(id,name,type), products(id,name), locations(id,name)")
       .eq("customer_id", linkedCustomerId)
-      .is("voided_at", null)
       .order("sale_date", { ascending: false });
 
     if (salesErr) throw salesErr;

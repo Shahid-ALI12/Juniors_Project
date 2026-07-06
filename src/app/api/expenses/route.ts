@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
 import { getExpenses, recordExpenseRPC, deleteExpense } from "@/lib/data/expenses";
+import { pktToday } from "@/lib/pkt-date";
 
 // Prevent Next.js from caching GET responses
 export const dynamic = "force-dynamic";
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest) {
     const id = await recordExpenseRPC({
       description: description.trim(),
       amount: Number(amount),
-      expense_date: expense_date || new Date().toISOString().split("T")[0],
+      expense_date: expense_date || pktToday(),
       entered_by: `${auth.type}:${auth.user.id}`,
     });
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
 import { getSales, deleteSale, deleteSalesByGroup, deleteSalesByMixOrder, createSaleRPC } from "@/lib/data/sales";
 import { getErrorDetail } from "@/lib/api-error";
+import { pktToday } from "@/lib/pkt-date";
 
 // Prevent Next.js from caching GET responses — data changes after mutations
 export const dynamic = "force-dynamic";
@@ -46,7 +47,7 @@ export async function POST(request: NextRequest) {
       items,
       customer_id,
       location_id,
-      sale_date: sale_date || new Date().toISOString().split("T")[0],
+      sale_date: sale_date || pktToday(),
       cash_received: Number(cash_received) || 0,
       rickshaw_fare: Number(rickshaw_fare) || 0,
       rickshaw_driver: rickshaw_driver || null,

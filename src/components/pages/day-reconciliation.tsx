@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Expense } from "@/types";
+import { pktToday } from "@/lib/pkt-date";
 
 function formatRs(n: number) {
   return n.toLocaleString("en-PK");
@@ -163,7 +164,7 @@ const apiTypeMap: Record<ReconcileCardKey, string> = {
 };
 
 export default function DayReconciliation() {
-  const today = new Date().toISOString().split("T")[0];
+  const today = pktToday();
   const [mode, setMode] = useState<"single" | "range">("single");
   const [singleDate, setSingleDate] = useState(today);
   const [rangeFrom, setRangeFrom] = useState(today);

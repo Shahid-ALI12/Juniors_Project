@@ -13,13 +13,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { UserCheck, Ban, Clock, RefreshCw, ShieldOff, Loader2 } from "lucide-react";
+import { pktToday, toPktDate } from "@/lib/pkt-date";
 
 function getSubscriptionEnd(type: SubscriptionType, startDate: string, customDays?: number): string {
   const start = new Date(startDate);
   if (type === "monthly") start.setMonth(start.getMonth() + 1);
   else if (type === "yearly") start.setFullYear(start.getFullYear() + 1);
   else if (type === "custom" && customDays) start.setDate(start.getDate() + customDays);
-  return start.toISOString().split("T")[0];
+  return toPktDate(start);
 }
 
 async function fetchCustomers(): Promise<AppCustomer[]> {
@@ -50,7 +51,7 @@ export default function AdminBlockedUsers() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<AppCustomer | null>(null);
   const [subType, setSubType] = useState<SubscriptionType>("monthly");
-  const [startDate, setStartDate] = useState(new Date().toISOString().split("T")[0]);
+  const [startDate, setStartDate] = useState(pktToday());
   const [customDays, setCustomDays] = useState("");
 
   const loadCustomers = useCallback(async () => {
@@ -103,7 +104,7 @@ export default function AdminBlockedUsers() {
 
   const openApproveDialog = (customer: AppCustomer) => {
     setSelectedCustomer(customer);
-    setStartDate(new Date().toISOString().split("T")[0]);
+    setStartDate(pktToday());
     setSubType("monthly");
     setCustomDays("");
     setDialogOpen(true);

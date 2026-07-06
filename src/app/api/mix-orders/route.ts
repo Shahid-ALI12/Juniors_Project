@@ -4,6 +4,7 @@ import { getMixOrders, createMixOrderRPC, deleteMixOrder } from "@/lib/data/mix-
 import { deleteSalesByMixOrder } from "@/lib/data/sales";
 import { admin } from "@/lib/supabase/server-admin";
 import { getErrorDetail } from "@/lib/api-error";
+import { pktToday } from "@/lib/pkt-date";
 
 // Prevent Next.js from caching GET responses
 export const dynamic = "force-dynamic";
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest) {
     const id = await createMixOrderRPC({
       customer_id,
       location_id,
-      order_date: order_date || new Date().toISOString().split("T")[0],
+      order_date: order_date || pktToday(),
       target_weight_kg: target_weight_kg || null,
       cash_received: Number(cash_received) || 0,
       entered_by: `${auth.type}:${auth.user.id}`,

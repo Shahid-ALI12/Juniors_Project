@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
+import { pktToday } from "@/lib/pkt-date";
 
 /* ─── Helpers ─── */
 function fmtRs(n: number) {
@@ -105,7 +106,7 @@ function printMixBill(order: { id: string | number; customer: string; date: stri
   setTimeout(() => document.body.removeChild(iframe), 1000);
 }
 
-const today = new Date().toISOString().split("T")[0];
+const today = pktToday();
 
 /* ─── Component ─── */
 export default function CustomMixOrder() {

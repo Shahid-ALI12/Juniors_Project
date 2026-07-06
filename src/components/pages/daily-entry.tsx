@@ -55,11 +55,12 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import ConfirmAction from "@/components/shared/confirm-action";
+import { pktToday } from "@/lib/pkt-date";
 
 const fmt = (n: number) => n.toLocaleString("en-PK");
 
 export default function DailyEntryPage() {
-  const today = new Date().toISOString().split("T")[0];
+  const today = pktToday();
 
   const { items: cartItems, addItem, removeItem, clearCart, getTotal: getCartTotal } = useCartStore();
 
