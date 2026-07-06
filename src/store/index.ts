@@ -47,14 +47,14 @@ export const useMixStore = create<MixStore>((set, get) => ({
   targetWeight: null,
   customerName: "",
   customerType: "credit",
-  orderDate: (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60 + 30) * 60000).toISOString().split("T")[0]; })(),
+  orderDate: (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60) * 60000).toISOString().split("T")[0]; })(),
   locationId: null,
   ingredients: [],
   startOrder: (name, type, date, locId, target) =>
     set({ targetWeight: target, customerName: name, customerType: type, orderDate: date, locationId: locId, ingredients: [] }),
   addIngredient: (ing) => set((s) => ({ ingredients: [...s.ingredients, ing] })),
   removeIngredient: (index) => set((s) => ({ ingredients: s.ingredients.filter((_, i) => i !== index) })),
-  reset: () => set({ targetWeight: null, customerName: "", customerType: "credit", orderDate: (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60 + 30) * 60000).toISOString().split("T")[0]; })(), locationId: null, ingredients: [] }),
+  reset: () => set({ targetWeight: null, customerName: "", customerType: "credit", orderDate: (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60) * 60000).toISOString().split("T")[0]; })(), locationId: null, ingredients: [] }),
   getUsedWeight: () => get().ingredients.reduce((sum, i) => sum + i.weight_kg, 0),
   getTotalAmount: () => get().ingredients.reduce((sum, i) => sum + i.amount, 0),
 }));

@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
       from_account_id,
       to_account_id,
       amount: Number(amount),
-      transfer_date: transfer_date || (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60 + 30) * 60000).toISOString().split("T")[0]; })(),
+      transfer_date: transfer_date || (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60) * 60000).toISOString().split("T")[0]; })(),
       notes: notes?.trim() || null,
       entered_by: `admin:${auth.user.id}`,
     });

@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
     }
 
     const id = await recordPurchaseRPC({
-      purchase_date: purchase_date || (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60 + 30) * 60000).toISOString().split("T")[0]; })(),
+      purchase_date: purchase_date || (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60) * 60000).toISOString().split("T")[0]; })(),
       product_id,
       quantity: Number(quantity),
       rate_per_bag: Number(rate_per_bag) || 0,

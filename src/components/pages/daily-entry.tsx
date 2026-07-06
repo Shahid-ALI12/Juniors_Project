@@ -59,7 +59,7 @@ import ConfirmAction from "@/components/shared/confirm-action";
 const fmt = (n: number) => n.toLocaleString("en-PK");
 
 export default function DailyEntryPage() {
-  const today = (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60 + 30) * 60000).toISOString().split("T")[0]; })();
+  const today = (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60) * 60000).toISOString().split("T")[0]; })();
 
   const { items: cartItems, addItem, removeItem, clearCart, getTotal: getCartTotal } = useCartStore();
 

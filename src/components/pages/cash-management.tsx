@@ -57,7 +57,7 @@ export default function CashManagementPage() {
 
   // Transfer form state
   const [transferDirection, setTransferDirection] = useState<"locker-to-hand" | "hand-to-locker">("locker-to-hand");
-  const pktDate = (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60 + 30) * 60000).toISOString().split("T")[0]; })();
+  const pktDate = (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60) * 60000).toISOString().split("T")[0]; })();
   const [transferDate, setTransferDate] = useState(pktDate);
   const [transferAmount, setTransferAmount] = useState("");
   const [transferNotes, setTransferNotes] = useState("");

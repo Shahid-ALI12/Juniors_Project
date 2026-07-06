@@ -101,7 +101,7 @@ export default function PurchasesStockPage() {
   const [cashPaid, setCashPaid] = useState("");
   const [notes, setNotes] = useState("");
 
-  const today = (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60 + 30) * 60000).toISOString().split("T")[0]; })();
+  const today = (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60) * 60000).toISOString().split("T")[0]; })();
 
   const buildStockRows = useCallback((locationId: number): StockRow[] => {
     return products.map((p) => {

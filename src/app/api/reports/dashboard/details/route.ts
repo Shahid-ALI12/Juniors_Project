@@ -11,7 +11,7 @@ const CREDIT_LIMIT = 3_000_000;
 /** Get current date in PKT (UTC+5:30) as YYYY-MM-DD */
 function pktToday(): string {
   const d = new Date();
-  return new Date(d.getTime() + (5 * 60 + 30) * 60000).toISOString().split("T")[0];
+  return new Date(d.getTime() + (5 * 60) * 60000).toISOString().split("T")[0];
 }
 
 export async function GET(request: NextRequest) {

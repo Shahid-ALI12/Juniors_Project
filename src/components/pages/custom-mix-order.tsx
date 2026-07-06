@@ -105,7 +105,7 @@ function printMixBill(order: { id: string | number; customer: string; date: stri
   setTimeout(() => document.body.removeChild(iframe), 1000);
 }
 
-const today = (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60 + 30) * 60000).toISOString().split("T")[0]; })();
+const today = (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60) * 60000).toISOString().split("T")[0]; })();
 
 /* ─── Component ─── */
 export default function CustomMixOrder() {
