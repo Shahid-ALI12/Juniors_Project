@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
       items,
       customer_id,
       location_id,
-      sale_date: sale_date || new Date().toISOString().split("T")[0],
+      sale_date: sale_date || (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60 + 30) * 60000).toISOString().split("T")[0]; })(),
       cash_received: Number(cash_received) || 0,
       rickshaw_fare: Number(rickshaw_fare) || 0,
       rickshaw_driver: rickshaw_driver || null,

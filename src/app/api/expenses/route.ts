@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     const id = await recordExpenseRPC({
       description: description.trim(),
       amount: Number(amount),
-      expense_date: expense_date || new Date().toISOString().split("T")[0],
+      expense_date: expense_date || (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60 + 30) * 60000).toISOString().split("T")[0]; })(),
       entered_by: `${auth.type}:${auth.user.id}`,
     });
 

@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     const id = await createMixOrderRPC({
       customer_id,
       location_id,
-      order_date: order_date || new Date().toISOString().split("T")[0],
+      order_date: order_date || (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60 + 30) * 60000).toISOString().split("T")[0]; })(),
       target_weight_kg: target_weight_kg || null,
       cash_received: Number(cash_received) || 0,
       entered_by: `${auth.type}:${auth.user.id}`,
