@@ -3,6 +3,9 @@ import { requireUser } from "@/lib/auth/server-user";
 import { admin } from "@/lib/supabase/server-admin";
 import { getErrorDetail } from "@/lib/api-error";
 
+// Prevent Next.js from caching GET responses
+export const dynamic = "force-dynamic";
+
 const CREDIT_LIMIT = 3_000_000;
 
 export async function GET(request: NextRequest) {

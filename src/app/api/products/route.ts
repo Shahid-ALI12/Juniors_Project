@@ -3,6 +3,9 @@ import { requireUser } from "@/lib/auth/server-user";
 import { getAllProducts, createProduct, updateProduct } from "@/lib/data/products";
 import { getErrorDetail } from "@/lib/api-error";
 
+// Prevent Next.js from caching GET responses
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const auth = await requireUser();
   if (!auth.ok) return auth.response;

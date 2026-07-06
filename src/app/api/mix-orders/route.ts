@@ -5,6 +5,9 @@ import { deleteSalesByMixOrder } from "@/lib/data/sales";
 import { admin } from "@/lib/supabase/server-admin";
 import { getErrorDetail } from "@/lib/api-error";
 
+// Prevent Next.js from caching GET responses
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const auth = await requireUser();
   if (!auth.ok) return auth.response;
