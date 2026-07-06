@@ -49,15 +49,18 @@ export async function getSales(filters?: {
 }
 
 export async function deleteSale(id: number): Promise<void> {
-  await admin.from("sales").delete().eq("id", id);
+  const { error } = await admin.from("sales").delete().eq("id", id);
+  if (error) throw new Error(error.message);
 }
 
 export async function deleteSalesByGroup(groupId: string): Promise<void> {
-  await admin.from("sales").delete().eq("transaction_group_id", groupId);
+  const { error } = await admin.from("sales").delete().eq("transaction_group_id", groupId);
+  if (error) throw new Error(error.message);
 }
 
 export async function deleteSalesByMixOrder(mixOrderId: number): Promise<void> {
-  await admin.from("sales").delete().eq("mix_order_id", mixOrderId);
+  const { error } = await admin.from("sales").delete().eq("mix_order_id", mixOrderId);
+  if (error) throw new Error(error.message);
 }
 
 // Atomic sale creation via RPC

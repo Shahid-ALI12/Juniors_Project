@@ -302,8 +302,7 @@ export default function DailyEntryPage() {
         const res = await fetch(`/api/sales?id=${saleId}`, { method: "DELETE" });
         if (!res.ok) throw new Error(await apiError(res, "Failed"));
         setSales((prev) => prev.filter((s) => s.id !== saleId));
-        toast.success("Sale #" + saleId + " database se delete ho gaya");
-        await loadDayData(date);
+        toast.success("Sale #" + saleId + " delete ho gaya");
       } catch (e: any) { toast.error(e.message || "Database me delete nahi hua"); }
       finally { setConfirmLoading(false); setConfirmOpen(false); }
     });
@@ -316,8 +315,7 @@ export default function DailyEntryPage() {
         const res = await fetch(`/api/sales?group_id=${mixOrderId}`, { method: "DELETE" });
         if (!res.ok) throw new Error(await apiError(res, "Failed"));
         setSales((prev) => prev.filter((s) => s.transaction_group_id !== mixOrderId));
-        toast.success("Mix Order database se delete ho gaya");
-        await loadDayData(date);
+        toast.success("Mix Order delete ho gaya");
       } catch (e: any) { toast.error(e.message || "Database me delete nahi hua"); }
       finally { setConfirmLoading(false); setConfirmOpen(false); }
     });
@@ -366,8 +364,7 @@ export default function DailyEntryPage() {
         const res = await fetch(`/api/expenses?id=${expId}`, { method: "DELETE" });
         if (!res.ok) throw new Error(await apiError(res, "Failed"));
         setExpenses((prev) => prev.filter((e) => e.id !== expId));
-        toast.success("Expense #" + expId + " database se delete ho gaya");
-        await loadDayData(date);
+        toast.success("Expense #" + expId + " delete ho gaya");
       } catch (e: any) { toast.error(e.message || "Database me delete nahi hua"); }
       finally { setConfirmLoading(false); setConfirmOpen(false); }
     });

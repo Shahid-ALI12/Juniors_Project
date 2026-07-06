@@ -24,7 +24,8 @@ export async function getExpenses(filters?: {
 }
 
 export async function deleteExpense(id: number): Promise<void> {
-  await admin.from("expenses").delete().eq("id", id);
+  const { error } = await admin.from("expenses").delete().eq("id", id);
+  if (error) throw new Error(error.message);
 }
 
 // Atomic expense via RPC (also posts cash_ledger 'out')
