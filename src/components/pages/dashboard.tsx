@@ -4,7 +4,7 @@ import { useMemo, useEffect, useState, useCallback } from "react";
 import * as XLSX from "xlsx";
 import {
   FileText, FlaskConical, BookOpen, CheckCircle,
-  Package, Settings, Loader2, ChevronDown, ChevronUp, X, Download,
+  Package, Settings, Loader2, ChevronDown, ChevronUp, X, Download, AlertTriangle,
 } from "lucide-react";
 import { useAppStore } from "@/store";
 import { cn } from "@/lib/utils";
@@ -73,7 +73,6 @@ const columnsMap: Record<CardKey, Col[]> = {
   ],
   "expenses-today": [
     { key: "description", label: "Description" },
-    { key: "category", label: "Category" },
     { key: "amount", label: "Amount", align: "right", fmt: (v) => formatRs(v) },
   ],
   "customers": [
@@ -144,6 +143,7 @@ export default function Dashboard() {
   const [detailRows, setDetailRows] = useState<Record<string, any>[]>([]);
   const [detailLabel, setDetailLabel] = useState("");
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState("");
 
   // Use PKT date — matches server-side pktToday()
   const pktDate = useMemo(() => pktToday(), []);
@@ -177,6 +177,7 @@ export default function Dashboard() {
     setActiveCard(cardKey);
     setDetailLoading(true);
     setDetailRows([]);
+    setDetailError("");
     // Set label immediately from card definition (not API) to prevent stale label
     setDetailLabel(cardLabels[cardKey] || cardKey);
     try {
@@ -188,10 +189,12 @@ export default function Dashboard() {
       } else {
         const err = await res.json().catch(() => ({}));
         console.error("Dashboard details API error:", err);
+        setDetailError(err.detail || err.error || "Failed to load records");
       }
     } catch (err) {
       console.error("Dashboard details fetch error:", err);
       setDetailRows([]);
+      setDetailError("Network error — check your connection");
     } finally {
       setDetailLoading(false);
     }
@@ -271,10 +274,15 @@ export default function Dashboard() {
                   <Loader2 className="w-6 h-6 animate-spin text-emerald-500" />
                   <span className="ml-2 text-sm text-slate-400">Loading...</span>
                 </div>
-              ) : detailRows.length === 0 ? (
+              ) : detailRows.length === 0 && !detailError ? (
                 <div className="flex flex-col items-center justify-center py-16 text-slate-400">
                   <FileText className="w-10 h-10 mb-2 opacity-40" />
                   <p className="text-sm font-medium">No records found</p>
+                </div>
+              ) : detailError ? (
+                <div className="flex flex-col items-center justify-center py-12 px-6 text-red-500">
+                  <AlertTriangle className="w-8 h-8 mb-2 opacity-60" />
+                  <p className="text-sm font-medium">{detailError}</p>
                 </div>
               ) : (
                 <Table>
