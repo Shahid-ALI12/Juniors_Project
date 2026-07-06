@@ -17,6 +17,7 @@ export async function getMixOrders(): Promise<MixOrderRow[]> {
   const { data, error } = await admin
     .from("mix_orders")
     .select("*, customers(id,name), locations(id,name)")
+    .is("voided_at", null)  // Exclude voided records
     .order("created_at", { ascending: false });
   if (error) throw error;
   return (data || []) as MixOrderRow[];
@@ -144,6 +145,18 @@ async function createMixOrderFallback(params: {
 }
 
 export async function deleteMixOrder(id: number): Promise<void> {
-  const { error } = await admin.from("mix_orders").delete().eq("id", id);
-  if (error) throw new Error(error.message);
+  // Soft-delete: set voided_at instead of hard deleting to preserve audit trail
+  const { error: softErr } = await admin
+    .from("mix_orders")
+    .update({ voided_at: new Date().toISOString() })
+    .eq("id", id)
+    .is("voided_at", null);
+  if (!softErr) return;
+  if (softErr.message?.includes("column") || softErr.message?.includes("does not exist")) {
+    console.warn("voided_at column not found — falling back to hard delete for mix order");
+    const { error } = await admin.from("mix_orders").delete().eq("id", id);
+    if (error) throw new Error(error.message);
+    return;
+  }
+  throw new Error(softErr.message);
 }

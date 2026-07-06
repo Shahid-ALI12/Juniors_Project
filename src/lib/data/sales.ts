@@ -34,6 +34,7 @@ export async function getSales(filters?: {
   let q = admin
     .from("sales")
     .select("*, customers(id,name,type), products(id,name), locations(id,name)")
+    .is("voided_at", null)  // Exclude voided records
     .order("created_at", { ascending: true });
 
   if (filters?.sale_date) q = q.eq("sale_date", filters.sale_date);
@@ -49,18 +50,53 @@ export async function getSales(filters?: {
 }
 
 export async function deleteSale(id: number): Promise<void> {
-  const { error } = await admin.from("sales").delete().eq("id", id);
-  if (error) throw new Error(error.message);
+  // Soft-delete: set voided_at instead of hard deleting to preserve audit trail
+  const { error: softErr } = await admin
+    .from("sales")
+    .update({ voided_at: new Date().toISOString() })
+    .eq("id", id)
+    .is("voided_at", null);
+  if (!softErr) return; // soft-delete succeeded
+  // If voided_at column doesn't exist yet, fall back to hard delete
+  if (softErr.message?.includes("column") || softErr.message?.includes("does not exist")) {
+    console.warn("voided_at column not found — falling back to hard delete for sale");
+    const { error } = await admin.from("sales").delete().eq("id", id);
+    if (error) throw new Error(error.message);
+    return;
+  }
+  throw new Error(softErr.message);
 }
 
 export async function deleteSalesByGroup(groupId: string): Promise<void> {
-  const { error } = await admin.from("sales").delete().eq("transaction_group_id", groupId);
-  if (error) throw new Error(error.message);
+  const { error: softErr } = await admin
+    .from("sales")
+    .update({ voided_at: new Date().toISOString() })
+    .eq("transaction_group_id", groupId)
+    .is("voided_at", null);
+  if (!softErr) return;
+  if (softErr.message?.includes("column") || softErr.message?.includes("does not exist")) {
+    console.warn("voided_at column not found — falling back to hard delete for sale group");
+    const { error } = await admin.from("sales").delete().eq("transaction_group_id", groupId);
+    if (error) throw new Error(error.message);
+    return;
+  }
+  throw new Error(softErr.message);
 }
 
 export async function deleteSalesByMixOrder(mixOrderId: number): Promise<void> {
-  const { error } = await admin.from("sales").delete().eq("mix_order_id", mixOrderId);
-  if (error) throw new Error(error.message);
+  const { error: softErr } = await admin
+    .from("sales")
+    .update({ voided_at: new Date().toISOString() })
+    .eq("mix_order_id", mixOrderId)
+    .is("voided_at", null);
+  if (!softErr) return;
+  if (softErr.message?.includes("column") || softErr.message?.includes("does not exist")) {
+    console.warn("voided_at column not found — falling back to hard delete for mix order sales");
+    const { error } = await admin.from("sales").delete().eq("mix_order_id", mixOrderId);
+    if (error) throw new Error(error.message);
+    return;
+  }
+  throw new Error(softErr.message);
 }
 
 // Atomic sale creation via RPC

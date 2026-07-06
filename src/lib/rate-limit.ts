@@ -61,9 +61,12 @@ async function check(
   identifier: string
 ): Promise<RateLimitResult> {
   if (!limiter) {
-    // Redis not configured — allow (fail open, but log so it's visible)
+    // Redis not configured — fail open but log prominently
     if (process.env.NODE_ENV === "production") {
-      console.warn("Rate limiting disabled: KV_REST_API_URL/KV_REST_API_TOKEN not set");
+      console.error(
+        "[SECURITY WARNING] Rate limiting DISABLED: KV_REST_API_URL/KV_REST_API_TOKEN not set. " +
+        "This is a security risk in production. Configure Upstash Redis immediately."
+      );
     }
     return { success: true, limit: 0, remaining: 0, retryAfter: 0 };
   }

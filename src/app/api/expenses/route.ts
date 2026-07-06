@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth/server-user";
+import { requireUser, requireAdmin } from "@/lib/auth/server-user";
 import { getExpenses, recordExpenseRPC, deleteExpense } from "@/lib/data/expenses";
 
 // Prevent Next.js from caching GET responses
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
 
 // POST — atomic expense via RPC (also posts cash_ledger 'out')
 export async function POST(request: NextRequest) {
-  const auth = await requireUser();
+  const auth = await requireAdmin();
   if (!auth.ok) return auth.response;
 
   try {
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const auth = await requireUser();
+  const auth = await requireAdmin();
   if (!auth.ok) return auth.response;
 
   try {

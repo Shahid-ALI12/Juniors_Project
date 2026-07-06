@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
           .from("sales")
           .select("id, sale_date, quantity, unit_type, rate_per_bag, customers(id,name), products(id,name), locations(id,name)")
           .gte("sale_date", from).lte("sale_date", to)
+          .is("voided_at", null)
           .order("created_at", { ascending: false });
         if (error) throw error;
         const rows = (data || []).map((s: any) => ({
@@ -40,6 +41,7 @@ export async function GET(request: NextRequest) {
           .from("sales")
           .select("id, sale_date, quantity, rate_per_bag, rickshaw_fare, cash_received, unit_type, customers(id,name), products(id,name)")
           .gte("sale_date", from).lte("sale_date", to)
+          .is("voided_at", null)
           .order("created_at", { ascending: false });
         if (error) throw error;
         const rows = (data || []).map((s: any) => {
@@ -65,6 +67,7 @@ export async function GET(request: NextRequest) {
           .select("id, sale_date, quantity, rate_per_bag, rickshaw_fare, cash_received, customers(id,name), products(id,name)")
           .gte("sale_date", from).lte("sale_date", to)
           .gt("cash_received", 0)
+          .is("voided_at", null)
           .order("created_at", { ascending: false });
         if (error) throw error;
         const rows = (data || []).map((s: any) => ({
@@ -83,6 +86,7 @@ export async function GET(request: NextRequest) {
           .from("sales")
           .select("id, sale_date, quantity, rate_per_bag, rickshaw_fare, cash_received, customers(id,name,type), products(id,name)")
           .gte("sale_date", from).lte("sale_date", to)
+          .is("voided_at", null)
           .order("created_at", { ascending: false });
         if (error) throw error;
         const rows = (data || [])
@@ -107,6 +111,7 @@ export async function GET(request: NextRequest) {
           .from("sales")
           .select("id, sale_date, quantity, rate_per_bag, rickshaw_fare, cash_received, customers(id,name,type), products(id,name)")
           .gte("sale_date", from).lte("sale_date", to)
+          .is("voided_at", null)
           .order("created_at", { ascending: false });
         if (error) throw error;
         const rows = (data || [])
@@ -127,6 +132,7 @@ export async function GET(request: NextRequest) {
           .from("expenses")
           .select("id, expense_date, description, amount, created_at")
           .gte("expense_date", from).lte("expense_date", to)
+          .is("voided_at", null)
           .order("created_at", { ascending: false });
         if (error) throw error;
         const rows = (data || []).map((e: any) => ({

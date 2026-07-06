@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth/server-user";
+import { requireUser, requireAdmin } from "@/lib/auth/server-user";
 import { transferCashRPC } from "@/lib/data/cash";
 import { getErrorDetail } from "@/lib/api-error";
 
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireUser();
+  const auth = await requireAdmin();
   if (!auth.ok) return auth.response;
 
   try {
@@ -33,6 +33,10 @@ export async function POST(request: NextRequest) {
 
     if (!from_account_id || !to_account_id || !amount) {
       return NextResponse.json({ error: "from_account_id, to_account_id, amount required" }, { status: 400 });
+    }
+
+    if (from_account_id === to_account_id) {
+      return NextResponse.json({ error: "from_account_id and to_account_id must be different" }, { status: 400 });
     }
 
     const id = await transferCashRPC({

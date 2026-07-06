@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
           .from("sales")
           .select("id, sale_date, quantity, rate_per_bag, rickshaw_fare, cash_received, unit_type, customers(id,name), products(id,name), locations(id,name)")
           .eq("sale_date", today)
+          .is("voided_at", null)
           .order("created_at", { ascending: false });
         if (error) throw error;
         const rows = (data || []).map((s: any) => ({
@@ -45,6 +46,7 @@ export async function GET(request: NextRequest) {
           .from("sales")
           .select("id, sale_date, quantity, rate_per_bag, rickshaw_fare, cash_received, unit_type, customers(id,name), products(id,name)")
           .eq("sale_date", today)
+          .is("voided_at", null)
           .order("created_at", { ascending: false });
         if (error) throw error;
         const rows = (data || []).map((s: any) => ({
@@ -68,6 +70,7 @@ export async function GET(request: NextRequest) {
           .select("id, sale_date, cash_received, customers(id,name), products(id,name)")
           .eq("sale_date", today)
           .gt("cash_received", 0)
+          .is("voided_at", null)
           .order("created_at", { ascending: false });
         if (error) throw error;
         const rows = (data || []).map((s: any) => ({
@@ -85,6 +88,7 @@ export async function GET(request: NextRequest) {
           .from("expenses")
           .select("id, expense_date, description, amount, created_at")
           .eq("expense_date", today)
+          .is("voided_at", null)
           .order("created_at", { ascending: false });
         if (error) throw error;
         const rows = (data || []).map((e: any) => ({
@@ -118,7 +122,8 @@ export async function GET(request: NextRequest) {
       case "outstanding": {
         const { data: sales } = await admin
           .from("sales")
-          .select("customer_id, quantity, rate_per_bag, rickshaw_fare, cash_received, customers(id,name,phone,type)");
+          .select("customer_id, quantity, rate_per_bag, rickshaw_fare, cash_received, customers(id,name,phone,type)")
+          .is("voided_at", null);
         if (!sales) return NextResponse.json({ rows: [], label: "Outstanding / Khata" });
 
         const balances: Record<number, { name: string; phone: string; type: string; total_bill: number; paid: number }> = {};
@@ -140,7 +145,8 @@ export async function GET(request: NextRequest) {
       case "over-credit": {
         const { data: sales } = await admin
           .from("sales")
-          .select("customer_id, quantity, rate_per_bag, rickshaw_fare, cash_received, customers(id,name,phone)");
+          .select("customer_id, quantity, rate_per_bag, rickshaw_fare, cash_received, customers(id,name,phone)")
+          .is("voided_at", null);
         if (!sales) return NextResponse.json({ rows: [], label: "Over Credit Limit" });
 
         const balances: Record<number, { name: string; phone: string; credit_limit: number; total_bill: number; paid: number }> = {};

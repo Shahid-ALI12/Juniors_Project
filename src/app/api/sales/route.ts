@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth/server-user";
+import { requireUser, requireAdmin } from "@/lib/auth/server-user";
 import { getSales, deleteSale, deleteSalesByGroup, deleteSalesByMixOrder, createSaleRPC } from "@/lib/data/sales";
 import { getErrorDetail } from "@/lib/api-error";
 
@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
 
 // POST — atomic sale via RPC (cart → multiple sale rows + stock decrement + cash ledger)
 export async function POST(request: NextRequest) {
-  const auth = await requireUser();
+  const auth = await requireAdmin();
   if (!auth.ok) return auth.response;
 
   try {
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
 
 // DELETE — by id, group, or mix_order
 export async function DELETE(request: NextRequest) {
-  const auth = await requireUser();
+  const auth = await requireAdmin();
   if (!auth.ok) return auth.response;
 
   try {

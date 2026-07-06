@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth/server-user";
+import { requireAdmin } from "@/lib/auth/server-user";
 import { correctBalanceRPC } from "@/lib/data/cash";
 import { getErrorDetail } from "@/lib/api-error";
 
 export async function POST(request: NextRequest) {
-  const auth = await requireUser();
+  const auth = await requireAdmin();
   if (!auth.ok) return auth.response;
 
   try {

@@ -14,7 +14,7 @@ export async function getExpenses(filters?: {
   expense_date_gte?: string;
   expense_date_lte?: string;
 }): Promise<ExpenseRow[]> {
-  let q = admin.from("expenses").select("*").order("created_at", { ascending: true });
+  let q = admin.from("expenses").select("*").is("voided_at", null).order("created_at", { ascending: true });
   if (filters?.expense_date) q = q.eq("expense_date", filters.expense_date);
   if (filters?.expense_date_gte) q = q.gte("expense_date", filters.expense_date_gte);
   if (filters?.expense_date_lte) q = q.lte("expense_date", filters.expense_date_lte);
@@ -24,8 +24,20 @@ export async function getExpenses(filters?: {
 }
 
 export async function deleteExpense(id: number): Promise<void> {
-  const { error } = await admin.from("expenses").delete().eq("id", id);
-  if (error) throw new Error(error.message);
+  // Soft-delete: set voided_at instead of hard deleting to preserve audit trail
+  const { error: softErr } = await admin
+    .from("expenses")
+    .update({ voided_at: new Date().toISOString() })
+    .eq("id", id)
+    .is("voided_at", null);
+  if (!softErr) return;
+  if (softErr.message?.includes("column") || softErr.message?.includes("does not exist")) {
+    console.warn("voided_at column not found — falling back to hard delete for expense");
+    const { error } = await admin.from("expenses").delete().eq("id", id);
+    if (error) throw new Error(error.message);
+    return;
+  }
+  throw new Error(softErr.message);
 }
 
 // Atomic expense via RPC (also posts cash_ledger 'out')

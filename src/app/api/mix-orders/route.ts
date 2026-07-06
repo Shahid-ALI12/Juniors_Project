@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth/server-user";
+import { requireUser, requireAdmin } from "@/lib/auth/server-user";
 import { getMixOrders, createMixOrderRPC, deleteMixOrder } from "@/lib/data/mix-orders";
 import { deleteSalesByMixOrder } from "@/lib/data/sales";
 import { admin } from "@/lib/supabase/server-admin";
@@ -39,7 +39,7 @@ export async function GET() {
 
 // POST — atomic mix order via RPC (parent + sale lines)
 export async function POST(request: NextRequest) {
-  const auth = await requireUser();
+  const auth = await requireAdmin();
   if (!auth.ok) return auth.response;
 
   try {
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const auth = await requireUser();
+  const auth = await requireAdmin();
   if (!auth.ok) return auth.response;
 
   try {

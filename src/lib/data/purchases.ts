@@ -29,6 +29,7 @@ export async function getPurchases(filters?: {
   let q = admin
     .from("purchases")
     .select("*, products(id,name), suppliers(id,name), customers(id,name), locations(id,name)")
+    .is("voided_at", null)  // Exclude voided records
     .order("created_at", { ascending: false });
 
   if (filters?.purchase_date_gte) q = q.gte("purchase_date", filters.purchase_date_gte);
@@ -40,7 +41,20 @@ export async function getPurchases(filters?: {
 }
 
 export async function deletePurchase(id: number): Promise<void> {
-  await admin.from("purchases").delete().eq("id", id);
+  // Soft-delete: set voided_at instead of hard deleting to preserve audit trail
+  const { error: softErr } = await admin
+    .from("purchases")
+    .update({ voided_at: new Date().toISOString() })
+    .eq("id", id)
+    .is("voided_at", null);
+  if (!softErr) return;
+  if (softErr.message?.includes("column") || softErr.message?.includes("does not exist")) {
+    console.warn("voided_at column not found — falling back to hard delete for purchase");
+    const { error } = await admin.from("purchases").delete().eq("id", id);
+    if (error) throw error;
+    return;
+  }
+  throw softErr;
 }
 
 // Atomic purchase via RPC

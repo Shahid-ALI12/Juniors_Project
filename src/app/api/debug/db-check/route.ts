@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/auth/server-user";
 import { admin } from "@/lib/supabase/server-admin";
 
 // Diagnostic endpoint — tests Supabase connection, table existence, and RPC functions.
@@ -45,6 +46,10 @@ interface RpcCheckResult {
 }
 
 export async function GET() {
+  // Admin-only: this endpoint exposes internal infrastructure details
+  const auth = await requireAdmin();
+  if (!auth.ok) return auth.response;
+
   const results: {
     env: Record<string, boolean>;
     connection: { ok: boolean; error?: string };

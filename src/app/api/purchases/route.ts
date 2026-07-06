@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth/server-user";
+import { requireUser, requireAdmin } from "@/lib/auth/server-user";
 import { getPurchases, recordPurchaseRPC, deletePurchase } from "@/lib/data/purchases";
 import { getErrorDetail } from "@/lib/api-error";
 
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
 
 // POST — atomic purchase via RPC (stock increment + cash ledger)
 export async function POST(request: NextRequest) {
-  const auth = await requireUser();
+  const auth = await requireAdmin();
   if (!auth.ok) return auth.response;
 
   try {
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const auth = await requireUser();
+  const auth = await requireAdmin();
   if (!auth.ok) return auth.response;
 
   try {
