@@ -667,90 +667,147 @@ function PastMixOrdersSection({
             </Table>
           </div>
 
-          {selectedPast && (
-            <div className="border-t border-slate-200/60 bg-slate-50/50 p-6 space-y-4">
-              <div className="flex items-center justify-between flex-wrap gap-3">
-                <h3 className="text-sm font-bold text-slate-700">
-                  📋 {selectedPast.id} — {selectedPast.customer}
-                </h3>
+          {selectedPast && (() => {
+            const billItems = (selectedPast.sales ?? []).map((s: any) => ({
+              product: s.products?.name ?? "Unknown",
+              weight_kg: s.quantity,
+              rate_per_kg: s.rate_per_bag,
+              amount: s.quantity * s.rate_per_bag,
+            }));
+            const billTotalWeight = billItems.reduce((s, i) => s + i.weight_kg, 0);
+            const billTotalAmount = billItems.reduce((s, i) => s + i.amount, 0);
+
+            return (<>
+              {/* Screen: order detail */}
+              <div className="border-t border-slate-200/60 bg-slate-50/50 p-6 space-y-4">
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <h3 className="text-sm font-bold text-slate-700">
+                    📋 {selectedPast.id} — {selectedPast.customer}
+                  </h3>
                   <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-slate-300 hover:bg-slate-100"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const items = (selectedPast.sales ?? []).map((s: any) => ({
-                      product: s.products?.name ?? "Unknown",
-                      weight_kg: s.quantity,
-                      rate_per_kg: s.rate_per_bag,
-                      amount: s.quantity * s.rate_per_bag,
-                    }));
-                    generateMixBillPDF({
-                      orderId: selectedPast.id,
-                      customerName: selectedPast.customer,
-                      customerType: "credit",
-                      orderDate: selectedPast.date,
-                      location: selectedPast.location,
-                      items,
-                      totalWeight: items.reduce((s, i) => s + i.weight_kg, 0),
-                      totalAmount: items.reduce((s, i) => s + i.amount, 0),
-                    }).then(() => toast.success("Bill PDF download ho rahi hai!"))
-                    .catch(() => toast.error("PDF bill generate nahi ho saki"));
-                  }}
-                >
-                  <Download className="w-3.5 h-3.5 mr-1" />
-                  Download Bill (PDF)
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-slate-300 hover:bg-slate-100"
-                  onClick={(e) => { e.stopPropagation(); window.print(); }}
-                >
-                  <Printer className="w-3.5 h-3.5 mr-1" />
-                  Print
-                </Button>
+                    variant="outline"
+                    size="sm"
+                    className="border-slate-300 hover:bg-slate-100"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      generateMixBillPDF({
+                        orderId: selectedPast.id,
+                        customerName: selectedPast.customer,
+                        customerType: "credit",
+                        orderDate: selectedPast.date,
+                        location: selectedPast.location,
+                        items: billItems,
+                        totalWeight: billTotalWeight,
+                        totalAmount: billTotalAmount,
+                      }).then(() => toast.success("Bill PDF download ho rahi hai!"))
+                      .catch(() => toast.error("PDF bill generate nahi ho saki"));
+                    }}
+                  >
+                    <Download className="w-3.5 h-3.5 mr-1" />
+                    Download Bill (PDF)
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-slate-300 hover:bg-slate-100"
+                    onClick={(e) => { e.stopPropagation(); window.print(); }}
+                  >
+                    <Printer className="w-3.5 h-3.5 mr-1" />
+                    Print Bill
+                  </Button>
+                </div>
+
+                <div className="max-h-64 overflow-y-auto rounded-lg border border-slate-100">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-slate-50/80 hover:bg-slate-50/80">
+                        <TableHead className="text-xs uppercase text-slate-500 font-semibold">#</TableHead>
+                        <TableHead className="text-xs uppercase text-slate-500 font-semibold">Product</TableHead>
+                        <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Weight (kg)</TableHead>
+                        <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Rate/kg</TableHead>
+                        <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Amount</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {billItems.map((item, idx) => (
+                        <TableRow key={idx}>
+                          <TableCell className="text-slate-500 text-xs">{idx + 1}</TableCell>
+                          <TableCell className="font-medium text-slate-800 text-sm">{item.product}</TableCell>
+                          <TableCell className="text-right tabular-nums text-sm">{fmtRs(item.weight_kg)}</TableCell>
+                          <TableCell className="text-right tabular-nums text-sm">{fmtRs(item.rate_per_kg)}</TableCell>
+                          <TableCell className="text-right tabular-nums text-sm font-semibold text-slate-800">Rs. {fmtRs(item.amount)}</TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow className="bg-slate-100/60 font-semibold">
+                        <TableCell colSpan={2} className="text-slate-600 text-sm">Total</TableCell>
+                        <TableCell className="text-right tabular-nums text-sm text-slate-800">
+                          {fmtRs(billTotalWeight)} kg
+                        </TableCell>
+                        <TableCell />
+                        <TableCell className="text-right tabular-nums text-sm text-slate-800">
+                          Rs. {fmtRs(billTotalAmount)}
+                        </TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
               </div>
 
-              <div className="max-h-64 overflow-y-auto rounded-lg border border-slate-100">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-slate-50/80 hover:bg-slate-50/80">
-                      <TableHead className="text-xs uppercase text-slate-500 font-semibold">#</TableHead>
-                      <TableHead className="text-xs uppercase text-slate-500 font-semibold">Product</TableHead>
-                      <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Weight (kg)</TableHead>
-                      <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Rate/kg</TableHead>
-                      <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Amount</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {(selectedPast.sales ?? []).map((s: any, idx: number) => {
-                      const amt = s.quantity * s.rate_per_bag;
-                      return (
-                        <TableRow key={s.id}>
-                          <TableCell className="text-slate-500 text-xs">{idx + 1}</TableCell>
-                          <TableCell className="font-medium text-slate-800 text-sm">{s.products?.name ?? "—"}</TableCell>
-                          <TableCell className="text-right tabular-nums text-sm">{fmtRs(s.quantity)}</TableCell>
-                          <TableCell className="text-right tabular-nums text-sm">{fmtRs(s.rate_per_bag)}</TableCell>
-                          <TableCell className="text-right tabular-nums text-sm font-semibold text-slate-800">Rs. {fmtRs(amt)}</TableCell>
-                        </TableRow>
-                      );
-                    })}
-                    <TableRow className="bg-slate-100/60 font-semibold">
-                      <TableCell colSpan={2} className="text-slate-600 text-sm">Total</TableCell>
-                      <TableCell className="text-right tabular-nums text-sm text-slate-800">
-                        {fmtRs((selectedPast.sales ?? []).reduce((s: number, r: any) => s + r.quantity, 0))} kg
-                      </TableCell>
-                      <TableCell />
-                      <TableCell className="text-right tabular-nums text-sm text-slate-800">
-                        Rs. {fmtRs((selectedPast.sales ?? []).reduce((s: number, r: any) => s + r.quantity * r.rate_per_bag, 0))}
-                      </TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
+              {/* Print-only bill receipt (hidden on screen, visible when printing) */}
+              <div className="print-bill-area">
+                <div style={{ fontFamily: 'monospace', maxWidth: '300px', margin: '0 auto', padding: '12px' }}>
+                  <div style={{ textAlign: 'center', borderBottom: '1px dashed #999', paddingBottom: '8px', marginBottom: '8px' }}>
+                    <div style={{ fontSize: '14px', fontWeight: 'bold' }}>MIX ORDER BILL</div>
+                    <div style={{ fontSize: '10px', marginTop: '2px' }}>Cattle Feed Supply</div>
+                  </div>
+
+                  <div style={{ fontSize: '10px', marginBottom: '6px', display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Order: #{selectedPast.id}</span>
+                    <span>{selectedPast.date}</span>
+                  </div>
+                  <div style={{ fontSize: '10px', marginBottom: '6px' }}>
+                    <div>Customer: <strong>{selectedPast.customer}</strong></div>
+                    <div>Location: {selectedPast.location}</div>
+                  </div>
+
+                  <div style={{ borderBottom: '1px dashed #999', borderTop: '1px dashed #999', padding: '6px 0', margin: '6px 0' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: 'left', padding: '2px 4px', borderBottom: '1px solid #ccc' }}>#</th>
+                          <th style={{ textAlign: 'left', padding: '2px 4px', borderBottom: '1px solid #ccc' }}>Item</th>
+                          <th style={{ textAlign: 'right', padding: '2px 4px', borderBottom: '1px solid #ccc' }}>Wt(kg)</th>
+                          <th style={{ textAlign: 'right', padding: '2px 4px', borderBottom: '1px solid #ccc' }}>Rate</th>
+                          <th style={{ textAlign: 'right', padding: '2px 4px', borderBottom: '1px solid #ccc' }}>Amt</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {billItems.map((item, idx) => (
+                          <tr key={idx}>
+                            <td style={{ padding: '2px 4px' }}>{idx + 1}</td>
+                            <td style={{ padding: '2px 4px' }}>{item.product}</td>
+                            <td style={{ textAlign: 'right', padding: '2px 4px' }}>{item.weight_kg}</td>
+                            <td style={{ textAlign: 'right', padding: '2px 4px' }}>{item.rate_per_kg}</td>
+                            <td style={{ textAlign: 'right', padding: '2px 4px' }}>{item.amount.toLocaleString('en-PK')}</td>
+                          </tr>
+                        ))}
+                        <tr style={{ fontWeight: 'bold', borderTop: '1px solid #999' }}>
+                          <td colSpan={2} style={{ padding: '3px 4px' }}>Total</td>
+                          <td style={{ textAlign: 'right', padding: '3px 4px' }}>{fmtRs(billTotalWeight)} kg</td>
+                          <td style={{ padding: '3px 4px' }}></td>
+                          <td style={{ textAlign: 'right', padding: '3px 4px' }}>Rs. {fmtRs(billTotalAmount)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div style={{ textAlign: 'center', fontSize: '9px', color: '#666', marginTop: '8px', borderTop: '1px dashed #999', paddingTop: '6px' }}>
+                    Thank you for your business!
+                  </div>
+                </div>
               </div>
-            </div>
-          )}
+            </>);
+          })()}
         </div>
       )}
     </section>
