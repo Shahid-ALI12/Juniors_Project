@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
       account_id,
       target: Number(target),
       correction_date: correction_date || (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60 + 30) * 60000).toISOString().split("T")[0]; })(),
-      entered_by: `${auth.type}:${auth.user.id}`,
+      entered_by: `admin:${auth.user.id}`,
     });
 
     return NextResponse.json({ id }, { status: 201 });
