@@ -134,18 +134,13 @@ export default function CustomMixOrder() {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      try {
-        const [pList, lList] = await Promise.all([
-          fetchCached<Product>("products", "/api/products", "products"),
-          fetchCached<Location>("locations", "/api/locations", "locations"),
-        ]);
-        setProducts(pList);
-        setLocations(lList);
-      } catch {
-        toast.error("Failed to load data");
-      } finally {
-        setLoading(false);
-      }
+      const failed: string[] = [];
+      try { setProducts(await fetchCached<Product>("products", "/api/products", "products")); }
+      catch { failed.push("products"); }
+      try { setLocations(await fetchCached<Location>("locations", "/api/locations", "locations")); }
+      catch { failed.push("locations"); }
+      if (failed.length > 0) toast.error(`Failed to load: ${failed.join(", ")}`);
+      setLoading(false);
     })();
   }, []);
 

@@ -101,40 +101,36 @@ export default function DailyEntryPage() {
   const askConfirm = (t: string, d: string, a: () => void) => { setConfirmTitle(t); setConfirmDesc(d); setConfirmAction(() => a); setConfirmOpen(true); };
 
   const loadMasterData = useCallback(async () => {
-    try {
-      const [pList, lList, cList, sList] = await Promise.all([
-        fetchCached<Product>("products", "/api/products", "products"),
-        fetchCached<Location>("locations", "/api/locations", "locations"),
-        fetchCached<Customer>("customers", "/api/customers?active=true", "customers"),
-        fetchCached<ProductStock>("stock", "/api/stock", "stock"),
-      ]);
-      setProducts(pList);
-      setLocations(lList);
-      setCustomers(cList);
-      setStockData(sList);
-    } catch {
-      toast.error("Failed to load master data");
-    }
+    const errors: string[] = [];
+    try { setProducts(await fetchCached<Product>("products", "/api/products", "products")); }
+    catch (e: any) { errors.push("Products"); }
+    try { setLocations(await fetchCached<Location>("locations", "/api/locations", "locations")); }
+    catch (e: any) { errors.push("Locations"); }
+    try { setCustomers(await fetchCached<Customer>("customers", "/api/customers?active=true", "customers")); }
+    catch (e: any) { errors.push("Customers"); }
+    try { setStockData(await fetchCached<ProductStock>("stock", "/api/stock", "stock")); }
+    catch (e: any) { errors.push("Stock"); }
+    if (errors.length > 0) toast.error(`Failed to load: ${errors.join(", ")}`);
   }, []);
 
   const loadDayData = useCallback(async (d: string) => {
+    const bust = `_t=${Date.now()}`;
     try {
-      const bust = `_t=${Date.now()}`; // prevent browser GET cache after mutations
-      const [sRes, eRes] = await Promise.all([
-        fetch(`/api/sales?sale_date=${d}&${bust}`).then(r => r.json()),
-        fetch(`/api/expenses?expense_date=${d}&${bust}`).then(r => r.json()),
-      ]);
-      setSales(sRes.sales ?? []);
-      setExpenses(eRes.expenses ?? []);
-    } catch {
-      toast.error("Failed to load day data");
-    }
+      const sRes = await fetch(`/api/sales?sale_date=${d}&${bust}`);
+      if (sRes.ok) { const sData = await sRes.json(); setSales(sData.sales ?? []); }
+      else toast.error("Failed to load sales");
+    } catch { toast.error("Failed to load sales"); }
+    try {
+      const eRes = await fetch(`/api/expenses?expense_date=${d}&${bust}`);
+      if (eRes.ok) { const eData = await eRes.json(); setExpenses(eData.expenses ?? []); }
+      else toast.error("Failed to load expenses");
+    } catch { toast.error("Failed to load expenses"); }
   }, []);
 
   useEffect(() => {
     (async () => {
       setLoading(true);
-      await Promise.all([loadMasterData(), loadDayData(date)]);
+      await Promise.allSettled([loadMasterData(), loadDayData(date)]);
       setLoading(false);
     })();
   }, []);

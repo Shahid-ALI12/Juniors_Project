@@ -44,24 +44,21 @@ export default function ManageProducts() {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      try {
-        const [pList, lList, sList] = await Promise.all([
-          fetchCached<Product>("products", "/api/products", "products"),
-          fetchCached<Location>("locations", "/api/locations", "locations"),
-          fetchCached<ProductStock>("stock", "/api/stock", "stock"),
-        ]);
-        setProducts(pList);
-        setLocations(lList);
-        setStockData(sList);
-
+      let pList: Product[] = [], lList: Location[] = [], sList: ProductStock[] = [];
+      const failed: string[] = [];
+      try { pList = await fetchCached<Product>("products", "/api/products", "products"); } catch { failed.push("products"); }
+      try { lList = await fetchCached<Location>("locations", "/api/locations", "locations"); } catch { failed.push("locations"); }
+      try { sList = await fetchCached<ProductStock>("stock", "/api/stock", "stock"); } catch { failed.push("stock"); }
+      setProducts(pList);
+      setLocations(lList);
+      setStockData(sList);
+      if (failed.length > 0) toast.error(`Failed to load: ${failed.join(", ")}`);
+      else {
         const initial: Record<number, string> = {};
         pList.forEach((p: Product) => { initial[p.id] = String(p.default_rate); });
         setEditedRates(initial);
-      } catch {
-        toast.error("Failed to load data");
-      } finally {
-        setLoading(false);
       }
+      setLoading(false);
     })();
   }, []);
 

@@ -73,25 +73,23 @@ export default function CashManagementPage() {
   const [correctionSuccess, setCorrectionSuccess] = useState(false);
 
   const reloadData = async () => {
+    const failed: string[] = [];
     try {
-      const [accRes, balRes, trRes] = await Promise.all([
-        fetch("/api/cash/accounts"),
-        fetch("/api/cash/balances"),
-        fetch("/api/cash/transfer"),
-      ]);
-      if (!accRes.ok || !balRes.ok || !trRes.ok) {
-        toast.error("Failed to load cash data");
-        return;
-      }
-      const acc = await accRes.json();
-      const bal = await balRes.json();
-      const tr = await trRes.json();
-      setAccounts(acc.accounts ?? []);
-      setBalances(bal.balances ?? {});
-      setTransfers(tr.transfers ?? []);
-    } catch {
-      toast.error("Failed to load cash data");
-    }
+      const accRes = await fetch("/api/cash/accounts");
+      if (accRes.ok) { const acc = await accRes.json(); setAccounts(acc.accounts ?? []); }
+      else failed.push("accounts");
+    } catch { failed.push("accounts"); }
+    try {
+      const balRes = await fetch("/api/cash/balances");
+      if (balRes.ok) { const bal = await balRes.json(); setBalances(bal.balances ?? {}); }
+      else failed.push("balances");
+    } catch { failed.push("balances"); }
+    try {
+      const trRes = await fetch("/api/cash/transfer");
+      if (trRes.ok) { const tr = await trRes.json(); setTransfers(tr.transfers ?? []); }
+      else failed.push("transfers");
+    } catch { failed.push("transfers"); }
+    if (failed.length > 0) toast.error(`Failed to load: ${failed.join(", ")}`);
   };
 
   useEffect(() => {
