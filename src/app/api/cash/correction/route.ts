@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     const id = await correctBalanceRPC({
       account_id,
       target: Number(target),
-      correction_date: correction_date || new Date().toISOString().split("T")[0],
+      correction_date: correction_date || (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60 + 30) * 60000).toISOString().split("T")[0]; })(),
       entered_by: `${auth.type}:${auth.user.id}`,
     });
 
