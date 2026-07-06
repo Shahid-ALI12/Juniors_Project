@@ -23,6 +23,7 @@ export function MetricCard({
   suffix = "",
   icon: Icon,
   iconColor,
+  words,
 }: {
   label?: string;
   title?: string;
@@ -32,6 +33,8 @@ export function MetricCard({
   suffix?: string;
   icon?: LucideIcon;
   iconColor?: string;
+  /** Optional: English counting words shown below the value */
+  words?: string;
 }) {
   const colorMap: Record<string, string> = {
     blue: "border-t-blue-600 text-blue-600",
@@ -56,6 +59,7 @@ export function MetricCard({
             <div className="text-2xl font-extrabold text-slate-900 mt-1">
               {prefix}{value}{suffix}
             </div>
+            {words && <div className="text-[0.68rem] text-slate-400 mt-1 leading-tight capitalize">{words}</div>}
           </div>
           <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", iconColor || "bg-slate-100")}>
             <Icon className={cn("w-5 h-5", iconColor?.replace("bg-", "text-")?.split("-")[0] ? (iconColor || "text-slate-500") : "text-slate-500")} />
@@ -73,6 +77,7 @@ export function MetricCard({
       <div className={cn("text-2xl font-extrabold text-slate-900 mt-1", textColor)}>
         {prefix}{value}{suffix}
       </div>
+      {words && <div className="text-[0.68rem] text-slate-400 mt-1 leading-tight capitalize">{words}</div>}
     </div>
   );
 }

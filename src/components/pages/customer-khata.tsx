@@ -17,8 +17,22 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { numberToWords } from "@/lib/number-to-words";
 
 const fmt = (n: number) => n.toLocaleString("en-PK");
+
+/** Small helper: renders Rs. value + English words below */
+function AmountWithWords({ amount, className }: { amount: number; className?: string }) {
+  if (amount === 0) {
+    return <span className={className}>Rs. 0</span>;
+  }
+  return (
+    <span className={cn("inline-flex flex-col", className)}>
+      <span className="tabular-nums font-medium leading-tight">Rs. {fmt(amount)}</span>
+      <span className="text-[0.6rem] text-slate-400 leading-tight capitalize">{numberToWords(amount)}</span>
+    </span>
+  );
+}
 
 interface BalanceRow {
   total_bill: number;
@@ -36,6 +50,7 @@ export default function CustomerKhataPage() {
   const [selectedSales, setSelectedSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   // Load all customers + their balances
   useEffect(() => {
@@ -124,6 +139,33 @@ export default function CustomerKhataPage() {
     return { sortedGroups };
   }, [selectedSales]);
 
+  // ── Download Bill Handler ──
+  const handleDownloadBill = async () => {
+    if (!selectedCustomer || selectedSales.length === 0) {
+      toast.error("No sales data to generate bill");
+      return;
+    }
+    setDownloading(true);
+    try {
+      const { generateCustomerBillPDF } = await import("@/lib/generate-customer-bill");
+      const bal = selectedBalance ?? { total_bill: 0, total_cash_paid: 0, total_goods_value: 0, balance_due: 0 };
+      await generateCustomerBillPDF({
+        customer: selectedCustomer,
+        sales: selectedSales,
+        totalBill: bal.total_bill,
+        totalCashPaid: bal.total_cash_paid,
+        balanceDue: bal.balance_due,
+        generatedAt: new Date().toLocaleString("en-PK"),
+      });
+      toast.success("Bill downloaded successfully!");
+    } catch (err) {
+      console.error("Bill download error:", err);
+      toast.error("Failed to generate bill. Try again.");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -203,17 +245,17 @@ export default function CustomerKhataPage() {
                           {c.type}
                         </Badge>
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums">
-                        Rs. {fmt(c.total_bill)}
+                      <td className="px-4 py-3 text-right">
+                        <AmountWithWords amount={c.total_bill} className="items-end" />
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums">
-                        Rs. {fmt(c.total_cash_paid)}
+                      <td className="px-4 py-3 text-right">
+                        <AmountWithWords amount={c.total_cash_paid} className="items-end" />
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums">
-                        Rs. {fmt(c.total_goods_value)}
+                      <td className="px-4 py-3 text-right">
+                        <AmountWithWords amount={c.total_goods_value} className="items-end" />
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums font-bold">
-                        Rs. {fmt(c.balance_due)}
+                      <td className="px-4 py-3 text-right">
+                        <AmountWithWords amount={c.balance_due} className="items-end font-bold" />
                       </td>
                     </tr>
                   );
@@ -228,9 +270,14 @@ export default function CustomerKhataPage() {
             <span className="text-sm font-semibold text-slate-500">
               Total Outstanding Across All Customers
             </span>
-            <span className="text-xl font-extrabold text-slate-900">
-              Rs. {fmt(totalOutstanding)}
-            </span>
+            <div className="flex flex-col items-end">
+              <span className="text-xl font-extrabold text-slate-900">
+                Rs. {fmt(totalOutstanding)}
+              </span>
+              <span className="text-[0.65rem] text-slate-400 capitalize">
+                {numberToWords(totalOutstanding)}
+              </span>
+            </div>
           </div>
         </div>
       </section>
@@ -265,9 +312,19 @@ export default function CustomerKhataPage() {
                 </SelectContent>
               </Select>
               {selectedCustomerId && (
-                <Button variant="outline" size="sm" className="shrink-0">
-                  <Download className="size-4 mr-2" />
-                  Download Bill
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={handleDownloadBill}
+                  disabled={downloading || selectedSales.length === 0}
+                >
+                  {downloading ? (
+                    <Loader2 className="size-4 mr-2 animate-spin" />
+                  ) : (
+                    <Download className="size-4 mr-2" />
+                  )}
+                  {downloading ? "Generating..." : "Download Bill"}
                 </Button>
               )}
             </div>
@@ -290,8 +347,8 @@ export default function CustomerKhataPage() {
               <Alert className="border-red-200 bg-red-50 text-red-700">
                 <AlertTriangle className="size-4 text-red-600" />
                 <AlertDescription className="font-semibold">
-                  ⚠️ {selectedCustomer?.name} has crossed the credit limit of
-                  Rs. {fmt(CREDIT_LIMIT)}.
+                  {selectedCustomer?.name} has crossed the credit limit of
+                  Rs. {fmt(CREDIT_LIMIT)} ({numberToWords(CREDIT_LIMIT)}).
                 </AlertDescription>
               </Alert>
             )}
@@ -357,11 +414,15 @@ export default function CustomerKhataPage() {
                             <td className="px-3 py-2.5 text-right tabular-nums">
                               {sale.rickshaw_fare > 0 ? fmt(sale.rickshaw_fare) : "—"}
                             </td>
-                            <td className="px-3 py-2.5 text-right tabular-nums font-medium">
-                              Rs. {fmt(billAmount)}
+                            <td className="px-3 py-2.5 text-right">
+                              <AmountWithWords amount={billAmount} className="items-end" />
                             </td>
-                            <td className="px-3 py-2.5 text-right tabular-nums">
-                              {sale.cash_received > 0 ? `Rs. ${fmt(sale.cash_received)}` : "—"}
+                            <td className="px-3 py-2.5 text-right">
+                              {sale.cash_received > 0 ? (
+                                <AmountWithWords amount={sale.cash_received} className="items-end" />
+                              ) : (
+                                <span className="text-slate-300">—</span>
+                              )}
                             </td>
                           </tr>
                         );
@@ -383,19 +444,24 @@ export default function CustomerKhataPage() {
                 Paid in Goods (reduces their tab)
               </h3>
               <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-6 text-center text-slate-400 text-sm">
-                {selectedBalance && selectedBalance.total_goods_value > 0
-                  ? `Rs. ${fmt(selectedBalance.total_goods_value)} in goods settlements recorded.`
-                  : "No goods settlements recorded."}
+                {selectedBalance && selectedBalance.total_goods_value > 0 ? (
+                  <div className="flex flex-col items-center">
+                    <span className="text-slate-700 font-medium">Rs. {fmt(selectedBalance.total_goods_value)} in goods settlements recorded.</span>
+                    <span className="text-[0.65rem] text-slate-400 capitalize mt-0.5">{numberToWords(selectedBalance.total_goods_value)}</span>
+                  </div>
+                ) : (
+                  "No goods settlements recorded."
+                )}
               </div>
             </div>
 
             {/* Metric Cards */}
             {selectedBalance && (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <MetricCard label="Total Billed" value={fmt(selectedBalance.total_bill)} color="blue" prefix="Rs. " />
-                <MetricCard label="Cash Paid" value={fmt(selectedBalance.total_cash_paid)} color="green" prefix="Rs. " />
-                <MetricCard label="Paid in Goods" value={fmt(selectedBalance.total_goods_value)} color="purple" prefix="Rs. " />
-                <MetricCard label="Balance Due" value={fmt(selectedBalance.balance_due)} color="orange" prefix="Rs. " />
+                <MetricCard label="Total Billed" value={fmt(selectedBalance.total_bill)} color="blue" prefix="Rs. " words={numberToWords(selectedBalance.total_bill)} />
+                <MetricCard label="Cash Paid" value={fmt(selectedBalance.total_cash_paid)} color="green" prefix="Rs. " words={numberToWords(selectedBalance.total_cash_paid)} />
+                <MetricCard label="Paid in Goods" value={fmt(selectedBalance.total_goods_value)} color="purple" prefix="Rs. " words={numberToWords(selectedBalance.total_goods_value)} />
+                <MetricCard label="Balance Due" value={fmt(selectedBalance.balance_due)} color="orange" prefix="Rs. " words={numberToWords(selectedBalance.balance_due)} />
               </div>
             )}
           </div>
