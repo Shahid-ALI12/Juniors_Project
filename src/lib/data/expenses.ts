@@ -24,20 +24,48 @@ export async function getExpenses(filters?: {
 }
 
 export async function deleteExpense(id: number): Promise<void> {
-  // Soft-delete: set voided_at instead of hard deleting to preserve audit trail
+  // Fetch the expense BEFORE voiding
+  const { data: expRow } = await admin.from("expenses").select("*").eq("id", id).is("voided_at", null).maybeSingle();
+  const exp = expRow as any;
+
   const { error: softErr } = await admin
     .from("expenses")
     .update({ voided_at: new Date().toISOString() })
     .eq("id", id)
     .is("voided_at", null);
-  if (!softErr) return;
+  if (!softErr) {
+    await reverseExpenseEffects(exp);
+    return;
+  }
   if (softErr.message?.includes("column") || softErr.message?.includes("does not exist")) {
     console.warn("voided_at column not found — falling back to hard delete for expense");
+    await reverseExpenseEffects(exp);
     const { error } = await admin.from("expenses").delete().eq("id", id);
     if (error) throw new Error(error.message);
     return;
   }
   throw new Error(softErr.message);
+}
+
+// Reverse cash ledger when voiding an expense
+async function reverseExpenseEffects(exp: any): Promise<void> {
+  if (!exp || !exp.amount) return;
+  try {
+    const { data: acct } = await admin.from("cash_accounts").select("id").eq("name", "Cash In Hand").limit(1).single();
+    if (acct) {
+      await admin.from("cash_ledger").insert({
+        entry_date: exp.expense_date,
+        account_id: (acct as any).id,
+        direction: "in",
+        amount: exp.amount,
+        source_type: "expense_void",
+        source_id: exp.id,
+        description: "Void expense #" + exp.id + ": " + exp.description,
+      });
+    }
+  } catch (err) {
+    console.error("Error reversing expense effects (non-critical, manual fix may be needed):", err);
+  }
 }
 
 // Atomic expense via RPC (also posts cash_ledger 'out')
