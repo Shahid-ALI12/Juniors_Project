@@ -85,6 +85,7 @@ function printMixBill(order: { id: string | number; customer: string; date: stri
       </tbody>
     </table>
     <div class="footer">Thank you for your business!</div>
+    <div class="dev" style="text-align:center;font-size:8px;color:#888;margin-top:10px;border-top:1px dashed #ccc;padding-top:6px;line-height:1.5">Software By Shahid Ali<br/>Contact Number: 0327-1487858</div>
   </body></html>`;
 
   const iframe = document.createElement("iframe");
