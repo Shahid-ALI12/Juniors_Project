@@ -1,15 +1,24 @@
 -- ============================================================
--- Danish Cattle Feed — ALL RPC Functions (Fixed: TABLE returns)
--- Paste this ENTIRE file in Supabase SQL Editor and Run
--- Fixes: "cannot extract elements from a scalar" error
+-- STEP 1: DROP old functions (scalar return types)
+-- Run this FIRST in Supabase SQL Editor
 -- ============================================================
 
--- Required extension
+DROP FUNCTION IF EXISTS public.record_purchase(date,bigint,numeric,numeric,bigint,bigint,numeric,bigint,text,text,numeric,text);
+DROP FUNCTION IF EXISTS public.record_expense(text,numeric,date,text);
+DROP FUNCTION IF EXISTS public.transfer_cash(bigint,bigint,numeric,date,text,text);
+DROP FUNCTION IF EXISTS public.correct_cash_balance(bigint,numeric,date,text);
+DROP FUNCTION IF EXISTS public.create_mix_order(bigint,bigint,date,numeric,numeric,text,jsonb);
+DROP FUNCTION IF EXISTS public.create_sale(jsonb,bigint,bigint,date,numeric,numeric,text,text,text);
+DROP FUNCTION IF EXISTS public.verify_customer_login(text,text);
+DROP FUNCTION IF EXISTS public.decrement_stock_fallback(bigint,bigint,numeric);
+
+-- ============================================================
+-- STEP 2: CREATE all functions with TABLE returns
+-- ============================================================
+
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- ============================================================
--- 1. verify_customer_login (returns TABLE — already correct)
--- ============================================================
+-- 1. verify_customer_login
 CREATE OR REPLACE FUNCTION verify_customer_login(p_email text, p_password text)
 RETURNS TABLE (
   id text, name text, email text,
@@ -31,9 +40,7 @@ BEGIN
 END;
 $$;
 
--- ============================================================
--- 2. create_sale (returns VOID — no scalar issue)
--- ============================================================
+-- 2. create_sale
 CREATE OR REPLACE FUNCTION create_sale(
   p_items jsonb,
   p_customer_id bigint,
@@ -101,9 +108,7 @@ BEGIN
 END;
 $$;
 
--- ============================================================
--- 3. record_purchase (FIXED: RETURNS TABLE instead of bigint)
--- ============================================================
+-- 3. record_purchase
 CREATE OR REPLACE FUNCTION record_purchase(
   p_purchase_date date,
   p_product_id bigint,
@@ -152,9 +157,7 @@ BEGIN
 END;
 $$;
 
--- ============================================================
--- 4. record_expense (FIXED: RETURNS TABLE instead of bigint)
--- ============================================================
+-- 4. record_expense
 CREATE OR REPLACE FUNCTION record_expense(
   p_description text, p_amount numeric, p_expense_date date, p_entered_by text
 ) RETURNS TABLE(id bigint)
@@ -174,9 +177,7 @@ BEGIN
 END;
 $$;
 
--- ============================================================
--- 5. transfer_cash (FIXED: RETURNS TABLE instead of bigint)
--- ============================================================
+-- 5. transfer_cash
 CREATE OR REPLACE FUNCTION transfer_cash(
   p_from_account_id bigint, p_to_account_id bigint, p_amount numeric,
   p_date date, p_notes text, p_entered_by text
@@ -203,9 +204,7 @@ BEGIN
 END;
 $$;
 
--- ============================================================
--- 6. correct_cash_balance (FIXED: RETURNS TABLE instead of bigint)
--- ============================================================
+-- 6. correct_cash_balance
 CREATE OR REPLACE FUNCTION correct_cash_balance(
   p_account_id bigint, p_target numeric, p_date date, p_entered_by text
 ) RETURNS TABLE(id bigint)
@@ -232,9 +231,7 @@ BEGIN
 END;
 $$;
 
--- ============================================================
--- 7. create_mix_order (FIXED: RETURNS TABLE instead of bigint)
--- ============================================================
+-- 7. create_mix_order
 CREATE OR REPLACE FUNCTION create_mix_order(
   p_customer_id bigint,
   p_location_id bigint,
@@ -286,9 +283,7 @@ BEGIN
 END;
 $$;
 
--- ============================================================
--- 8. decrement_stock_fallback (RETURNS VOID)
--- ============================================================
+-- 8. decrement_stock_fallback
 CREATE OR REPLACE FUNCTION decrement_stock_fallback(
   p_product_id bigint,
   p_location_id bigint,
@@ -309,6 +304,6 @@ END;
 $$;
 
 -- ============================================================
--- RELOAD PostgREST schema cache (MUST RUN AFTER CREATING FUNCTIONS)
+-- RELOAD PostgREST schema cache
 -- ============================================================
 NOTIFY pgrst, 'reload schema';
