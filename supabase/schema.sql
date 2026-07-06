@@ -347,7 +347,7 @@ begin
     p_purchase_date, p_product_id, p_quantity, p_rate_per_bag, p_supplier_id,
     p_settled_by_customer_id, p_cash_paid, p_location_id, p_notes, p_entered_by,
     p_unit_type, p_bag_weight_kg
-  ) returning id into v_id;
+  ) returning purchases.id into v_id;   -- qualified: avoid ambiguity with RETURNS TABLE(id)
 
   -- increment stock for bag-type purchases
   if p_unit_type = 'bags' then
@@ -381,7 +381,7 @@ declare v_id bigint;
 begin
   insert into expenses (description, amount, expense_date, entered_by)
   values (p_description, p_amount, p_expense_date, p_entered_by)
-  returning id into v_id;
+  returning expenses.id into v_id;   -- qualified
 
   insert into cash_ledger (entry_date, account_id, direction, amount, source_type, source_id, description)
   select p_expense_date, a.id, 'out', p_amount, 'expense', v_id, p_description
@@ -403,7 +403,7 @@ declare v_id bigint;
 begin
   insert into cash_transfers (transfer_date, from_account_id, to_account_id, amount, notes, entered_by)
   values (p_date, p_from_account_id, p_to_account_id, p_amount, p_notes, p_entered_by)
-  returning id into v_id;
+  returning cash_transfers.id into v_id;   -- qualified
 
   insert into cash_ledger (entry_date, account_id, direction, amount, source_type, source_id, description)
   values (p_date, p_from_account_id, 'out', p_amount, 'transfer', v_id, 'Transfer out #' || v_id);
@@ -437,7 +437,7 @@ begin
 
   insert into cash_ledger (entry_date, account_id, direction, amount, source_type, source_id, description)
   values (p_date, p_account_id, v_dir, abs(v_diff), 'correction', null, 'Manual balance correction')
-  returning id into v_id;
+  returning cash_ledger.id into v_id;   -- qualified
 
   return v_id;
 end;
@@ -462,7 +462,7 @@ declare
 begin
   insert into mix_orders (customer_id, location_id, order_date, target_weight_kg, cash_received, entered_by)
   values (p_customer_id, p_location_id, p_order_date, p_target_weight_kg, p_cash_received, p_entered_by)
-  returning id into v_mix_id;
+  returning mix_orders.id into v_mix_id;   -- qualified
 
   for v_item in select * from jsonb_array_elements(p_items)
   loop

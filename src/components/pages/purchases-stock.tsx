@@ -680,18 +680,24 @@ export default function PurchasesStockPage() {
               </RadioGroup>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4">
               <div className="space-y-2">
                 <Label className="text-sm font-semibold text-slate-700">Location</Label>
-                <RadioGroup value={purchaseLocation} onValueChange={(v) => setPurchaseLocation(v)} className="flex gap-3">
-                  {locations.map((loc) => (
-                    <div key={loc.id} className="flex items-center space-x-2 rounded-lg border border-slate-200/60 px-4 py-2.5 bg-slate-50/50 flex-1 cursor-pointer has-[[data-state=checked]]:border-slate-500 has-[[data-state=checked]]:bg-slate-100/70 transition-colors">
-                      <RadioGroupItem value={String(loc.id)} id={`ploc-${loc.id}`} />
-                      <Label htmlFor={`ploc-${loc.id}`} className="cursor-pointer text-sm font-medium flex items-center gap-1.5">
-                        {loc.id === 1 ? <Warehouse className="size-4" /> : <Store className="size-4" />} {loc.name}
-                      </Label>
-                    </div>
-                  ))}
+                <RadioGroup value={purchaseLocation} onValueChange={(v) => setPurchaseLocation(v)} className="flex flex-wrap gap-2">
+                  {locations.map((loc) => {
+                    const lower = loc.name.toLowerCase();
+                    const isShopLike = lower.includes("shop") || lower.includes("front");
+                    const isFarmLike = lower.includes("farm") || lower.includes("factory") || lower.includes("godown") || lower.includes("warehouse");
+                    const Icon = isShopLike ? Store : isFarmLike ? Warehouse : Warehouse;
+                    return (
+                      <div key={loc.id} className="flex items-center space-x-2 rounded-lg border border-slate-200/60 px-3.5 py-2.5 bg-slate-50/50 cursor-pointer has-[[data-state=checked]]:border-slate-500 has-[[data-state=checked]]:bg-slate-100/70 transition-colors">
+                        <RadioGroupItem value={String(loc.id)} id={`ploc-${loc.id}`} />
+                        <Label htmlFor={`ploc-${loc.id}`} className="cursor-pointer text-sm font-medium flex items-center gap-1.5 whitespace-nowrap">
+                          <Icon className="size-4" /> {loc.name}
+                        </Label>
+                      </div>
+                    );
+                  })}
                 </RadioGroup>
               </div>
               <div className="space-y-2">
@@ -837,10 +843,17 @@ export default function PurchasesStockPage() {
 
         <Card className="rounded-2xl border-slate-200/60 shadow-sm bg-white">
           <CardHeader className="pb-2">
-            <CardTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
-              <ShoppingBag className="size-5 text-slate-600" /> Today&apos;s Purchases
-            </CardTitle>
-            <CardDescription>{purchases.length} purchase{purchases.length !== 1 && "s"} recorded today</CardDescription>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <CardTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <ShoppingBag className="size-5 text-slate-600" /> Today&apos;s Purchases
+                </CardTitle>
+                <CardDescription>{purchases.length} purchase{purchases.length !== 1 && "s"} recorded today</CardDescription>
+              </div>
+              <Button onClick={handleDownloadExcel} variant="outline" className="gap-2 border-slate-300 text-slate-700 hover:bg-slate-100">
+                <Download className="size-4" /> Download Excel (All Purchases)
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             {purchases.length === 0 ? (
@@ -907,11 +920,6 @@ export default function PurchasesStockPage() {
                       <span className="text-sm font-bold text-emerald-700 uppercase tracking-wide">Total Cash Paid Today</span>
                       <span className="text-xl font-extrabold text-emerald-800">Rs. {fmt(totalCashPaid)}</span>
                     </div>
-                  </div>
-                  <div className="flex justify-end">
-                    <Button onClick={handleDownloadExcel} variant="outline" className="gap-2 border-slate-300 text-slate-700 hover:bg-slate-100">
-                      <Download className="size-4" /> Download Excel (All Purchases)
-                    </Button>
                   </div>
                 </div>
               </>

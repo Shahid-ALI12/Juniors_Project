@@ -136,7 +136,7 @@ BEGIN
     p_purchase_date, p_product_id, p_quantity, p_rate_per_bag, p_supplier_id,
     p_settled_by_customer_id, p_cash_paid, p_location_id, p_notes, p_entered_by,
     p_unit_type, p_bag_weight_kg
-  ) RETURNING id INTO v_id;
+  ) RETURNING purchases.id INTO v_id;   -- qualified: avoid ambiguity with RETURNS TABLE(id)
 
   IF p_unit_type = 'bags' THEN
     INSERT INTO product_stock (product_id, location_id, stock_quantity, last_bag_weight_kg)
@@ -167,7 +167,7 @@ DECLARE v_id bigint;
 BEGIN
   INSERT INTO expenses (description, amount, expense_date, entered_by)
   VALUES (p_description, p_amount, p_expense_date, p_entered_by)
-  RETURNING id INTO v_id;
+  RETURNING expenses.id INTO v_id;   -- qualified
 
   INSERT INTO cash_ledger (entry_date, account_id, direction, amount, source_type, source_id, description)
   SELECT p_expense_date, a.id, 'out', p_amount, 'expense', v_id, p_description
@@ -192,7 +192,7 @@ BEGIN
 
   INSERT INTO cash_transfers (transfer_date, from_account_id, to_account_id, amount, notes, entered_by)
   VALUES (p_date, p_from_account_id, p_to_account_id, p_amount, p_notes, p_entered_by)
-  RETURNING id INTO v_id;
+  RETURNING cash_transfers.id INTO v_id;   -- qualified
 
   INSERT INTO cash_ledger (entry_date, account_id, direction, amount, source_type, source_id, description)
   VALUES (p_date, p_from_account_id, 'out', p_amount, 'transfer', v_id, 'Transfer out #' || v_id);
@@ -225,7 +225,7 @@ BEGIN
 
   INSERT INTO cash_ledger (entry_date, account_id, direction, amount, source_type, source_id, description)
   VALUES (p_date, p_account_id, v_dir, abs(v_diff), 'correction', NULL, 'Manual balance correction')
-  RETURNING id INTO v_id;
+  RETURNING cash_ledger.id INTO v_id;   -- qualified
 
   RETURN QUERY SELECT v_id;
 END;
@@ -249,7 +249,7 @@ DECLARE
 BEGIN
   INSERT INTO mix_orders (customer_id, location_id, order_date, target_weight_kg, cash_received, entered_by)
   VALUES (p_customer_id, p_location_id, p_order_date, p_target_weight_kg, p_cash_received, p_entered_by)
-  RETURNING id INTO v_mix_id;
+  RETURNING mix_orders.id INTO v_mix_id;   -- qualified
 
   FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
   LOOP
