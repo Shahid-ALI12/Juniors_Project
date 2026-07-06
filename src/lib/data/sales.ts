@@ -89,7 +89,7 @@ export async function createSaleRPC(params: {
   } catch (rpcErr: any) {
     // If RPC function doesn't exist, fall back to direct inserts
     const msg = rpcErr?.message || "";
-    if (msg.includes("does not exist") && msg.includes("function")) {
+    if ((msg.includes("does not exist") || msg.includes("Could not find the function")) && msg.includes("function")) {
       console.warn("create_sale RPC not found — falling back to direct insert");
       return createSaleFallback(params);
     }
@@ -109,15 +109,15 @@ async function createSaleFallback(params: {
   transaction_group_id: string;
   entered_by: string | null;
 }): Promise<void> {
-  // Insert sale rows
-  const rows = params.items.map((item) => ({
+  // Insert sale rows — put total fare & cash on the first item, 0 on the rest
+  const rows = params.items.map((item, idx) => ({
     customer_id: params.customer_id,
     product_id: item.product_id,
     location_id: params.location_id,
     quantity: item.quantity,
     rate_per_bag: item.rate_per_bag,
-    rickshaw_fare: 0,
-    cash_received: 0,
+    rickshaw_fare: idx === 0 ? params.rickshaw_fare : 0,
+    cash_received: idx === 0 ? params.cash_received : 0,
     sale_date: params.sale_date,
     unit_type: item.unit_type || "bags",
     bag_weight_kg: item.bag_weight_kg ?? null,

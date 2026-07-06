@@ -118,9 +118,10 @@ export default function DailyEntryPage() {
 
   const loadDayData = useCallback(async (d: string) => {
     try {
+      const bust = `_t=${Date.now()}`; // prevent browser GET cache after mutations
       const [sRes, eRes] = await Promise.all([
-        fetch(`/api/sales?sale_date=${d}`).then(r => r.json()),
-        fetch(`/api/expenses?expense_date=${d}`).then(r => r.json()),
+        fetch(`/api/sales?sale_date=${d}&${bust}`).then(r => r.json()),
+        fetch(`/api/expenses?expense_date=${d}&${bust}`).then(r => r.json()),
       ]);
       setSales(sRes.sales ?? []);
       setExpenses(eRes.expenses ?? []);
