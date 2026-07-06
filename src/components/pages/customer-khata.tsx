@@ -287,7 +287,7 @@ export default function CustomerKhataPage() {
                   const totalBill = selectedSales.reduce((s, x) => s + x.quantity * x.rate_per_bag + x.rickshaw_fare, 0);
                   const totalCash = selectedSales.reduce((s, x) => s + x.cash_received, 0);
                   rows.push({});
-                  rows.push({ "Bill #": "", "Date": "", "Product": "TOTAL", "Qty": "", "Unit": "", "Rate": "", "Rickshaw Fare": totalBill, "Bill Amount": "", "Cash Paid": totalCash });
+                  rows.push({ "Bill #": "", "Date": "", "Product": "TOTAL", "Qty": "", "Unit": "", "Rate": "", "Rickshaw Fare": "", "Bill Amount": totalBill, "Cash Paid": totalCash });
                   const ws = XLSX.utils.json_to_sheet(rows);
                   const wb = XLSX.utils.book_new();
                   XLSX.utils.book_append_sheet(wb, ws, "Khata");

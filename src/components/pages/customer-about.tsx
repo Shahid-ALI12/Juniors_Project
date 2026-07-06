@@ -27,6 +27,7 @@ export default function CustomerAbout({ customer }: Props) {
 
   const progressPercent = (() => {
     const total = new Date(customer.subscription_end).getTime() - new Date(customer.subscription_start).getTime();
+    if (total <= 0) return 0; // Prevent division by zero
     const elapsed = Date.now() - new Date(customer.subscription_start).getTime();
     return Math.min(100, Math.max(0, Math.round((elapsed / total) * 100)));
   })();

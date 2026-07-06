@@ -196,6 +196,10 @@ export default function DailyEntryPage() {
       toast.error("Quantity must be greater than 0.");
       return;
     }
+    if (rateNum <= 0) {
+      toast.error("Rate must be greater than 0.");
+      return;
+    }
     if (unitChoice === "bags" && bagWeightNum <= 0) {
       toast.error("Please enter a valid bag weight.");
       return;
