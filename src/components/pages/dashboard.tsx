@@ -1,12 +1,15 @@
 "use client";
 
-import { useMemo, useEffect, useState } from "react";
+import { useMemo, useEffect, useState, useCallback } from "react";
 import {
   FileText, FlaskConical, BookOpen, CheckCircle,
-  Package, Settings, Loader2,
+  Package, Settings, Loader2, ChevronDown, ChevronUp, X,
 } from "lucide-react";
 import { useAppStore } from "@/store";
-import { PageHeader, MetricCard } from "@/components/shared/page-header";
+import { cn } from "@/lib/utils";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
 
 const quickLinks = [
   { label: "Add a Sale / Expense", page: "daily-entry", icon: FileText },
@@ -36,10 +39,85 @@ const defaultMetrics: Metrics = {
   totalCustomers: 0, totalOutstanding: 0, overCreditLimitCount: 0,
 };
 
+type CardKey = "sales-today" | "billed-today" | "cash-collected" | "expenses-today" | "customers" | "outstanding" | "over-credit";
+
+/* ─── Column definitions for each card type ─── */
+type Col = { key: string; label: string; align?: "left" | "right"; fmt?: (v: any) => string };
+
+const columnsMap: Record<CardKey, Col[]> = {
+  "sales-today": [
+    { key: "customer", label: "Customer" },
+    { key: "product", label: "Product" },
+    { key: "location", label: "Location" },
+    { key: "qty", label: "Qty", align: "right" },
+    { key: "unit", label: "Unit" },
+    { key: "rate", label: "Rate", align: "right", fmt: (v) => formatRs(v) },
+    { key: "fare", label: "Fare", align: "right", fmt: (v) => formatRs(v) },
+    { key: "amount", label: "Amount", align: "right", fmt: (v) => formatRs(v) },
+  ],
+  "billed-today": [
+    { key: "customer", label: "Customer" },
+    { key: "product", label: "Product" },
+    { key: "qty", label: "Qty", align: "right" },
+    { key: "unit", label: "Unit" },
+    { key: "bill", label: "Bill", align: "right", fmt: (v) => formatRs(v) },
+    { key: "cash_paid", label: "Cash Paid", align: "right", fmt: (v) => formatRs(v) },
+    { key: "balance", label: "Balance", align: "right", fmt: (v) => formatRs(v) },
+  ],
+  "cash-collected": [
+    { key: "customer", label: "Customer" },
+    { key: "product", label: "Product" },
+    { key: "cash", label: "Cash (Rs.)", align: "right", fmt: (v) => formatRs(v) },
+  ],
+  "expenses-today": [
+    { key: "description", label: "Description" },
+    { key: "category", label: "Category" },
+    { key: "amount", label: "Amount", align: "right", fmt: (v) => formatRs(v) },
+  ],
+  "customers": [
+    { key: "name", label: "Name" },
+    { key: "type", label: "Type" },
+    { key: "phone", label: "Phone" },
+    { key: "active", label: "Status", fmt: (v) => v ? "Active" : "Inactive" },
+    { key: "credit_limit", label: "Credit Limit", align: "right", fmt: (v) => v ? formatRs(v) : "N/A" },
+    { key: "since", label: "Since" },
+  ],
+  "outstanding": [
+    { key: "customer", label: "Customer" },
+    { key: "phone", label: "Phone" },
+    { key: "type", label: "Type" },
+    { key: "total_bill", label: "Total Bill", align: "right", fmt: (v) => formatRs(v) },
+    { key: "paid", label: "Paid", align: "right", fmt: (v) => formatRs(v) },
+    { key: "balance", label: "Balance Due", align: "right", fmt: (v) => formatRs(v) },
+  ],
+  "over-credit": [
+    { key: "customer", label: "Customer" },
+    { key: "phone", label: "Phone" },
+    { key: "credit_limit", label: "Limit", align: "right", fmt: (v) => formatRs(v) },
+    { key: "total_bill", label: "Total Bill", align: "right", fmt: (v) => formatRs(v) },
+    { key: "paid", label: "Paid", align: "right", fmt: (v) => formatRs(v) },
+    { key: "balance", label: "Balance Due", align: "right", fmt: (v) => formatRs(v) },
+  ],
+};
+
+/* ─── Color mapping ─── */
+const cardColors: Record<string, { border: string; text: string; bg: string; badge: string }> = {
+  blue: { border: "border-t-blue-500", text: "text-blue-600", bg: "bg-blue-50", badge: "bg-blue-100 text-blue-700" },
+  purple: { border: "border-t-purple-500", text: "text-purple-600", bg: "bg-purple-50", badge: "bg-purple-100 text-purple-700" },
+  green: { border: "border-t-green-500", text: "text-green-600", bg: "bg-green-50", badge: "bg-green-100 text-green-700" },
+  orange: { border: "border-t-orange-500", text: "text-orange-600", bg: "bg-orange-50", badge: "bg-orange-100 text-orange-700" },
+};
+
 export default function Dashboard() {
   const setActivePage = useAppStore((s) => s.setActivePage);
   const [metrics, setMetrics] = useState<Metrics>(defaultMetrics);
   const [loading, setLoading] = useState(true);
+
+  // Detail panel state
+  const [activeCard, setActiveCard] = useState<CardKey | null>(null);
+  const [detailRows, setDetailRows] = useState<Record<string, any>[]>([]);
+  const [detailLabel, setDetailLabel] = useState("");
+  const [detailLoading, setDetailLoading] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -58,6 +136,32 @@ export default function Dashboard() {
     load();
   }, []);
 
+  const fetchDetails = useCallback(async (cardKey: CardKey) => {
+    // If same card clicked, close panel
+    if (activeCard === cardKey) {
+      setActiveCard(null);
+      setDetailRows([]);
+      return;
+    }
+
+    setActiveCard(cardKey);
+    setDetailLoading(true);
+    setDetailRows([]);
+    try {
+      const today = new Date().toISOString().split("T")[0];
+      const res = await fetch(`/api/reports/dashboard/details?type=${cardKey}&date=${today}`);
+      if (res.ok) {
+        const data = await res.json();
+        setDetailRows(data.rows || []);
+        setDetailLabel(data.label || "");
+      }
+    } catch {
+      setDetailRows([]);
+    } finally {
+      setDetailLoading(false);
+    }
+  }, [activeCard]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-100">
@@ -66,30 +170,118 @@ export default function Dashboard() {
     );
   }
 
+  const cards: { key: CardKey; label: string; value: string; color: string }[] = [
+    { key: "sales-today", label: "Sales Today", value: `${metrics.salesTodayCount} txns`, color: "blue" },
+    { key: "billed-today", label: "Billed Today", value: formatRs(metrics.billedToday), color: "purple" },
+    { key: "cash-collected", label: "Cash Collected", value: formatRs(metrics.cashCollectedToday), color: "green" },
+    { key: "expenses-today", label: "Expenses Today", value: formatRs(metrics.expensesToday), color: "orange" },
+    { key: "customers", label: "Customers", value: `${metrics.totalCustomers}`, color: "blue" },
+    { key: "outstanding", label: "Total Outstanding / Khata", value: formatRs(metrics.totalOutstanding), color: "purple" },
+    { key: "over-credit", label: "Over Credit Limit", value: `${metrics.overCreditLimitCount} cust.`, color: "orange" },
+  ];
+
+  const cols = activeCard ? columnsMap[activeCard] : [];
+
   return (
     <div className="min-h-screen bg-slate-100">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-8">
-        <PageHeader
-          title="Dashboard"
-          subtitle={`Daily Register — ${new Date().toLocaleDateString("en-PK", {
-            weekday: "long", year: "numeric", month: "long", day: "numeric",
-          })}`}
-        />
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between mb-6 gap-2">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 leading-tight">Dashboard</h1>
+            <p className="text-sm text-slate-500 mt-1">
+              Daily Register — {new Date().toLocaleDateString("en-PK", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+            </p>
+          </div>
+        </div>
 
         {/* ── Primary Metrics ── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <MetricCard label="Sales Today" value={metrics.salesTodayCount} color="blue" suffix=" txns" />
-          <MetricCard label="Billed Today" value={formatRs(metrics.billedToday)} color="purple" prefix="Rs. " />
-          <MetricCard label="Cash Collected" value={formatRs(metrics.cashCollectedToday)} color="green" prefix="Rs. " />
-          <MetricCard label="Expenses Today" value={formatRs(metrics.expensesToday)} color="orange" prefix="Rs. " />
+          {cards.slice(0, 4).map((card) => (
+            <DashboardCard key={card.key} card={card} isActive={activeCard === card.key} onClick={() => fetchDetails(card.key)} />
+          ))}
         </div>
 
         {/* ── Secondary Metrics ── */}
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-          <MetricCard label="Customers" value={metrics.totalCustomers} color="blue" />
-          <MetricCard label="Total Outstanding / Khata" value={formatRs(metrics.totalOutstanding)} color="purple" prefix="Rs. " />
-          <MetricCard label="Over Credit Limit" value={metrics.overCreditLimitCount} color="orange" suffix=" cust." />
+          {cards.slice(4).map((card) => (
+            <DashboardCard key={card.key} card={card} isActive={activeCard === card.key} onClick={() => fetchDetails(card.key)} />
+          ))}
         </div>
+
+        {/* ── Detail Panel ── */}
+        {activeCard && (
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+            {/* Panel Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50/50">
+              <div className="flex items-center gap-3">
+                <div className={cn("w-2 h-8 rounded-full", cardColors[cards.find(c => c.key === activeCard)?.color || "blue"]?.bg)} />
+                <div>
+                  <h3 className="text-base font-bold text-slate-800">{detailLabel}</h3>
+                  <p className="text-xs text-slate-400">{detailRows.length} records</p>
+                </div>
+              </div>
+              <button
+                onClick={() => { setActiveCard(null); setDetailRows([]); }}
+                className="p-1.5 rounded-lg hover:bg-slate-200 transition-colors"
+              >
+                <X className="w-4 h-4 text-slate-400" />
+              </button>
+            </div>
+
+            {/* Panel Body */}
+            <div className="max-h-[420px] overflow-y-auto">
+              {detailLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="w-6 h-6 animate-spin text-emerald-500" />
+                  <span className="ml-2 text-sm text-slate-400">Loading...</span>
+                </div>
+              ) : detailRows.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+                  <FileText className="w-10 h-10 mb-2 opacity-40" />
+                  <p className="text-sm font-medium">No records found</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-slate-50/80 hover:bg-slate-50/80">
+                      {cols.map((col) => (
+                        <TableHead
+                          key={col.key}
+                          className={cn(
+                            "text-xs uppercase text-slate-500 font-semibold",
+                            col.align === "right" ? "text-right" : "text-left"
+                          )}
+                        >
+                          {col.label}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {detailRows.map((row, idx) => (
+                      <TableRow key={row.id || idx} className="text-sm">
+                        {cols.map((col) => (
+                          <TableCell
+                            key={col.key}
+                            className={cn(
+                              "text-slate-700",
+                              col.align === "right" ? "text-right font-medium" : "",
+                              col.key === "balance" && row.balance > 0 ? "text-red-600 font-semibold" : "",
+                              col.key === "balance" && row.balance <= 0 ? "text-green-600" : "",
+                            )}
+                          >
+                            {col.fmt ? col.fmt(row[col.key]) : String(row[col.key] ?? "—")}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* ── Quick Links ── */}
         <section>
@@ -115,5 +307,55 @@ export default function Dashboard() {
         </section>
       </div>
     </div>
+  );
+}
+
+/* ─── Clickable Metric Card ─── */
+function DashboardCard({
+  card,
+  isActive,
+  onClick,
+}: {
+  card: { key: CardKey; label: string; value: string; color: string };
+  isActive: boolean;
+  onClick: () => void;
+}) {
+  const colors = cardColors[card.color] || cardColors.blue;
+
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "bg-white rounded-2xl p-5 border border-slate-100 border-t-[3px] shadow-sm text-left w-full transition-all duration-200 cursor-pointer group",
+        colors.border,
+        isActive
+          ? "ring-2 ring-emerald-400 ring-offset-1 shadow-md scale-[1.02]"
+          : "hover:shadow-md hover:scale-[1.01]"
+      )}
+    >
+      <div className="flex items-center justify-between">
+        <div className="min-w-0 flex-1">
+          <div className="text-xs font-bold uppercase tracking-wider text-slate-500 group-hover:text-slate-600 transition-colors truncate">
+            {card.label}
+          </div>
+          <div className={cn("text-2xl font-extrabold text-slate-900 mt-1 truncate", colors.text)}>
+            {card.value}
+          </div>
+        </div>
+        <div className={cn(
+          "flex-shrink-0 ml-2 w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-200",
+          isActive ? "bg-emerald-100 text-emerald-600 rotate-180" : "bg-slate-100 text-slate-400 group-hover:bg-slate-200 group-hover:text-slate-500"
+        )}>
+          <ChevronDown className="w-4 h-4" />
+        </div>
+      </div>
+      {isActive && (
+        <div className="mt-2 flex items-center gap-1.5">
+          <span className={cn("text-[10px] font-semibold px-2 py-0.5 rounded-full", colors.badge)}>
+            Showing details
+          </span>
+        </div>
+      )}
+    </button>
   );
 }
