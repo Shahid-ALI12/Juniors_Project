@@ -47,6 +47,63 @@ function fmtRs(n: number) {
   return n.toLocaleString("en-PK");
 }
 
+function printMixBill(order: { id: string | number; customer: string; date: string; location: string }, items: { product: string; weight_kg: number; rate_per_kg: number; amount: number }[], totalWeight: number, totalAmount: number) {
+  const rows = items.map((it, i) => `<tr>
+    <td>${i + 1}</td><td>${it.product}</td>
+    <td style="text-align:right">${it.weight_kg}</td>
+    <td style="text-align:right">${it.rate_per_kg}</td>
+    <td style="text-align:right">${it.amount.toLocaleString("en-PK")}</td>
+  </tr>`).join("");
+
+  const html = `<!DOCTYPE html><html><head><style>
+    @page{size:auto;margin:8mm}
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:monospace;max-width:300px;margin:0 auto;padding:12px;color:#000;font-size:10px}
+    .header{text-align:center;border-bottom:1px dashed #999;padding-bottom:8px;margin-bottom:8px}
+    .header h1{font-size:14px;font-weight:bold}
+    .header p{font-size:10px;margin-top:2px}
+    .info{margin-bottom:6px}
+    .info-row{display:flex;justify-content:space-between;margin-bottom:2px}
+    .info strong{font-weight:bold}
+    table{width:100%;border-collapse:collapse;margin:6px 0}
+    th,td{padding:3px 4px;font-size:10px}
+    th{text-align:left;border-bottom:1px solid #ccc;font-weight:bold}
+    td{border-bottom:1px dotted #ddd}
+    .total-row{font-weight:bold;border-top:1px solid #999;border-bottom:none !important}
+    .footer{text-align:center;font-size:9px;color:#666;border-top:1px dashed #999;margin-top:8px;padding-top:6px}
+  </style></head><body>
+    <div class="header"><h1>MIX ORDER BILL</h1><p>Cattle Feed Supply</p></div>
+    <div class="info">
+      <div class="info-row"><span>Order: #${order.id}</span><span>${order.date}</span></div>
+      <div>Customer: <strong>${order.customer}</strong></div>
+      <div>Location: ${order.location}</div>
+    </div>
+    <table>
+      <thead><tr><th>#</th><th>Item</th><th style="text-align:right">Wt(kg)</th><th style="text-align:right">Rate</th><th style="text-align:right">Amt</th></tr></thead>
+      <tbody>${rows}
+        <tr class="total-row"><td colspan="2">Total</td><td style="text-align:right">${fmtRs(totalWeight)} kg</td><td></td><td style="text-align:right">Rs. ${fmtRs(totalAmount)}</td></tr>
+      </tbody>
+    </table>
+    <div class="footer">Thank you for your business!</div>
+  </body></html>`;
+
+  const iframe = document.createElement("iframe");
+  iframe.style.position = "fixed";
+  iframe.style.left = "-9999px";
+  iframe.style.top = "0";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  document.body.appendChild(iframe);
+  const doc = iframe.contentDocument || iframe.contentWindow?.document;
+  if (!doc) { document.body.removeChild(iframe); return; }
+  doc.open();
+  doc.write(html);
+  doc.close();
+  iframe.contentWindow?.focus();
+  iframe.contentWindow?.print();
+  setTimeout(() => document.body.removeChild(iframe), 1000);
+}
+
 const today = new Date().toISOString().split("T")[0];
 
 /* ─── Component ─── */
@@ -710,7 +767,15 @@ function PastMixOrdersSection({
                     variant="outline"
                     size="sm"
                     className="border-slate-300 hover:bg-slate-100"
-                    onClick={(e) => { e.stopPropagation(); window.print(); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      printMixBill(
+                        { id: selectedPast.id, customer: selectedPast.customer, date: selectedPast.date, location: selectedPast.location },
+                        billItems,
+                        billTotalWeight,
+                        billTotalAmount,
+                      );
+                    }}
                   >
                     <Printer className="w-3.5 h-3.5 mr-1" />
                     Print Bill
@@ -750,60 +815,6 @@ function PastMixOrdersSection({
                       </TableRow>
                     </TableBody>
                   </Table>
-                </div>
-              </div>
-
-              {/* Print-only bill receipt (hidden on screen, visible when printing) */}
-              <div className="print-bill-area">
-                <div style={{ fontFamily: 'monospace', maxWidth: '300px', margin: '0 auto', padding: '12px' }}>
-                  <div style={{ textAlign: 'center', borderBottom: '1px dashed #999', paddingBottom: '8px', marginBottom: '8px' }}>
-                    <div style={{ fontSize: '14px', fontWeight: 'bold' }}>MIX ORDER BILL</div>
-                    <div style={{ fontSize: '10px', marginTop: '2px' }}>Cattle Feed Supply</div>
-                  </div>
-
-                  <div style={{ fontSize: '10px', marginBottom: '6px', display: 'flex', justifyContent: 'space-between' }}>
-                    <span>Order: #{selectedPast.id}</span>
-                    <span>{selectedPast.date}</span>
-                  </div>
-                  <div style={{ fontSize: '10px', marginBottom: '6px' }}>
-                    <div>Customer: <strong>{selectedPast.customer}</strong></div>
-                    <div>Location: {selectedPast.location}</div>
-                  </div>
-
-                  <div style={{ borderBottom: '1px dashed #999', borderTop: '1px dashed #999', padding: '6px 0', margin: '6px 0' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
-                      <thead>
-                        <tr>
-                          <th style={{ textAlign: 'left', padding: '2px 4px', borderBottom: '1px solid #ccc' }}>#</th>
-                          <th style={{ textAlign: 'left', padding: '2px 4px', borderBottom: '1px solid #ccc' }}>Item</th>
-                          <th style={{ textAlign: 'right', padding: '2px 4px', borderBottom: '1px solid #ccc' }}>Wt(kg)</th>
-                          <th style={{ textAlign: 'right', padding: '2px 4px', borderBottom: '1px solid #ccc' }}>Rate</th>
-                          <th style={{ textAlign: 'right', padding: '2px 4px', borderBottom: '1px solid #ccc' }}>Amt</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {billItems.map((item, idx) => (
-                          <tr key={idx}>
-                            <td style={{ padding: '2px 4px' }}>{idx + 1}</td>
-                            <td style={{ padding: '2px 4px' }}>{item.product}</td>
-                            <td style={{ textAlign: 'right', padding: '2px 4px' }}>{item.weight_kg}</td>
-                            <td style={{ textAlign: 'right', padding: '2px 4px' }}>{item.rate_per_kg}</td>
-                            <td style={{ textAlign: 'right', padding: '2px 4px' }}>{item.amount.toLocaleString('en-PK')}</td>
-                          </tr>
-                        ))}
-                        <tr style={{ fontWeight: 'bold', borderTop: '1px solid #999' }}>
-                          <td colSpan={2} style={{ padding: '3px 4px' }}>Total</td>
-                          <td style={{ textAlign: 'right', padding: '3px 4px' }}>{fmtRs(billTotalWeight)} kg</td>
-                          <td style={{ padding: '3px 4px' }}></td>
-                          <td style={{ textAlign: 'right', padding: '3px 4px' }}>Rs. {fmtRs(billTotalAmount)}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <div style={{ textAlign: 'center', fontSize: '9px', color: '#666', marginTop: '8px', borderTop: '1px dashed #999', paddingTop: '6px' }}>
-                    Thank you for your business!
-                  </div>
                 </div>
               </div>
             </>);
