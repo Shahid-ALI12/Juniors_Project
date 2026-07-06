@@ -131,7 +131,7 @@ async function createMixOrderFallback(params: {
           direction: "in",
           amount: params.cash_received,
           source_type: "sale",
-          source_id: null,
+          source_id: mixId,
           description: "Mix order #" + mixId,
           entered_by: params.entered_by,
         });
