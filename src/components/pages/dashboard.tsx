@@ -173,8 +173,12 @@ export default function Dashboard() {
         const data = await res.json();
         setDetailRows(data.rows || []);
         if (data.label) setDetailLabel(data.label);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        console.error("Dashboard details API error:", err);
       }
-    } catch {
+    } catch (err) {
+      console.error("Dashboard details fetch error:", err);
       setDetailRows([]);
     } finally {
       setDetailLoading(false);

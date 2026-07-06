@@ -100,7 +100,7 @@ export async function GET(request: NextRequest) {
       case "customers": {
         const { data, error } = await admin
           .from("customers")
-          .select("id, name, type, phone, is_active, credit_limit, created_at")
+          .select("*")
           .order("name", { ascending: true });
         if (error) throw error;
         const rows = (data || []).map((c: any) => ({
@@ -109,7 +109,7 @@ export async function GET(request: NextRequest) {
           type: c.type,
           phone: c.phone || "N/A",
           active: c.is_active,
-          credit_limit: c.credit_limit,
+          credit_limit: c.credit_limit ?? null,
           since: c.created_at?.split("T")[0],
         }));
         return NextResponse.json({ rows, label: "All Customers" });
@@ -140,7 +140,7 @@ export async function GET(request: NextRequest) {
       case "over-credit": {
         const { data: sales } = await admin
           .from("sales")
-          .select("customer_id, quantity, rate_per_bag, rickshaw_fare, cash_received, customers(id,name,phone,credit_limit)");
+          .select("customer_id, quantity, rate_per_bag, rickshaw_fare, cash_received, customers(id,name,phone)");
         if (!sales) return NextResponse.json({ rows: [], label: "Over Credit Limit" });
 
         const balances: Record<number, { name: string; phone: string; credit_limit: number; total_bill: number; paid: number }> = {};

@@ -101,7 +101,16 @@ export default function CustomMixOrder() {
       const resRaw = await fetch("/api/mix-orders");
       if (!resRaw.ok) { toast.error("Failed to load past orders"); return; }
       const res = await resRaw.json();
-      setPastOrders(res.orders ?? []);
+      const salesByMix: Record<number, any[]> = res.salesByMix ?? {};
+      // Flatten joined fields + attach sales lines to each order
+      const orders = (res.orders ?? []).map((o: any) => ({
+        ...o,
+        customer: o.customers?.name ?? "",
+        date: o.order_date ?? "",
+        location: o.locations?.name ?? "",
+        sales: salesByMix[o.id] ?? [],
+      }));
+      setPastOrders(orders);
     } catch {
       // silent
     }
