@@ -184,6 +184,7 @@ export default function CustomerPortal() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-white text-xs font-semibold truncate">{customer.name}</div>
+                <div className="text-emerald-400/70 text-[0.65rem] truncate mt-0.5">{customer.email}</div>
                 <div className="text-slate-500 text-[0.65rem]">Customer</div>
               </div>
             </div>

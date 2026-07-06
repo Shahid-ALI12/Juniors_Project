@@ -54,6 +54,7 @@ import {
   Truck,
 } from "lucide-react";
 import { toast } from "sonner";
+import ConfirmAction from "@/components/shared/confirm-action";
 
 const fmt = (n: number) => n.toLocaleString("en-PK");
 
@@ -89,6 +90,14 @@ export default function DailyEntryPage() {
   const [loading, setLoading] = useState(true);
   const [savingSale, setSavingSale] = useState(false);
   const [savingExpense, setSavingExpense] = useState(false);
+
+  // Confirm dialog
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<(() => void) | null>(null);
+  const [confirmTitle, setConfirmTitle] = useState("");
+  const [confirmDesc, setConfirmDesc] = useState("");
+  const [confirmLoading, setConfirmLoading] = useState(false);
+  const askConfirm = (t: string, d: string, a: () => void) => { setConfirmTitle(t); setConfirmDesc(d); setConfirmAction(() => a); setConfirmOpen(true); };
 
   const loadMasterData = useCallback(async () => {
     try {
@@ -285,26 +294,32 @@ export default function DailyEntryPage() {
     }
   };
 
-  const handleDeleteSale = async (saleId: number) => {
-    try {
-      const res = await fetch(`/api/sales?id=${saleId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error(await apiError(res, "Failed to delete sale"));
-      setSales((prev) => prev.filter((s) => s.id !== saleId));
-      toast.success("Sale deleted.");
-    } catch (e: any) {
-      toast.error(e.message || "Failed to delete sale");
-    }
+  const handleDeleteSale = (saleId: number) => {
+    askConfirm("Delete Sale", `Sale #${saleId} ko database se permanently delete karna hai?`, async () => {
+      setConfirmLoading(true);
+      try {
+        const res = await fetch(`/api/sales?id=${saleId}`, { method: "DELETE" });
+        if (!res.ok) throw new Error(await apiError(res, "Failed"));
+        setSales((prev) => prev.filter((s) => s.id !== saleId));
+        toast.success("Sale #" + saleId + " database se delete ho gaya");
+        await loadDayData(date);
+      } catch (e: any) { toast.error(e.message || "Database me delete nahi hua"); }
+      finally { setConfirmLoading(false); setConfirmOpen(false); }
+    });
   };
 
-  const handleDeleteMixOrder = async (mixOrderId: string) => {
-    try {
-      const res = await fetch(`/api/sales?group_id=${mixOrderId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error(await apiError(res, "Failed to delete mix order"));
-      setSales((prev) => prev.filter((s) => s.transaction_group_id !== mixOrderId));
-      toast.success("Mix order deleted.");
-    } catch (e: any) {
-      toast.error(e.message || "Failed to delete mix order");
-    }
+  const handleDeleteMixOrder = (mixOrderId: string) => {
+    askConfirm("Delete Mix Order", `Mix Order "${mixOrderId}" ko database se delete karna hai?`, async () => {
+      setConfirmLoading(true);
+      try {
+        const res = await fetch(`/api/sales?group_id=${mixOrderId}`, { method: "DELETE" });
+        if (!res.ok) throw new Error(await apiError(res, "Failed"));
+        setSales((prev) => prev.filter((s) => s.transaction_group_id !== mixOrderId));
+        toast.success("Mix Order database se delete ho gaya");
+        await loadDayData(date);
+      } catch (e: any) { toast.error(e.message || "Database me delete nahi hua"); }
+      finally { setConfirmLoading(false); setConfirmOpen(false); }
+    });
   };
 
   const handleAddExpense = async () => {
@@ -343,15 +358,18 @@ export default function DailyEntryPage() {
     }
   };
 
-  const handleDeleteExpense = async (expId: number) => {
-    try {
-      const res = await fetch(`/api/expenses?id=${expId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error(await apiError(res, "Failed to delete expense"));
-      setExpenses((prev) => prev.filter((e) => e.id !== expId));
-      toast.success("Expense deleted.");
-    } catch (e: any) {
-      toast.error(e.message || "Failed to delete expense");
-    }
+  const handleDeleteExpense = (expId: number) => {
+    askConfirm("Delete Expense", `Expense #${expId} ko database se permanently delete karna hai?`, async () => {
+      setConfirmLoading(true);
+      try {
+        const res = await fetch(`/api/expenses?id=${expId}`, { method: "DELETE" });
+        if (!res.ok) throw new Error(await apiError(res, "Failed"));
+        setExpenses((prev) => prev.filter((e) => e.id !== expId));
+        toast.success("Expense #" + expId + " database se delete ho gaya");
+        await loadDayData(date);
+      } catch (e: any) { toast.error(e.message || "Database me delete nahi hua"); }
+      finally { setConfirmLoading(false); setConfirmOpen(false); }
+    });
   };
 
   const regularSales = sales.filter((s) => !s.mix_order_id);
@@ -391,6 +409,7 @@ export default function DailyEntryPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        <ConfirmAction open={confirmOpen} onOpenChange={setConfirmOpen} title={confirmTitle} description={confirmDesc} confirmLabel="Haan, Delete Karo" variant="danger" onConfirm={confirmAction ?? (() => {})} loading={confirmLoading} />
         <PageHeader title="Daily Entry" subtitle="Add today's sales and expenses, and see the live cash summary." />
 
         <Card className="rounded-2xl border-slate-200/60 shadow-sm">

@@ -12,11 +12,13 @@ import {
   Scale,
   Receipt,
   Loader2,
+  Printer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMixStore, fetchCached, invalidateCache, apiError } from "@/store";
 import { PageHeader, MetricCard } from "@/components/shared/page-header";
 import type { MixIngredient, Product, Location } from "@/types";
+import { generateMixBillPDF } from "@/lib/generate-mix-bill";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -231,7 +233,21 @@ export default function CustomMixOrder() {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail || err.error || "Failed to save mix order");
       }
+      // Generate PDF bill BEFORE resetting store
+      const locName = locations.find(l => l.id === store.locationId)?.name || "N/A";
+      const billData = {
+        orderId: `mix-${Date.now()}`,
+        customerName: store.customerName,
+        customerType: store.customerType as "credit" | "cash",
+        orderDate: store.orderDate,
+        location: locName,
+        items: store.ingredients.map(i => ({ product: i.product, weight_kg: i.weight_kg, rate_per_kg: i.rate_per_kg, amount: i.amount })),
+        totalWeight: store.targetWeight!,
+        totalAmount: totalAmount,
+        cashReceived: store.customerType === "cash" ? Number(cashReceived) || 0 : undefined,
+      };
       store.reset();
+      generateMixBillPDF(billData);
       setCashReceived("");
       setAddProduct("");
       setAddWeight("");
@@ -241,7 +257,7 @@ export default function CustomMixOrder() {
       setS1Loc("");
       setS1Date(today);
       setS1Target("");
-      toast.success("Order finished & bill generated successfully!");
+      toast.success("Order finished! Bill PDF download ho rahi hai.");
       invalidateCache("stock");
       await reloadPastOrders();
     } catch (e: any) {
@@ -554,7 +570,7 @@ export default function CustomMixOrder() {
             </Button>
             <Button onClick={handleFinishOrder} disabled={saving} className="flex-1 sm:flex-none bg-green-600 hover:bg-green-700 text-white font-semibold">
               {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-1" />}
-              {saving ? "Saving..." : "✅ Finish Order & Generate Bill"}
+              {saving ? "Saving..." : "✅ Finish Order & Download Bill (PDF)"}
             </Button>
           </div>
         </div>
@@ -648,17 +664,42 @@ function PastMixOrdersSection({
                 <h3 className="text-sm font-bold text-slate-700">
                   📋 {selectedPast.id} — {selectedPast.customer}
                 </h3>
-                <Button
+                  <Button
                   variant="outline"
                   size="sm"
                   className="border-slate-300 hover:bg-slate-100"
                   onClick={(e) => {
                     e.stopPropagation();
-                    toast.info("Bill download is a demo feature");
+                    const items = (selectedPast.sales ?? []).map((s: any) => ({
+                      product: s.products?.name ?? "Unknown",
+                      weight_kg: s.quantity,
+                      rate_per_kg: s.rate_per_bag,
+                      amount: s.quantity * s.rate_per_bag,
+                    }));
+                    generateMixBillPDF({
+                      orderId: selectedPast.id,
+                      customerName: selectedPast.customer,
+                      customerType: "credit",
+                      orderDate: selectedPast.date,
+                      location: selectedPast.location,
+                      items,
+                      totalWeight: items.reduce((s, i) => s + i.weight_kg, 0),
+                      totalAmount: items.reduce((s, i) => s + i.amount, 0),
+                    });
+                    toast.success("Bill PDF download ho rahi hai!");
                   }}
                 >
                   <Download className="w-3.5 h-3.5 mr-1" />
-                  Download Bill
+                  Download Bill (PDF)
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-slate-300 hover:bg-slate-100"
+                  onClick={(e) => { e.stopPropagation(); window.print(); }}
+                >
+                  <Printer className="w-3.5 h-3.5 mr-1" />
+                  Print
                 </Button>
               </div>
 
