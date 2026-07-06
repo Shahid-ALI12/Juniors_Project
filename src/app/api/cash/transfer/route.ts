@@ -1,11 +1,10 @@
-import { requireAdminUser, requireAdmin } from "@/lib/auth/server-user";
 import { NextRequest, NextResponse } from "next/server";
-
+import { requireUser } from "@/lib/auth/server-user";
 import { transferCashRPC } from "@/lib/data/cash";
 import { getErrorDetail } from "@/lib/api-error";
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminUser();
+  const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   try {
@@ -25,7 +24,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   try {
@@ -36,17 +35,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "from_account_id, to_account_id, amount required" }, { status: 400 });
     }
 
-    if (from_account_id === to_account_id) {
-      return NextResponse.json({ error: "from_account_id and to_account_id must be different" }, { status: 400 });
-    }
-
     const id = await transferCashRPC({
       from_account_id,
       to_account_id,
       amount: Number(amount),
-      transfer_date: transfer_date || (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60) * 60000).toISOString().split("T")[0]; })(),
+      transfer_date: transfer_date || new Date().toISOString().split("T")[0],
       notes: notes?.trim() || null,
-      entered_by: `admin:${auth.user.id}`,
+      entered_by: `${auth.type}:${auth.user.id}`,
     });
 
     return NextResponse.json({ id }, { status: 201 });

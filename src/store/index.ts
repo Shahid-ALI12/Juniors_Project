@@ -47,14 +47,14 @@ export const useMixStore = create<MixStore>((set, get) => ({
   targetWeight: null,
   customerName: "",
   customerType: "credit",
-  orderDate: (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60) * 60000).toISOString().split("T")[0]; })(),
+  orderDate: new Date().toISOString().split("T")[0],
   locationId: null,
   ingredients: [],
   startOrder: (name, type, date, locId, target) =>
     set({ targetWeight: target, customerName: name, customerType: type, orderDate: date, locationId: locId, ingredients: [] }),
   addIngredient: (ing) => set((s) => ({ ingredients: [...s.ingredients, ing] })),
   removeIngredient: (index) => set((s) => ({ ingredients: s.ingredients.filter((_, i) => i !== index) })),
-  reset: () => set({ targetWeight: null, customerName: "", customerType: "credit", orderDate: (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60) * 60000).toISOString().split("T")[0]; })(), locationId: null, ingredients: [] }),
+  reset: () => set({ targetWeight: null, customerName: "", customerType: "credit", orderDate: new Date().toISOString().split("T")[0], locationId: null, ingredients: [] }),
   getUsedWeight: () => get().ingredients.reduce((sum, i) => sum + i.weight_kg, 0),
   getTotalAmount: () => get().ingredients.reduce((sum, i) => sum + i.amount, 0),
 }));
@@ -121,3 +121,47 @@ export function invalidateCache(key?: keyof MasterDataCache) {
   if (key) { masterCache[key] = null; return; }
   Object.keys(masterCache).forEach((k) => { masterCache[k as keyof MasterDataCache] = null; });
 }
+
+// ─── Customer Auth Store ───
+
+interface CustomerAuthStore {
+  customers: AppCustomer[];
+  loggedInCustomer: AppCustomer | null;
+  setCustomers: (customers: AppCustomer[]) => void;
+  addCustomer: (customer: AppCustomer) => void;
+  updateCustomer: (id: string, updates: Partial<AppCustomer>) => void;
+  deleteCustomer: (id: string) => void;
+  loginCustomer: (email: string, password: string) => AppCustomer | null;
+  logoutCustomer: () => void;
+  isSubscriptionActive: (customer: AppCustomer) => boolean;
+}
+
+export const useCustomerAuthStore = create<CustomerAuthStore>((set, get) => ({
+  customers: [],
+  loggedInCustomer: null,
+  setCustomers: (customers) => set({ customers }),
+  addCustomer: (customer) => set((s) => ({ customers: [...s.customers, customer] })),
+  updateCustomer: (id, updates) =>
+    set((s) => ({
+      customers: s.customers.map((c) => (c.id === id ? { ...c, ...updates } : c)),
+      loggedInCustomer: s.loggedInCustomer?.id === id ? { ...s.loggedInCustomer, ...updates } : s.loggedInCustomer,
+    })),
+  deleteCustomer: (id) =>
+    set((s) => ({
+      customers: s.customers.filter((c) => c.id !== id),
+    })),
+  loginCustomer: (email, password) => {
+    const customer = get().customers.find(
+      (c) => c.email === email && c.password === password && c.is_active
+    );
+    if (customer) {
+      set({ loggedInCustomer: customer });
+      return customer;
+    }
+    return null;
+  },
+  logoutCustomer: () => set({ loggedInCustomer: null }),
+  isSubscriptionActive: (customer) => {
+    return new Date(customer.subscription_end) > new Date();
+  },
+}));

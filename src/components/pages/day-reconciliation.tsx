@@ -163,8 +163,7 @@ const apiTypeMap: Record<ReconcileCardKey, string> = {
 };
 
 export default function DayReconciliation() {
-  const pktDate = (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60) * 60000).toISOString().split("T")[0]; })();
-  const today = pktDate;
+  const today = new Date().toISOString().split("T")[0];
   const [mode, setMode] = useState<"single" | "range">("single");
   const [singleDate, setSingleDate] = useState(today);
   const [rangeFrom, setRangeFrom] = useState(today);

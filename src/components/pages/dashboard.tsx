@@ -147,7 +147,7 @@ export default function Dashboard() {
   // Use PKT (Asia/Karachi) date so it matches what the user sees
   const pktDate = useMemo(() => {
     const d = new Date();
-    return new Date(d.getTime() + (5 * 60) * 60000).toISOString().split("T")[0];
+    return new Date(d.getTime() + (5 * 60 + 30) * 60000).toISOString().split("T")[0];
   }, []);
 
   useEffect(() => {

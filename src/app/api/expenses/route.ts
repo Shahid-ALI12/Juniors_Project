@@ -1,13 +1,12 @@
-import { requireAdminUser, requireAdmin } from "@/lib/auth/server-user";
 import { NextRequest, NextResponse } from "next/server";
-
+import { requireUser } from "@/lib/auth/server-user";
 import { getExpenses, recordExpenseRPC, deleteExpense } from "@/lib/data/expenses";
 
 // Prevent Next.js from caching GET responses
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminUser();
+  const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   try {
@@ -27,7 +26,7 @@ export async function GET(request: NextRequest) {
 
 // POST — atomic expense via RPC (also posts cash_ledger 'out')
 export async function POST(request: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   try {
@@ -41,8 +40,8 @@ export async function POST(request: NextRequest) {
     const id = await recordExpenseRPC({
       description: description.trim(),
       amount: Number(amount),
-      expense_date: expense_date || (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60) * 60000).toISOString().split("T")[0]; })(),
-      entered_by: `admin:${auth.user.id}`,
+      expense_date: expense_date || new Date().toISOString().split("T")[0],
+      entered_by: `${auth.type}:${auth.user.id}`,
     });
 
     return NextResponse.json({ id }, { status: 201 });
@@ -54,7 +53,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   try {

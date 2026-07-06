@@ -19,16 +19,14 @@ export async function getDashboardMetrics(today: string): Promise<DashboardMetri
   const { data: todaySales, error: sErr } = await admin
     .from("sales")
     .select("quantity, rate_per_bag, rickshaw_fare, cash_received, customer_id")
-    .eq("sale_date", today)
-    .is("voided_at", null);
+    .eq("sale_date", today);
   if (sErr) throw sErr;
 
   // Expenses today
   const { data: todayExp, error: eErr } = await admin
     .from("expenses")
     .select("amount")
-    .eq("expense_date", today)
-    .is("voided_at", null);
+    .eq("expense_date", today);
   if (eErr) throw eErr;
 
   // All customers count
@@ -40,8 +38,7 @@ export async function getDashboardMetrics(today: string): Promise<DashboardMetri
   // All sales (for customer balances)
   const { data: allSales, error: aErr } = await admin
     .from("sales")
-    .select("customer_id, quantity, rate_per_bag, rickshaw_fare, cash_received")
-    .is("voided_at", null);
+    .select("customer_id, quantity, rate_per_bag, rickshaw_fare, cash_received");
   if (aErr) throw aErr;
 
   // Customer balances
@@ -73,8 +70,7 @@ export async function getReconciliation(fromDate: string, toDate: string): Promi
     .from("sales")
     .select("quantity, rate_per_bag, rickshaw_fare, cash_received, unit_type, customers(type)")
     .gte("sale_date", fromDate)
-    .lte("sale_date", toDate)
-    .is("voided_at", null);
+    .lte("sale_date", toDate);
   if (sErr) throw sErr;
 
   const { data: expenses, error: eErr } = await admin
@@ -82,7 +78,6 @@ export async function getReconciliation(fromDate: string, toDate: string): Promi
     .select("*")
     .gte("expense_date", fromDate)
     .lte("expense_date", toDate)
-    .is("voided_at", null)
     .order("expense_date", { ascending: true });
   if (eErr) throw eErr;
 
@@ -131,8 +126,7 @@ export async function getCustomerBalance(customerId: number): Promise<CustomerBa
   const { data: sales, error } = await admin
     .from("sales")
     .select("quantity, rate_per_bag, rickshaw_fare, cash_received")
-    .eq("customer_id", customerId)
-    .is("voided_at", null);
+    .eq("customer_id", customerId);
   if (error) throw error;
 
   const total_bill = (sales || []).reduce(
@@ -154,8 +148,7 @@ export async function getCustomerBalance(customerId: number): Promise<CustomerBa
 export async function getAllCustomerBalances(): Promise<Record<number, CustomerBalanceInfo>> {
   const { data: sales, error } = await admin
     .from("sales")
-    .select("customer_id, quantity, rate_per_bag, rickshaw_fare, cash_received")
-    .is("voided_at", null);
+    .select("customer_id, quantity, rate_per_bag, rickshaw_fare, cash_received");
   if (error) throw error;
 
   const map: Record<number, CustomerBalanceInfo> = {};
@@ -170,8 +163,7 @@ export async function getAllCustomerBalances(): Promise<Record<number, CustomerB
   const { data: purchases } = await admin
     .from("purchases")
     .select("settled_by_customer_id, quantity, rate_per_bag")
-    .not("settled_by_customer_id", "is", null)
-    .is("voided_at", null);
+    .not("settled_by_customer_id", "is", null);
   for (const p of purchases || []) {
     const cid = p.settled_by_customer_id as number;
     if (!map[cid]) map[cid] = { total_bill: 0, total_cash_paid: 0, total_goods_value: 0, balance_due: 0 };

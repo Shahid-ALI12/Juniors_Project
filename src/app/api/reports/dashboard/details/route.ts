@@ -1,6 +1,5 @@
-import { requireAdminUser } from "@/lib/auth/server-user";
 import { NextRequest, NextResponse } from "next/server";
-
+import { requireUser } from "@/lib/auth/server-user";
 import { admin } from "@/lib/supabase/server-admin";
 import { getErrorDetail } from "@/lib/api-error";
 
@@ -9,18 +8,12 @@ export const dynamic = "force-dynamic";
 
 const CREDIT_LIMIT = 3_000_000;
 
-/** Get current date in PKT (UTC+5:30) as YYYY-MM-DD */
-function pktToday(): string {
-  const d = new Date();
-  return new Date(d.getTime() + (5 * 60) * 60000).toISOString().split("T")[0];
-}
-
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminUser();
+  const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   const type = request.nextUrl.searchParams.get("type");
-  const today = request.nextUrl.searchParams.get("date") || pktToday();
+  const today = request.nextUrl.searchParams.get("date") || new Date().toISOString().split("T")[0];
 
   try {
     switch (type) {
@@ -29,7 +22,6 @@ export async function GET(request: NextRequest) {
           .from("sales")
           .select("id, sale_date, quantity, rate_per_bag, rickshaw_fare, cash_received, unit_type, customers(id,name), products(id,name), locations(id,name)")
           .eq("sale_date", today)
-          .is("voided_at", null)
           .order("created_at", { ascending: false });
         if (error) throw error;
         const rows = (data || []).map((s: any) => ({
@@ -53,7 +45,6 @@ export async function GET(request: NextRequest) {
           .from("sales")
           .select("id, sale_date, quantity, rate_per_bag, rickshaw_fare, cash_received, unit_type, customers(id,name), products(id,name)")
           .eq("sale_date", today)
-          .is("voided_at", null)
           .order("created_at", { ascending: false });
         if (error) throw error;
         const rows = (data || []).map((s: any) => ({
@@ -77,7 +68,6 @@ export async function GET(request: NextRequest) {
           .select("id, sale_date, cash_received, customers(id,name), products(id,name)")
           .eq("sale_date", today)
           .gt("cash_received", 0)
-          .is("voided_at", null)
           .order("created_at", { ascending: false });
         if (error) throw error;
         const rows = (data || []).map((s: any) => ({
@@ -93,16 +83,15 @@ export async function GET(request: NextRequest) {
       case "expenses-today": {
         const { data, error } = await admin
           .from("expenses")
-          .select("id, expense_date, description, amount, created_at")
+          .select("id, expense_date, description, amount, expense_category, created_at")
           .eq("expense_date", today)
-          .is("voided_at", null)
           .order("created_at", { ascending: false });
         if (error) throw error;
         const rows = (data || []).map((e: any) => ({
           id: e.id,
           date: e.expense_date,
           description: e.description || "N/A",
-          category: "N/A",
+          category: e.expense_category || "N/A",
           amount: e.amount,
         }));
         return NextResponse.json({ rows, label: "Expenses Today" });
@@ -129,8 +118,7 @@ export async function GET(request: NextRequest) {
       case "outstanding": {
         const { data: sales } = await admin
           .from("sales")
-          .select("customer_id, quantity, rate_per_bag, rickshaw_fare, cash_received, customers(id,name,phone,type)")
-          .is("voided_at", null);
+          .select("customer_id, quantity, rate_per_bag, rickshaw_fare, cash_received, customers(id,name,phone,type)");
         if (!sales) return NextResponse.json({ rows: [], label: "Outstanding / Khata" });
 
         const balances: Record<number, { name: string; phone: string; type: string; total_bill: number; paid: number }> = {};
@@ -152,8 +140,7 @@ export async function GET(request: NextRequest) {
       case "over-credit": {
         const { data: sales } = await admin
           .from("sales")
-          .select("customer_id, quantity, rate_per_bag, rickshaw_fare, cash_received, customers(id,name,phone)")
-          .is("voided_at", null);
+          .select("customer_id, quantity, rate_per_bag, rickshaw_fare, cash_received, customers(id,name,phone)");
         if (!sales) return NextResponse.json({ rows: [], label: "Over Credit Limit" });
 
         const balances: Record<number, { name: string; phone: string; credit_limit: number; total_bill: number; paid: number }> = {};

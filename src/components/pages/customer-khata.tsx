@@ -17,7 +17,6 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import * as XLSX from "xlsx";
 
 const fmt = (n: number) => n.toLocaleString("en-PK");
 
@@ -266,35 +265,7 @@ export default function CustomerKhataPage() {
                 </SelectContent>
               </Select>
               {selectedCustomerId && (
-                <Button variant="outline" size="sm" className="shrink-0" onClick={() => {
-                  if (!selectedSales.length) { toast.error("No sales to download"); return; }
-                  const rows: Record<string, any>[] = groupedSales.sortedGroups.flatMap((group, gi) =>
-                    group.sales.map((sale) => {
-                      const billAmount = sale.quantity * sale.rate_per_bag + sale.rickshaw_fare;
-                      return {
-                        "Bill #": gi + 1,
-                        "Date": sale.sale_date,
-                        "Product": sale.products?.name ?? `#${sale.product_id}`,
-                        "Qty": sale.quantity,
-                        "Unit": sale.unit_type === "kg" ? "kg" : "bags",
-                        "Rate": sale.rate_per_bag,
-                        "Rickshaw Fare": sale.rickshaw_fare,
-                        "Bill Amount": billAmount,
-                        "Cash Paid": sale.cash_received,
-                      };
-                    })
-                  );
-                  const totalBill = selectedSales.reduce((s, x) => s + x.quantity * x.rate_per_bag + x.rickshaw_fare, 0);
-                  const totalCash = selectedSales.reduce((s, x) => s + x.cash_received, 0);
-                  rows.push({});
-                  rows.push({ "Bill #": "", "Date": "", "Product": "TOTAL", "Qty": "", "Unit": "", "Rate": "", "Rickshaw Fare": "", "Bill Amount": totalBill, "Cash Paid": totalCash });
-                  const ws = XLSX.utils.json_to_sheet(rows);
-                  const wb = XLSX.utils.book_new();
-                  XLSX.utils.book_append_sheet(wb, ws, "Khata");
-                  const name = selectedCustomer?.name || "Customer";
-                  XLSX.writeFile(wb, `${name}_Khata.xlsx`);
-                  toast.success("Bill downloaded!");
-                }}>
+                <Button variant="outline" size="sm" className="shrink-0">
                   <Download className="size-4 mr-2" />
                   Download Bill
                 </Button>

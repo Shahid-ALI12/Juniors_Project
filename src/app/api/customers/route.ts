@@ -1,6 +1,5 @@
-import { requireAdminUser, requireAdmin } from "@/lib/auth/server-user";
 import { NextRequest, NextResponse } from "next/server";
-
+import { requireUser } from "@/lib/auth/server-user";
 import { getAllCustomers, createCustomer as createBizCustomer, updateCustomer as updateBizCustomer, deleteCustomer } from "@/lib/data/customers";
 import { getErrorDetail } from "@/lib/api-error";
 
@@ -8,7 +7,7 @@ import { getErrorDetail } from "@/lib/api-error";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminUser();
+  const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   try {
@@ -23,7 +22,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   try {
@@ -45,7 +44,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   try {
@@ -62,7 +61,7 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   try {

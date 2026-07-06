@@ -1,6 +1,5 @@
-import { requireAdminUser, requireAdmin } from "@/lib/auth/server-user";
 import { NextRequest, NextResponse } from "next/server";
-
+import { requireUser } from "@/lib/auth/server-user";
 import { getSales, deleteSale, deleteSalesByGroup, deleteSalesByMixOrder, createSaleRPC } from "@/lib/data/sales";
 import { getErrorDetail } from "@/lib/api-error";
 
@@ -8,7 +7,7 @@ import { getErrorDetail } from "@/lib/api-error";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminUser();
+  const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   try {
@@ -30,7 +29,7 @@ export async function GET(request: NextRequest) {
 
 // POST — atomic sale via RPC (cart → multiple sale rows + stock decrement + cash ledger)
 export async function POST(request: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   try {
@@ -47,12 +46,12 @@ export async function POST(request: NextRequest) {
       items,
       customer_id,
       location_id,
-      sale_date: sale_date || (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60) * 60000).toISOString().split("T")[0]; })(),
+      sale_date: sale_date || new Date().toISOString().split("T")[0],
       cash_received: Number(cash_received) || 0,
       rickshaw_fare: Number(rickshaw_fare) || 0,
       rickshaw_driver: rickshaw_driver || null,
       transaction_group_id: groupId,
-      entered_by: `admin:${auth.user.id}`,
+      entered_by: `${auth.type}:${auth.user.id}`,
     });
 
     // Fetch the created sales for the client
@@ -67,7 +66,7 @@ export async function POST(request: NextRequest) {
 
 // DELETE — by id, group, or mix_order
 export async function DELETE(request: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   try {

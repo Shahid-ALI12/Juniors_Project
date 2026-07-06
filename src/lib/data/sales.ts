@@ -34,7 +34,6 @@ export async function getSales(filters?: {
   let q = admin
     .from("sales")
     .select("*, customers(id,name,type), products(id,name), locations(id,name)")
-    .is("voided_at", null)  // Exclude voided records
     .order("created_at", { ascending: true });
 
   if (filters?.sale_date) q = q.eq("sale_date", filters.sale_date);
@@ -50,119 +49,18 @@ export async function getSales(filters?: {
 }
 
 export async function deleteSale(id: number): Promise<void> {
-  // Fetch the sale record BEFORE voiding (needed for reversal)
-  const { data: saleRow } = await admin.from("sales").select("*").eq("id", id).is("voided_at", null).maybeSingle();
-  const sale = saleRow as any;
-
-  // Soft-delete: set voided_at instead of hard deleting to preserve audit trail
-  const { error: softErr } = await admin
-    .from("sales")
-    .update({ voided_at: new Date().toISOString() })
-    .eq("id", id)
-    .is("voided_at", null);
-  if (!softErr) {
-    // Void succeeded — now reverse side effects
-    await reverseSaleEffects([sale]);
-    return;
-  }
-  // If voided_at column doesn't exist yet, fall back to hard delete
-  if (softErr.message?.includes("column") || softErr.message?.includes("does not exist")) {
-    console.warn("voided_at column not found — falling back to hard delete for sale");
-    await reverseSaleEffects([sale]);
-    const { error } = await admin.from("sales").delete().eq("id", id);
-    if (error) throw new Error(error.message);
-    return;
-  }
-  throw new Error(softErr.message);
+  const { error } = await admin.from("sales").delete().eq("id", id);
+  if (error) throw new Error(error.message);
 }
 
 export async function deleteSalesByGroup(groupId: string): Promise<void> {
-  // Fetch all sales in group BEFORE voiding
-  const { data: rows } = await admin.from("sales").select("*").eq("transaction_group_id", groupId).is("voided_at", null);
-  const sales = (rows || []) as any[];
-
-  const { error: softErr } = await admin
-    .from("sales")
-    .update({ voided_at: new Date().toISOString() })
-    .eq("transaction_group_id", groupId)
-    .is("voided_at", null);
-  if (!softErr) {
-    await reverseSaleEffects(sales);
-    return;
-  }
-  if (softErr.message?.includes("column") || softErr.message?.includes("does not exist")) {
-    console.warn("voided_at column not found — falling back to hard delete for sale group");
-    await reverseSaleEffects(sales);
-    const { error } = await admin.from("sales").delete().eq("transaction_group_id", groupId);
-    if (error) throw new Error(error.message);
-    return;
-  }
-  throw new Error(softErr.message);
+  const { error } = await admin.from("sales").delete().eq("transaction_group_id", groupId);
+  if (error) throw new Error(error.message);
 }
 
 export async function deleteSalesByMixOrder(mixOrderId: number): Promise<void> {
-  const { data: rows } = await admin.from("sales").select("*").eq("mix_order_id", mixOrderId).is("voided_at", null);
-  const sales = (rows || []) as any[];
-
-  const { error: softErr } = await admin
-    .from("sales")
-    .update({ voided_at: new Date().toISOString() })
-    .eq("mix_order_id", mixOrderId)
-    .is("voided_at", null);
-  if (!softErr) {
-    await reverseSaleEffects(sales);
-    return;
-  }
-  if (softErr.message?.includes("column") || softErr.message?.includes("does not exist")) {
-    console.warn("voided_at column not found — falling back to hard delete for mix order sales");
-    await reverseSaleEffects(sales);
-    const { error } = await admin.from("sales").delete().eq("mix_order_id", mixOrderId);
-    if (error) throw new Error(error.message);
-    return;
-  }
-  throw new Error(softErr.message);
-}
-
-// Reverse stock and ledger effects when voiding sales
-async function reverseSaleEffects(sales: any[]): Promise<void> {
-  if (!sales.length) return;
-  try {
-    // 1. Reverse stock (add back bags)
-    for (const s of sales) {
-      if (s.unit_type === "bags" && s.quantity) {
-        const { data: existing } = await admin
-          .from("product_stock")
-          .select("stock_quantity")
-          .eq("product_id", s.product_id)
-          .eq("location_id", s.location_id)
-          .maybeSingle();
-        const current = Number((existing as any)?.stock_quantity ?? 0);
-        await admin.from("product_stock").upsert(
-          { product_id: s.product_id, location_id: s.location_id, stock_quantity: current + Number(s.quantity) },
-          { onConflict: "product_id,location_id" }
-        );
-      }
-    }
-
-    // 2. Reverse cash ledger (create "out" entry for cash_received)
-    const totalCash = sales.reduce((sum: number, s: any) => sum + Number(s.cash_received || 0), 0);
-    if (totalCash > 0) {
-      const { data: acct } = await admin.from("cash_accounts").select("id").eq("name", "Cash In Hand").limit(1).single();
-      if (acct) {
-        await admin.from("cash_ledger").insert({
-          entry_date: sales[0].sale_date,
-          account_id: (acct as any).id,
-          direction: "out",
-          amount: totalCash,
-          source_type: "sale_void",
-          source_id: sales[0].id,
-          description: "Void sale #" + sales.map((s: any) => s.id).join(", "),
-        });
-      }
-    }
-  } catch (err) {
-    console.error("Error reversing sale effects (non-critical, manual fix may be needed):", err);
-  }
+  const { error } = await admin.from("sales").delete().eq("mix_order_id", mixOrderId);
+  if (error) throw new Error(error.message);
 }
 
 // Atomic sale creation via RPC
@@ -231,9 +129,8 @@ async function createSaleFallback(params: {
     entered_by: params.entered_by,
   }));
 
-  const { data: insertedRows, error: insertErr } = await admin.from("sales").insert(rows).select("id").limit(1).single();
+  const { error: insertErr } = await admin.from("sales").insert(rows);
   if (insertErr) throw insertErr;
-  const firstSaleId = (insertedRows as any)?.id ?? null;
 
   // Try to insert cash_ledger entry (best effort)
   try {
@@ -251,7 +148,7 @@ async function createSaleFallback(params: {
           direction: "in",
           amount: params.cash_received,
           source_type: "sale",
-          source_id: firstSaleId,
+          source_id: null,
           description: "Sale group " + params.transaction_group_id,
           entered_by: params.entered_by,
         });
@@ -271,35 +168,9 @@ async function createSaleFallback(params: {
           p_quantity: item.quantity,
           p_bag_weight_kg: item.bag_weight_kg,
         });
-      } catch (stockErr: any) {
-        // If the fallback RPC also doesn't exist, do manual decrement
-        const stockMsg = stockErr?.message || "";
-        if (stockMsg.includes("does not exist") || stockMsg.includes("Could not find the function")) {
-          console.warn(`decrement_stock_fallback RPC not found — trying manual stock decrement for product ${item.product_id}`);
-          try {
-            // Fetch current stock
-            const { data: existing } = await admin
-              .from("product_stock")
-              .select("stock_quantity")
-              .eq("product_id", item.product_id)
-              .eq("location_id", params.location_id)
-              .maybeSingle();
-            const currentQty = (existing as any)?.stock_quantity ?? 0;
-            await admin.from("product_stock").upsert(
-              {
-                product_id: item.product_id,
-                location_id: params.location_id,
-                stock_quantity: Math.max(0, currentQty - item.quantity),
-                last_bag_weight_kg: item.bag_weight_kg,
-              },
-              { onConflict: "product_id,location_id" }
-            );
-          } catch {
-            console.warn(`Manual stock decrement also failed for product ${item.product_id} (non-critical)`);
-          }
-        } else {
-          console.warn(`Stock decrement failed for product ${item.product_id} (non-critical)`);
-        }
+      } catch {
+        // Stock decrement is best-effort in fallback mode
+        console.warn(`Stock decrement failed for product ${item.product_id} (non-critical)`);
       }
     }
   }

@@ -3,8 +3,6 @@ import { verifyCustomerLogin, getCustomerByEmail } from "@/lib/customer-db";
 import { signCustomerToken, CUSTOMER_COOKIE_NAME, COOKIE_MAX_AGE } from "@/lib/auth/cookie-sign";
 import { checkLoginRateLimit, rateLimitResponseInit } from "@/lib/rate-limit";
 
-const IS_PROD = process.env.NODE_ENV === "production";
-
 export async function POST(request: NextRequest) {
   try {
     // Brute-force protection: 5 attempts per minute per IP
@@ -34,12 +32,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!customer) {
-      // Security: use a generic error to avoid revealing whether email exists.
-      // In production, always return the same message regardless of reason.
-      if (IS_PROD) {
-        return NextResponse.json({ error: "INVALID_CREDENTIALS" }, { status: 401 });
-      }
-      // Development only: detailed error for debugging
+      // Distinguish between not-found and wrong password
       const exists = await getCustomerByEmail(email.trim());
       if (!exists) {
         return NextResponse.json({ error: "EMAIL_NOT_FOUND" }, { status: 401 });
@@ -51,9 +44,6 @@ export async function POST(request: NextRequest) {
     }
 
     if (new Date(customer.subscription_end) <= new Date()) {
-      if (IS_PROD) {
-        return NextResponse.json({ error: "INVALID_CREDENTIALS" }, { status: 401 });
-      }
       return NextResponse.json({ error: "SUBSCRIPTION_EXPIRED" }, { status: 403 });
     }
 

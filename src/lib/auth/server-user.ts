@@ -74,19 +74,3 @@ export async function requireUser(): Promise<
     response: NextResponse.json({ error: "Not authenticated" }, { status: 401 }),
   };
 }
-
-// ─── Admin-only check: rejects customer portal users ───
-// Use this for business data APIs that customers should NOT access.
-export async function requireAdminUser(): Promise<
-  { ok: true; user: { id: string; email: string } } | { ok: false; response: NextResponse }
-> {
-  const auth = await requireUser();
-  if (!auth.ok) return auth;
-  if (auth.type === "customer") {
-    return {
-      ok: false,
-      response: NextResponse.json({ error: "Access denied. Admin only." }, { status: 403 }),
-    };
-  }
-  return { ok: true, user: auth.user };
-}

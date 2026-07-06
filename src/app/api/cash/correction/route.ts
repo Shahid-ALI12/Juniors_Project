@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/auth/server-user";
+import { requireUser } from "@/lib/auth/server-user";
 import { correctBalanceRPC } from "@/lib/data/cash";
 import { getErrorDetail } from "@/lib/api-error";
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   try {
@@ -18,8 +18,8 @@ export async function POST(request: NextRequest) {
     const id = await correctBalanceRPC({
       account_id,
       target: Number(target),
-      correction_date: correction_date || (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60) * 60000).toISOString().split("T")[0]; })(),
-      entered_by: `admin:${auth.user.id}`,
+      correction_date: correction_date || new Date().toISOString().split("T")[0],
+      entered_by: `${auth.type}:${auth.user.id}`,
     });
 
     return NextResponse.json({ id }, { status: 201 });

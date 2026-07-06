@@ -14,7 +14,7 @@ export async function getExpenses(filters?: {
   expense_date_gte?: string;
   expense_date_lte?: string;
 }): Promise<ExpenseRow[]> {
-  let q = admin.from("expenses").select("*").is("voided_at", null).order("created_at", { ascending: true });
+  let q = admin.from("expenses").select("*").order("created_at", { ascending: true });
   if (filters?.expense_date) q = q.eq("expense_date", filters.expense_date);
   if (filters?.expense_date_gte) q = q.gte("expense_date", filters.expense_date_gte);
   if (filters?.expense_date_lte) q = q.lte("expense_date", filters.expense_date_lte);
@@ -24,48 +24,8 @@ export async function getExpenses(filters?: {
 }
 
 export async function deleteExpense(id: number): Promise<void> {
-  // Fetch the expense BEFORE voiding
-  const { data: expRow } = await admin.from("expenses").select("*").eq("id", id).is("voided_at", null).maybeSingle();
-  const exp = expRow as any;
-
-  const { error: softErr } = await admin
-    .from("expenses")
-    .update({ voided_at: new Date().toISOString() })
-    .eq("id", id)
-    .is("voided_at", null);
-  if (!softErr) {
-    await reverseExpenseEffects(exp);
-    return;
-  }
-  if (softErr.message?.includes("column") || softErr.message?.includes("does not exist")) {
-    console.warn("voided_at column not found — falling back to hard delete for expense");
-    await reverseExpenseEffects(exp);
-    const { error } = await admin.from("expenses").delete().eq("id", id);
-    if (error) throw new Error(error.message);
-    return;
-  }
-  throw new Error(softErr.message);
-}
-
-// Reverse cash ledger when voiding an expense
-async function reverseExpenseEffects(exp: any): Promise<void> {
-  if (!exp || !exp.amount) return;
-  try {
-    const { data: acct } = await admin.from("cash_accounts").select("id").eq("name", "Cash In Hand").limit(1).single();
-    if (acct) {
-      await admin.from("cash_ledger").insert({
-        entry_date: exp.expense_date,
-        account_id: (acct as any).id,
-        direction: "in",
-        amount: exp.amount,
-        source_type: "expense_void",
-        source_id: exp.id,
-        description: "Void expense #" + exp.id + ": " + exp.description,
-      });
-    }
-  } catch (err) {
-    console.error("Error reversing expense effects (non-critical, manual fix may be needed):", err);
-  }
+  const { error } = await admin.from("expenses").delete().eq("id", id);
+  if (error) throw new Error(error.message);
 }
 
 // Atomic expense via RPC (also posts cash_ledger 'out')

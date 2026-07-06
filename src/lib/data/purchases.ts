@@ -29,7 +29,6 @@ export async function getPurchases(filters?: {
   let q = admin
     .from("purchases")
     .select("*, products(id,name), suppliers(id,name), customers(id,name), locations(id,name)")
-    .is("voided_at", null)  // Exclude voided records
     .order("created_at", { ascending: false });
 
   if (filters?.purchase_date_gte) q = q.gte("purchase_date", filters.purchase_date_gte);
@@ -41,66 +40,7 @@ export async function getPurchases(filters?: {
 }
 
 export async function deletePurchase(id: number): Promise<void> {
-  // Fetch the purchase BEFORE voiding
-  const { data: purRow } = await admin.from("purchases").select("*").eq("id", id).is("voided_at", null).maybeSingle();
-  const pur = purRow as any;
-
-  const { error: softErr } = await admin
-    .from("purchases")
-    .update({ voided_at: new Date().toISOString() })
-    .eq("id", id)
-    .is("voided_at", null);
-  if (!softErr) {
-    await reversePurchaseEffects(pur);
-    return;
-  }
-  if (softErr.message?.includes("column") || softErr.message?.includes("does not exist")) {
-    console.warn("voided_at column not found — falling back to hard delete for purchase");
-    await reversePurchaseEffects(pur);
-    const { error } = await admin.from("purchases").delete().eq("id", id);
-    if (error) throw error;
-    return;
-  }
-  throw softErr;
-}
-
-// Reverse stock and ledger effects when voiding a purchase
-async function reversePurchaseEffects(pur: any): Promise<void> {
-  if (!pur) return;
-  try {
-    // 1. Reverse stock (remove bags that were added)
-    if (pur.unit_type === "bags" && pur.quantity) {
-      const { data: existing } = await admin
-        .from("product_stock")
-        .select("stock_quantity")
-        .eq("product_id", pur.product_id)
-        .eq("location_id", pur.location_id)
-        .maybeSingle();
-      const current = Number((existing as any)?.stock_quantity ?? 0);
-      await admin.from("product_stock").upsert(
-        { product_id: pur.product_id, location_id: pur.location_id, stock_quantity: Math.max(0, current - Number(pur.quantity)) },
-        { onConflict: "product_id,location_id" }
-      );
-    }
-
-    // 2. Reverse cash ledger (create "in" entry for cash_paid)
-    if (pur.cash_paid > 0 && !pur.settled_by_customer_id) {
-      const { data: acct } = await admin.from("cash_accounts").select("id").eq("name", "Cash In Hand").limit(1).single();
-      if (acct) {
-        await admin.from("cash_ledger").insert({
-          entry_date: pur.purchase_date,
-          account_id: (acct as any).id,
-          direction: "in",
-          amount: pur.cash_paid,
-          source_type: "purchase_void",
-          source_id: pur.id,
-          description: "Void purchase #" + pur.id,
-        });
-      }
-    }
-  } catch (err) {
-    console.error("Error reversing purchase effects (non-critical, manual fix may be needed):", err);
-  }
+  await admin.from("purchases").delete().eq("id", id);
 }
 
 // Atomic purchase via RPC
@@ -139,7 +79,7 @@ export async function recordPurchaseRPC(params: {
   } catch (rpcErr: any) {
     // If RPC function doesn't exist, fall back to direct inserts
     const msg = rpcErr?.message || "";
-    if ((msg.includes("does not exist") || msg.includes("Could not find the function")) && msg.includes("function")) {
+    if (msg.includes("does not exist") && msg.includes("function")) {
       console.warn("record_purchase RPC not found — falling back to direct insert");
       return recordPurchaseFallback(params);
     }
@@ -187,19 +127,11 @@ async function recordPurchaseFallback(params: {
   // Try to increment stock (best effort, bags only)
   if (params.unit_type === "bags") {
     try {
-      // Fetch current stock first to ADD to it, not overwrite
-      const { data: existing } = await admin
-        .from("product_stock")
-        .select("stock_quantity")
-        .eq("product_id", params.product_id)
-        .eq("location_id", params.location_id)
-        .maybeSingle();
-      const currentQty = (existing as any)?.stock_quantity ?? 0;
       await admin.from("product_stock").upsert(
         {
           product_id: params.product_id,
           location_id: params.location_id,
-          stock_quantity: currentQty + params.quantity,
+          stock_quantity: params.quantity,
           last_bag_weight_kg: params.bag_weight_kg,
         },
         { onConflict: "product_id,location_id" }

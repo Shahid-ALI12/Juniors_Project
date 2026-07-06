@@ -1,6 +1,5 @@
-import { requireAdminUser, requireAdmin } from "@/lib/auth/server-user";
 import { NextRequest, NextResponse } from "next/server";
-
+import { requireUser } from "@/lib/auth/server-user";
 import { getMixOrders, createMixOrderRPC, deleteMixOrder } from "@/lib/data/mix-orders";
 import { deleteSalesByMixOrder } from "@/lib/data/sales";
 import { admin } from "@/lib/supabase/server-admin";
@@ -10,7 +9,7 @@ import { getErrorDetail } from "@/lib/api-error";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const auth = await requireAdminUser();
+  const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   try {
@@ -40,7 +39,7 @@ export async function GET() {
 
 // POST — atomic mix order via RPC (parent + sale lines)
 export async function POST(request: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   try {
@@ -54,10 +53,10 @@ export async function POST(request: NextRequest) {
     const id = await createMixOrderRPC({
       customer_id,
       location_id,
-      order_date: order_date || (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60) * 60000).toISOString().split("T")[0]; })(),
+      order_date: order_date || new Date().toISOString().split("T")[0],
       target_weight_kg: target_weight_kg || null,
       cash_received: Number(cash_received) || 0,
-      entered_by: `admin:${auth.user.id}`,
+      entered_by: `${auth.type}:${auth.user.id}`,
       items: items.map((i: any) => ({
         product_id: i.product_id,
         quantity: i.quantity,
@@ -74,7 +73,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   try {

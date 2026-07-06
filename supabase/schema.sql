@@ -249,8 +249,6 @@ $$;
 --                  p_transaction_group_id, p_entered_by) -----------
 -- Inserts one row per item, decrements stock (bags only), posts a single
 -- cash_ledger 'in' entry for cash_received. Atomic.
--- FIX: p_cash_received and p_rickshaw_fare are stored on the FIRST sale row
---      so reports and khata can read them from the sales table directly.
 create or replace function create_sale(
   p_items jsonb,                       -- [{product_id, quantity, rate_per_bag, unit_type, bag_weight_kg}]
   p_customer_id bigint,
@@ -267,7 +265,6 @@ as $$
 declare
   v_item jsonb;
   v_ps record;
-  v_is_first boolean := true;
 begin
   for v_item in select * from jsonb_array_elements(p_items)
   loop
@@ -299,8 +296,8 @@ begin
       p_location_id,
       (v_item->>'quantity')::numeric,
       (v_item->>'rate_per_bag')::numeric,
-      case when v_is_first then p_rickshaw_fare else 0 end,
-      case when v_is_first then p_cash_received else 0 end,
+      0,                                  -- per-line rickshaw not tracked; applied at group level below
+      0,                                  -- cash applied once at group level (ledger entry below)
       p_sale_date,
       coalesce(v_item->>'unit_type','bags'),
       nullif(v_item->>'bag_weight_kg','')::numeric,
@@ -308,8 +305,6 @@ begin
       p_rickshaw_driver,
       p_entered_by
     );
-
-    v_is_first := false;
   end loop;
 
   -- single cash entry for the whole group
@@ -398,7 +393,6 @@ $$;
 
 -- ---- transfer_cash(p_from, p_to, p_amount, p_date, p_notes, p_by)
 -- Two ledger entries (out + in) + cash_transfers row.
--- FIX: Prevents same-account transfer.
 create or replace function transfer_cash(
   p_from_account_id bigint, p_to_account_id bigint, p_amount numeric,
   p_date date, p_notes text, p_entered_by text
@@ -407,10 +401,6 @@ language plpgsql security definer set search_path = public
 as $$
 declare v_id bigint;
 begin
-  if p_from_account_id = p_to_account_id then
-    raise exception 'from_account_id and to_account_id must be different';
-  end if;
-
   insert into cash_transfers (transfer_date, from_account_id, to_account_id, amount, notes, entered_by)
   values (p_date, p_from_account_id, p_to_account_id, p_amount, p_notes, p_entered_by)
   returning id into v_id;
@@ -533,59 +523,3 @@ where not exists (select 1 from products);
 -- ============================================================
 -- DONE.
 -- ============================================================
-
--- ============================================================
--- SECURITY MIGRATION: Soft-delete (void) support
--- Run this section in Supabase SQL Editor after the main schema.
--- Adds voided_at column to financial tables for audit trail.
--- ============================================================
-
--- Add voided_at columns (idempotent using DO blocks)
-do $$ begin
-  if not exists (select 1 from information_schema.columns where table_name = 'sales' and column_name = 'voided_at') then
-    alter table sales add column voided_at timestamptz;
-    alter table sales add column voided_by text;
-    alter table sales add column void_reason text;
-  end if;
-end $$;
-
-do $$ begin
-  if not exists (select 1 from information_schema.columns where table_name = 'purchases' and column_name = 'voided_at') then
-    alter table purchases add column voided_at timestamptz;
-    alter table purchases add column voided_by text;
-    alter table purchases add column void_reason text;
-  end if;
-end $$;
-
-do $$ begin
-  if not exists (select 1 from information_schema.columns where table_name = 'expenses' and column_name = 'voided_at') then
-    alter table expenses add column voided_at timestamptz;
-    alter table expenses add column voided_by text;
-    alter table expenses add column void_reason text;
-  end if;
-end $$;
-
-do $$ begin
-  if not exists (select 1 from information_schema.columns where table_name = 'mix_orders' and column_name = 'voided_at') then
-    alter table mix_orders add column voided_at timestamptz;
-    alter table mix_orders add column voided_by text;
-    alter table mix_orders add column void_reason text;
-  end if;
-end $$;
-
--- Indexes for voided_at (speeds up filtering active records)
-create index if not exists idx_sales_voided_at on sales (voided_at) where voided_at is not null;
-create index if not exists idx_purchases_voided_at on purchases (voided_at) where voided_at is not null;
-create index if not exists idx_expenses_voided_at on expenses (voided_at) where voided_at is not null;
-create index if not exists idx_mix_orders_voided_at on mix_orders (voided_at) where voided_at is not null;
-
--- ============================================================
--- CUSTOMER PORTAL DATA ISOLATION
--- Links each portal user (app_customers) to a business customer
--- so they can only see their own khata/balance data.
--- ============================================================
-do $$ begin
-  if not exists (select 1 from information_schema.columns where table_name = 'app_customers' and column_name = 'linked_customer_id') then
-    alter table app_customers add column linked_customer_id bigint references customers(id) on delete set null;
-  end if;
-end $$;

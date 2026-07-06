@@ -1,6 +1,5 @@
-import { requireAdminUser, requireAdmin } from "@/lib/auth/server-user";
 import { NextRequest, NextResponse } from "next/server";
-
+import { requireUser } from "@/lib/auth/server-user";
 import { getPurchases, recordPurchaseRPC, deletePurchase } from "@/lib/data/purchases";
 import { getErrorDetail } from "@/lib/api-error";
 
@@ -8,7 +7,7 @@ import { getErrorDetail } from "@/lib/api-error";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminUser();
+  const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   try {
@@ -27,7 +26,7 @@ export async function GET(request: NextRequest) {
 
 // POST — atomic purchase via RPC (stock increment + cash ledger)
 export async function POST(request: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   try {
@@ -39,7 +38,7 @@ export async function POST(request: NextRequest) {
     }
 
     const id = await recordPurchaseRPC({
-      purchase_date: purchase_date || (() => { const d = new Date(); return new Date(d.getTime() + (5 * 60) * 60000).toISOString().split("T")[0]; })(),
+      purchase_date: purchase_date || new Date().toISOString().split("T")[0],
       product_id,
       quantity: Number(quantity),
       rate_per_bag: Number(rate_per_bag) || 0,
@@ -50,7 +49,7 @@ export async function POST(request: NextRequest) {
       notes: notes?.trim() || null,
       unit_type: unit_type || "bags",
       bag_weight_kg: bag_weight_kg ? Number(bag_weight_kg) : null,
-      entered_by: `admin:${auth.user.id}`,
+      entered_by: `${auth.type}:${auth.user.id}`,
     });
 
     return NextResponse.json({ id }, { status: 201 });
@@ -62,7 +61,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   try {

@@ -1,23 +1,16 @@
-import { requireAdminUser } from "@/lib/auth/server-user";
 import { NextRequest, NextResponse } from "next/server";
-
+import { requireUser } from "@/lib/auth/server-user";
 import { admin } from "@/lib/supabase/server-admin";
 import { getErrorDetail } from "@/lib/api-error";
 
 export const dynamic = "force-dynamic";
 
-/** Get current date in PKT (UTC+5:30) as YYYY-MM-DD */
-function pktToday(): string {
-  const d = new Date();
-  return new Date(d.getTime() + (5 * 60) * 60000).toISOString().split("T")[0];
-}
-
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminUser();
+  const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   const type = request.nextUrl.searchParams.get("type") || "";
-  const from = request.nextUrl.searchParams.get("from") || pktToday();
+  const from = request.nextUrl.searchParams.get("from") || new Date().toISOString().split("T")[0];
   const to = request.nextUrl.searchParams.get("to") || from;
 
   try {
@@ -27,7 +20,6 @@ export async function GET(request: NextRequest) {
           .from("sales")
           .select("id, sale_date, quantity, unit_type, rate_per_bag, customers(id,name), products(id,name), locations(id,name)")
           .gte("sale_date", from).lte("sale_date", to)
-          .is("voided_at", null)
           .order("created_at", { ascending: false });
         if (error) throw error;
         const rows = (data || []).map((s: any) => ({
@@ -48,7 +40,6 @@ export async function GET(request: NextRequest) {
           .from("sales")
           .select("id, sale_date, quantity, rate_per_bag, rickshaw_fare, cash_received, unit_type, customers(id,name), products(id,name)")
           .gte("sale_date", from).lte("sale_date", to)
-          .is("voided_at", null)
           .order("created_at", { ascending: false });
         if (error) throw error;
         const rows = (data || []).map((s: any) => {
@@ -74,7 +65,6 @@ export async function GET(request: NextRequest) {
           .select("id, sale_date, quantity, rate_per_bag, rickshaw_fare, cash_received, customers(id,name), products(id,name)")
           .gte("sale_date", from).lte("sale_date", to)
           .gt("cash_received", 0)
-          .is("voided_at", null)
           .order("created_at", { ascending: false });
         if (error) throw error;
         const rows = (data || []).map((s: any) => ({
@@ -93,7 +83,6 @@ export async function GET(request: NextRequest) {
           .from("sales")
           .select("id, sale_date, quantity, rate_per_bag, rickshaw_fare, cash_received, customers(id,name,type), products(id,name)")
           .gte("sale_date", from).lte("sale_date", to)
-          .is("voided_at", null)
           .order("created_at", { ascending: false });
         if (error) throw error;
         const rows = (data || [])
@@ -118,7 +107,6 @@ export async function GET(request: NextRequest) {
           .from("sales")
           .select("id, sale_date, quantity, rate_per_bag, rickshaw_fare, cash_received, customers(id,name,type), products(id,name)")
           .gte("sale_date", from).lte("sale_date", to)
-          .is("voided_at", null)
           .order("created_at", { ascending: false });
         if (error) throw error;
         const rows = (data || [])
@@ -137,16 +125,15 @@ export async function GET(request: NextRequest) {
       case "expenses": {
         const { data, error } = await admin
           .from("expenses")
-          .select("id, expense_date, description, amount, created_at")
+          .select("id, expense_date, description, amount, expense_category, created_at")
           .gte("expense_date", from).lte("expense_date", to)
-          .is("voided_at", null)
           .order("created_at", { ascending: false });
         if (error) throw error;
         const rows = (data || []).map((e: any) => ({
           id: e.id,
           date: e.expense_date,
           description: e.description || "N/A",
-          category: "N/A",
+          category: e.expense_category || "N/A",
           amount: e.amount,
         }));
         return NextResponse.json({ rows, label: "Total Expenses" });
