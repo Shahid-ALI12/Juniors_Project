@@ -104,12 +104,12 @@ export async function transferCashRPC(params: {
       p_entered_by: params.entered_by,
     });
     if (error) throw error;
-    return data as number;
+    // RPC returns TABLE(id bigint) — extract first row's id
+    return Array.isArray(data) ? (data as any)[0]?.id as number : data as number;
   } catch (rpcErr: any) {
-    // If RPC function doesn't exist, fall back to direct inserts
     const msg = rpcErr?.message || "";
-    if (msg.includes("does not exist") && msg.includes("function")) {
-      console.warn("transfer_cash RPC not found — falling back to direct insert");
+    if (msg.includes("does not exist") || msg.includes("Could not find the function") || msg.includes("cannot extract elements from a scalar")) {
+      console.warn("transfer_cash RPC not found or scalar error — falling back to direct insert");
       return transferCashFallback(params);
     }
     throw rpcErr;
@@ -188,12 +188,13 @@ export async function correctBalanceRPC(params: {
       p_entered_by: params.entered_by,
     });
     if (error) throw error;
-    return data as number | null;
+    // RPC returns TABLE(id bigint) — extract first row's id or null
+    if (data == null) return null;
+    return Array.isArray(data) ? (data as any)[0]?.id as number : data as number;
   } catch (rpcErr: any) {
-    // If RPC function doesn't exist, fall back to manual calculation
     const msg = rpcErr?.message || "";
-    if (msg.includes("does not exist") && msg.includes("function")) {
-      console.warn("correct_cash_balance RPC not found — falling back to manual calculation");
+    if (msg.includes("does not exist") || msg.includes("Could not find the function") || msg.includes("cannot extract elements from a scalar")) {
+      console.warn("correct_cash_balance RPC not found or scalar error — falling back to manual calculation");
       return correctBalanceFallback(params);
     }
     throw rpcErr;

@@ -53,12 +53,12 @@ export async function createMixOrderRPC(params: {
       p_items: JSON.stringify(params.items),
     });
     if (error) throw error;
-    return data as number;
+    // RPC returns TABLE(id bigint) — extract first row's id
+    return Array.isArray(data) ? (data as any)[0]?.id as number : data as number;
   } catch (rpcErr: any) {
-    // If RPC function doesn't exist, fall back to direct inserts
     const msg = rpcErr?.message || "";
-    if ((msg.includes("does not exist") || msg.includes("Could not find the function")) && msg.includes("function")) {
-      console.warn("create_mix_order RPC not found — falling back to direct insert");
+    if (msg.includes("does not exist") || msg.includes("Could not find the function") || msg.includes("cannot extract elements from a scalar")) {
+      console.warn("create_mix_order RPC not found or scalar error — falling back to direct insert");
       return createMixOrderFallback(params);
     }
     throw rpcErr;
