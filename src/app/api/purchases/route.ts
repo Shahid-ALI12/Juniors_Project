@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
       notes: notes?.trim() || null,
       unit_type: unit_type || "bags",
       bag_weight_kg: bag_weight_kg ? Number(bag_weight_kg) : null,
-      entered_by: `${auth.type}:${auth.user.id}`,
+      entered_by: `admin:${auth.user.id}`,
     });
 
     return NextResponse.json({ id }, { status: 201 });
