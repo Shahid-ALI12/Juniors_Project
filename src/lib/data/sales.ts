@@ -165,8 +165,9 @@ async function createSaleFallback(params: {
     entered_by: params.entered_by,
   }));
 
-  const { error: insertErr } = await admin.from("sales").insert(rows);
+  const { data: insertedRows, error: insertErr } = await admin.from("sales").insert(rows).select("id").limit(1).single();
   if (insertErr) throw insertErr;
+  const firstSaleId = (insertedRows as any)?.id ?? null;
 
   // Try to insert cash_ledger entry (best effort)
   try {
@@ -184,7 +185,7 @@ async function createSaleFallback(params: {
           direction: "in",
           amount: params.cash_received,
           source_type: "sale",
-          source_id: null,
+          source_id: firstSaleId,
           description: "Sale group " + params.transaction_group_id,
           entered_by: params.entered_by,
         });
