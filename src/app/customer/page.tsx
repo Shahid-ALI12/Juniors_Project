@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { useAppStore, masterCache } from "@/store";
 import {
   LayoutDashboard, FileText, BookOpen, CheckCircle,
-  Package, Settings, FlaskConical, Landmark, LogOut, User, Info,
+  Package, Settings, FlaskConical, Landmark, LogOut, User, Info, Database,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -21,6 +21,7 @@ const ManageProducts = dynamic(() => import("@/components/pages/manage-products"
 const PurchasesStock = dynamic(() => import("@/components/pages/purchases-stock"), { ssr: false, loading: () => <PageLoader /> });
 const CustomMixOrder = dynamic(() => import("@/components/pages/custom-mix-order"), { ssr: false, loading: () => <PageLoader /> });
 const CustomerAbout = dynamic(() => import("@/components/pages/customer-about"), { ssr: false, loading: () => <PageLoader /> });
+const DatabaseManagement = dynamic(() => import("@/components/pages/database-management"), { ssr: false, loading: () => <PageLoader /> });
 
 function PageLoader() {
   return <div className="flex items-center justify-center py-20"><div className="animate-spin w-7 h-7 border-2 border-emerald-500 border-t-transparent rounded-full" /></div>;
@@ -36,6 +37,7 @@ const pageMap: Record<string, React.ComponentType<{ customer?: AppCustomer }>> =
   "manage-products": ManageProducts,
   "purchases-stock": PurchasesStock,
   "custom-mix": CustomMixOrder,
+  "database-mgmt": DatabaseManagement,
 };
 
 const navSections = [
@@ -56,6 +58,12 @@ const navSections = [
     items: [
       { id: "purchases-stock", label: "Purchases & Stock", icon: Package },
       { id: "manage-products", label: "Manage Products", icon: Settings },
+    ],
+  },
+  {
+    label: "System",
+    items: [
+      { id: "database-mgmt", label: "Database Management", icon: Database },
     ],
   },
 ];

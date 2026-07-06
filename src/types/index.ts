@@ -197,3 +197,54 @@ export interface CustomerSession {
   customer: AppCustomer;
   isExpired: boolean;
 }
+
+// ─── Database Backup ───
+
+export type BackupFilter = "all" | "today" | "month" | "year" | "custom";
+
+export interface BackupFilters {
+  type: BackupFilter;
+  from?: string; // YYYY-MM-DD (for custom)
+  to?: string;   // YYYY-MM-DD (for custom)
+}
+
+export interface MixOrderRow {
+  id: number;
+  customer_id: number;
+  location_id: number;
+  order_date: string;
+  target_weight_kg: number | null;
+  cash_received: number;
+  entered_by: string | null;
+  created_at: string;
+}
+
+export interface DatabaseBackup {
+  version: string;
+  exported_at: string;
+  exported_by: string;
+  filters: {
+    type: BackupFilter;
+    from: string | null;
+    to: string | null;
+  };
+  schema_version: string;
+  data: {
+    // Master data (always included — no date filter)
+    products: Product[];
+    locations: Location[];
+    customers: Customer[];
+    suppliers: Supplier[];
+    cash_accounts: CashAccount[];
+    product_stock: ProductStock[];
+    // Transactional data (date-filtered)
+    sales: Sale[];
+    mix_orders: MixOrderRow[];
+    purchases: Purchase[];
+    expenses: Expense[];
+    cash_ledger: CashLedger[];
+    cash_transfers: CashTransfer[];
+  };
+  // NOTE: app_customers (login + password hashes) is intentionally EXCLUDED
+  // for security. Supabase Auth handles admin accounts separately.
+}
