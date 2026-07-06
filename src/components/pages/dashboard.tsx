@@ -108,6 +108,17 @@ const cardColors: Record<string, { border: string; text: string; bg: string; bad
   orange: { border: "border-t-orange-500", text: "text-orange-600", bg: "bg-orange-50", badge: "bg-orange-100 text-orange-700" },
 };
 
+/* ─── Card label lookup (outside component to avoid reference issues) ─── */
+const cardLabels: Record<CardKey, string> = {
+  "sales-today": "Sales Today",
+  "billed-today": "Billed Today",
+  "cash-collected": "Cash Collected",
+  "expenses-today": "Expenses Today",
+  "customers": "Customers",
+  "outstanding": "Total Outstanding / Khata",
+  "over-credit": "Over Credit Limit",
+};
+
 export default function Dashboard() {
   const setActivePage = useAppStore((s) => s.setActivePage);
   const [metrics, setMetrics] = useState<Metrics>(defaultMetrics);
@@ -118,6 +129,12 @@ export default function Dashboard() {
   const [detailRows, setDetailRows] = useState<Record<string, any>[]>([]);
   const [detailLabel, setDetailLabel] = useState("");
   const [detailLoading, setDetailLoading] = useState(false);
+
+  // Use PKT (Asia/Karachi) date so it matches what the user sees
+  const pktDate = useMemo(() => {
+    const d = new Date();
+    return new Date(d.getTime() + (5 * 60 + 30) * 60000).toISOString().split("T")[0];
+  }, []);
 
   useEffect(() => {
     async function load() {
@@ -141,26 +158,28 @@ export default function Dashboard() {
     if (activeCard === cardKey) {
       setActiveCard(null);
       setDetailRows([]);
+      setDetailLabel("");
       return;
     }
 
     setActiveCard(cardKey);
     setDetailLoading(true);
     setDetailRows([]);
+    // Set label immediately from card definition (not API) to prevent stale label
+    setDetailLabel(cardLabels[cardKey] || cardKey);
     try {
-      const today = new Date().toISOString().split("T")[0];
-      const res = await fetch(`/api/reports/dashboard/details?type=${cardKey}&date=${today}`);
+      const res = await fetch(`/api/reports/dashboard/details?type=${cardKey}&date=${pktDate}`);
       if (res.ok) {
         const data = await res.json();
         setDetailRows(data.rows || []);
-        setDetailLabel(data.label || "");
+        if (data.label) setDetailLabel(data.label);
       }
     } catch {
       setDetailRows([]);
     } finally {
       setDetailLoading(false);
     }
-  }, [activeCard]);
+  }, [activeCard, pktDate]);
 
   if (loading) {
     return (
