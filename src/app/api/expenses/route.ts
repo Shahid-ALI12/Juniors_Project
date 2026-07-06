@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
       description: description.trim(),
       amount: Number(amount),
       expense_date: expense_date || pktToday(),
-      entered_by: `${auth.type}:${auth.user.id}`,
+      entered_by: `admin:${auth.user.id}`,
     });
 
     return NextResponse.json({ id }, { status: 201 });

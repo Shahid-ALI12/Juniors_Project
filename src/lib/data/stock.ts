@@ -14,21 +14,21 @@ export interface StockRow {
 export async function getAllStock(): Promise<StockRow[]> {
   const { data, error } = await admin
     .from("product_stock")
-    .select("*, products(id,name), locations(id,name)")
+    .select("id, product_id, location_id, stock_quantity, last_bag_weight_kg, created_at, products(id,name), locations(id,name)")
     .order("product_id", { ascending: true });
   if (error) throw error;
-  return (data || []) as StockRow[];
+  return (data || []) as unknown as StockRow[];
 }
 
 export async function getStockForProduct(product_id: number, location_id: number): Promise<StockRow | null> {
   const { data, error } = await admin
     .from("product_stock")
-    .select("*, products(id,name), locations(id,name)")
+    .select("id, product_id, location_id, stock_quantity, last_bag_weight_kg, created_at, products(id,name), locations(id,name)")
     .eq("product_id", product_id)
     .eq("location_id", location_id)
     .single();
   if (error) return null;
-  return data as StockRow;
+  return data as unknown as StockRow;
 }
 
 export async function upsertStock(params: {

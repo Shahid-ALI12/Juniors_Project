@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
       account_id,
       target: Number(target),
       correction_date: correction_date || pktToday(),
-      entered_by: `${auth.type}:${auth.user.id}`,
+      entered_by: `admin:${auth.user.id}`,
     });
 
     return NextResponse.json({ id }, { status: 201 });

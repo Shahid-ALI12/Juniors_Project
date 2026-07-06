@@ -33,7 +33,7 @@ export async function getSales(filters?: {
 }): Promise<SaleRow[]> {
   let q = admin
     .from("sales")
-    .select("*, customers(id,name,type), products(id,name), locations(id,name)")
+    .select("id, customer_id, product_id, location_id, quantity, rate_per_bag, rickshaw_fare, cash_received, sale_date, unit_type, bag_weight_kg, mix_order_id, transaction_group_id, rickshaw_driver_name, entered_by, created_at, customers(id,name,type), products(id,name), locations(id,name)")
     .order("created_at", { ascending: true });
 
   if (filters?.sale_date) q = q.eq("sale_date", filters.sale_date);
@@ -45,7 +45,7 @@ export async function getSales(filters?: {
 
   const { data, error } = await q;
   if (error) throw error;
-  return (data || []) as SaleRow[];
+  return (data || []) as unknown as SaleRow[];
 }
 
 export async function deleteSale(id: number): Promise<void> {

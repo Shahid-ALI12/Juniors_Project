@@ -16,20 +16,20 @@ export interface MixOrderRow {
 export async function getMixOrders(): Promise<MixOrderRow[]> {
   const { data, error } = await admin
     .from("mix_orders")
-    .select("*, customers(id,name), locations(id,name)")
+    .select("id, customer_id, location_id, order_date, target_weight_kg, cash_received, entered_by, created_at, customers(id,name), locations(id,name)")
     .order("created_at", { ascending: false });
   if (error) throw error;
-  return (data || []) as MixOrderRow[];
+  return (data || []) as unknown as MixOrderRow[];
 }
 
 export async function getMixOrderById(id: number): Promise<MixOrderRow | null> {
   const { data, error } = await admin
     .from("mix_orders")
-    .select("*, customers(id,name), locations(id,name)")
+    .select("id, customer_id, location_id, order_date, target_weight_kg, cash_received, entered_by, created_at, customers(id,name), locations(id,name)")
     .eq("id", id)
     .single();
   if (error) return null;
-  return data as MixOrderRow;
+  return data as unknown as MixOrderRow;
 }
 
 export async function createMixOrderRPC(params: {

@@ -47,6 +47,7 @@ import {
   Store,
   Scale,
   Loader2,
+  Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import { pktToday } from "@/lib/pkt-date";
@@ -149,7 +150,7 @@ export default function PurchasesStockPage() {
   }, [loadAllData]);
 
   useEffect(() => {
-    if (products.length > 0 && stockData.length > 0) {
+    if (products.length > 0) {
       setFarmStock(buildStockRows(1));
       setShopStock(buildStockRows(2));
     }
@@ -403,7 +404,83 @@ export default function PurchasesStockPage() {
     }
   };
 
+  const totalPurchaseValue = useMemo(
+    () => purchases.reduce((sum, p) => sum + p.quantity * p.rate_per_bag, 0),
+    [purchases]
+  );
+
   const getPurchaseValue = (p: Purchase) => p.quantity * p.rate_per_bag;
+
+  const handleDownloadExcel = async () => {
+    try {
+      toast.loading("Generating Excel…", { id: "excel-dl" });
+      const XLSX = await import("xlsx");
+      // Fetch all purchases (not just today)
+      const res = await fetch("/api/purchases");
+      if (!res.ok) throw new Error("Failed to fetch purchases");
+      const { purchases: allPurchases } = await res.json();
+
+      const rows = (allPurchases || []).map((p: any, idx: number) => ({
+        "#": idx + 1,
+        Date: p.purchase_date,
+        Source: p.settled_by_customer_id
+          ? `${p.customers?.name || "—"} (Settlement)`
+          : p.suppliers?.name || "—",
+        Type: p.settled_by_customer_id ? "Settlement" : "Supplier",
+        Product: p.products?.name || "—",
+        Location: p.locations?.name || "—",
+        "Unit Type": p.unit_type === "bags" ? "Bags" : "KG (loose)",
+        Quantity: p.quantity,
+        "Rate (Rs.)": p.rate_per_bag,
+        "Value (Rs.)": p.quantity * p.rate_per_bag,
+        "Cash Paid (Rs.)": p.cash_paid,
+        Notes: p.notes || "",
+      }));
+
+      // Add total row
+      const totalVal = rows.reduce((s: number, r: any) => s + (r["Value (Rs.)"] || 0), 0);
+      const totalCash = rows.reduce((s: number, r: any) => s + (r["Cash Paid (Rs.)"] || 0), 0);
+      rows.push({
+        "#": "",
+        Date: "",
+        Source: "",
+        Type: "",
+        Product: "",
+        Location: "",
+        "Unit Type": "",
+        Quantity: "",
+        "Rate (Rs.)": "",
+        "Value (Rs.)": totalVal,
+        "Cash Paid (Rs.)": totalCash,
+        Notes: "TOTAL",
+      });
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+
+      // Set column widths
+      ws["!cols"] = [
+        { wch: 5 },  // #
+        { wch: 12 }, // Date
+        { wch: 25 }, // Source
+        { wch: 12 }, // Type
+        { wch: 20 }, // Product
+        { wch: 12 }, // Location
+        { wch: 12 }, // Unit Type
+        { wch: 10 }, // Quantity
+        { wch: 12 }, // Rate
+        { wch: 14 }, // Value
+        { wch: 14 }, // Cash Paid
+        { wch: 25 }, // Notes
+      ];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "All Purchases");
+      XLSX.writeFile(wb, `purchases_${today}.xlsx`);
+      toast.success("Excel downloaded!", { id: "excel-dl" });
+    } catch (e: any) {
+      toast.error(e.message || "Failed to generate Excel", { id: "excel-dl" });
+    }
+  };
 
   const getQuantityLabel = (p: Purchase) => {
     if (p.unit_type === "bags") {
@@ -752,9 +829,22 @@ export default function PurchasesStockPage() {
                     </Table>
                   </div>
                 </div>
-                <div className="flex items-center justify-between rounded-xl bg-slate-100/80 px-5 py-3.5 border border-slate-200/60">
-                  <span className="text-sm font-bold text-slate-600 uppercase tracking-wide">Total Cash Paid Today</span>
-                  <span className="text-xl font-extrabold text-slate-900">Rs. {fmt(totalCashPaid)}</span>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="flex items-center justify-between rounded-xl bg-slate-100/80 px-5 py-3.5 border border-slate-200/60">
+                      <span className="text-sm font-bold text-slate-600 uppercase tracking-wide">Total Purchase Value</span>
+                      <span className="text-xl font-extrabold text-slate-900">Rs. {fmt(totalPurchaseValue)}</span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-xl bg-emerald-50/80 px-5 py-3.5 border border-emerald-200/60">
+                      <span className="text-sm font-bold text-emerald-700 uppercase tracking-wide">Total Cash Paid Today</span>
+                      <span className="text-xl font-extrabold text-emerald-800">Rs. {fmt(totalCashPaid)}</span>
+                    </div>
+                  </div>
+                  <div className="flex justify-end">
+                    <Button onClick={handleDownloadExcel} variant="outline" className="gap-2 border-slate-300 text-slate-700 hover:bg-slate-100">
+                      <Download className="size-4" /> Download Excel (All Purchases)
+                    </Button>
+                  </div>
                 </div>
               </>
             )}

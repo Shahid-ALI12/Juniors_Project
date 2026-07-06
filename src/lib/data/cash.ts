@@ -72,7 +72,7 @@ export async function getCashTransfers(filters?: {
 }): Promise<CashTransferRow[]> {
   let q = admin
     .from("cash_transfers")
-    .select("*, from_account:cash_accounts!cash_transfers_from_account_id_fkey(id,name), to_account:cash_accounts!cash_transfers_to_account_id_fkey(id,name)")
+    .select("id, transfer_date, from_account_id, to_account_id, amount, notes, entered_by, created_at, from_account:cash_accounts!cash_transfers_from_account_id_fkey(id,name), to_account:cash_accounts!cash_transfers_to_account_id_fkey(id,name)")
     .order("created_at", { ascending: false });
 
   if (filters?.transfer_date) q = q.eq("transfer_date", filters.transfer_date);
@@ -81,7 +81,7 @@ export async function getCashTransfers(filters?: {
 
   const { data, error } = await q;
   if (error) throw error;
-  return (data || []) as CashTransferRow[];
+  return (data || []) as unknown as CashTransferRow[];
 }
 
 // Atomic transfer via RPC

@@ -28,7 +28,7 @@ export async function getPurchases(filters?: {
 }): Promise<PurchaseRow[]> {
   let q = admin
     .from("purchases")
-    .select("*, products(id,name), suppliers(id,name), customers(id,name), locations(id,name)")
+    .select("id, purchase_date, product_id, quantity, rate_per_bag, supplier_id, settled_by_customer_id, cash_paid, location_id, notes, entered_by, unit_type, bag_weight_kg, created_at, products(id,name), suppliers(id,name), customers(id,name), locations(id,name)")
     .order("created_at", { ascending: false });
 
   if (filters?.purchase_date_gte) q = q.gte("purchase_date", filters.purchase_date_gte);
@@ -36,7 +36,7 @@ export async function getPurchases(filters?: {
 
   const { data, error } = await q;
   if (error) throw error;
-  return (data || []) as PurchaseRow[];
+  return (data || []) as unknown as PurchaseRow[];
 }
 
 export async function deletePurchase(id: number): Promise<void> {
