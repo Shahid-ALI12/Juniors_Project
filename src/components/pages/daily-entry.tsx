@@ -309,12 +309,23 @@ export default function DailyEntryPage() {
   };
 
   const handleDeleteMixOrder = (mixOrderId: string) => {
-    askConfirm("Delete Mix Order", `Mix Order "${mixOrderId}" ko database se delete karna hai?`, async () => {
+    // Find the actual mix_order_id (number) from the grouped sales
+    const groupLines = mixGroups.get(mixOrderId);
+    const dbMixOrderId = groupLines?.[0]?.mix_order_id;
+
+    askConfirm("Delete Mix Order", `Mix Order ko database se delete karna hai?`, async () => {
       setConfirmLoading(true);
       try {
-        const res = await fetch(`/api/sales?group_id=${mixOrderId}`, { method: "DELETE" });
+        let res: Response;
+        if (dbMixOrderId) {
+          // Use /api/mix-orders DELETE — cleans BOTH sales + mix_orders tables
+          res = await fetch(`/api/mix-orders?id=${dbMixOrderId}`, { method: "DELETE" });
+        } else {
+          // Fallback: delete by transaction_group_id from sales only
+          res = await fetch(`/api/sales?group_id=${mixOrderId}`, { method: "DELETE" });
+        }
         if (!res.ok) throw new Error(await apiError(res, "Failed"));
-        setSales((prev) => prev.filter((s) => s.transaction_group_id !== mixOrderId));
+        setSales((prev) => prev.filter((s) => s.transaction_group_id !== mixOrderId && s.mix_order_id !== dbMixOrderId));
         toast.success("Mix Order delete ho gaya");
       } catch (e: any) { toast.error(e.message || "Database me delete nahi hua"); }
       finally { setConfirmLoading(false); setConfirmOpen(false); }

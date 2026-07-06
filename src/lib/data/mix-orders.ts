@@ -91,6 +91,9 @@ async function createMixOrderFallback(params: {
   if (mixErr) throw mixErr;
   const mixId = (mixData as any).id as number;
 
+  // Generate a transaction_group_id so daily-entry can group these sale lines
+  const groupId = `mix-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
   // Insert sale lines for each item
   const saleRows = params.items.map((item) => ({
     customer_id: params.customer_id,
@@ -104,6 +107,7 @@ async function createMixOrderFallback(params: {
     unit_type: "kg",
     bag_weight_kg: null,
     mix_order_id: mixId,
+    transaction_group_id: groupId,
     entered_by: params.entered_by,
   }));
 
@@ -140,5 +144,6 @@ async function createMixOrderFallback(params: {
 }
 
 export async function deleteMixOrder(id: number): Promise<void> {
-  await admin.from("mix_orders").delete().eq("id", id);
+  const { error } = await admin.from("mix_orders").delete().eq("id", id);
+  if (error) throw new Error(error.message);
 }
