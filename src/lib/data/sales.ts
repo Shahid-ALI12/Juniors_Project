@@ -204,9 +204,35 @@ async function createSaleFallback(params: {
           p_quantity: item.quantity,
           p_bag_weight_kg: item.bag_weight_kg,
         });
-      } catch {
-        // Stock decrement is best-effort in fallback mode
-        console.warn(`Stock decrement failed for product ${item.product_id} (non-critical)`);
+      } catch (stockErr: any) {
+        // If the fallback RPC also doesn't exist, do manual decrement
+        const stockMsg = stockErr?.message || "";
+        if (stockMsg.includes("does not exist") || stockMsg.includes("Could not find the function")) {
+          console.warn(`decrement_stock_fallback RPC not found — trying manual stock decrement for product ${item.product_id}`);
+          try {
+            // Fetch current stock
+            const { data: existing } = await admin
+              .from("product_stock")
+              .select("stock_quantity")
+              .eq("product_id", item.product_id)
+              .eq("location_id", params.location_id)
+              .maybeSingle();
+            const currentQty = (existing as any)?.stock_quantity ?? 0;
+            await admin.from("product_stock").upsert(
+              {
+                product_id: item.product_id,
+                location_id: params.location_id,
+                stock_quantity: Math.max(0, currentQty - item.quantity),
+                last_bag_weight_kg: item.bag_weight_kg,
+              },
+              { onConflict: "product_id,location_id" }
+            );
+          } catch {
+            console.warn(`Manual stock decrement also failed for product ${item.product_id} (non-critical)`);
+          }
+        } else {
+          console.warn(`Stock decrement failed for product ${item.product_id} (non-critical)`);
+        }
       }
     }
   }
