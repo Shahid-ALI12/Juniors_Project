@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
+import ConfirmAction from "@/components/shared/confirm-action";
 import type { Product, ProductStock } from "@/types";
 
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,8 @@ import {
   Info,
   BoxesIcon,
   Loader2,
+  Trash2,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { fetchCached, invalidateCache, apiError } from "@/store";
@@ -34,29 +37,41 @@ export default function ManageProducts() {
   const [editedRates, setEditedRates] = useState<Record<number, string>>({});
   const [updatedIds, setUpdatedIds] = useState<Set<number>>(new Set());
   const [updating, setUpdating] = useState<Set<number>>(new Set());
+  const [showInactive, setShowInactive] = useState(false);
 
   const [newName, setNewName] = useState("");
   const [newRate, setNewRate] = useState("");
   const [adding, setAdding] = useState(false);
 
+  // Delete confirm state
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmProduct, setConfirmProduct] = useState<Product | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const loadData = useCallback(async () => {
+    let pList: Product[] = [], sList: ProductStock[] = [];
+    const failed: string[] = [];
+    try { pList = await fetchCached<Product>("products", "/api/products", "products"); }
+    catch { failed.push("products"); }
+    try { sList = await fetchCached<ProductStock>("stock", "/api/stock", "stock"); }
+    catch { failed.push("stock"); }
+    setProducts(pList);
+    setStockData(sList);
+    if (failed.length > 0) toast.error(`Failed to load: ${failed.join(", ")}`);
+    else {
+      const initial: Record<number, string> = {};
+      pList.forEach((p: Product) => { initial[p.id] = String(p.default_rate); });
+      setEditedRates(initial);
+    }
+  }, []);
+
   useEffect(() => {
     (async () => {
       setLoading(true);
-      let pList: Product[] = [], sList: ProductStock[] = [];
-      const failed: string[] = [];
-      try { pList = await fetchCached<Product>("products", "/api/products", "products"); } catch { failed.push("products"); }
-      try { sList = await fetchCached<ProductStock>("stock", "/api/stock", "stock"); } catch { failed.push("stock"); }
-      setProducts(pList);
-      setStockData(sList);
-      if (failed.length > 0) toast.error(`Failed to load: ${failed.join(", ")}`);
-      else {
-        const initial: Record<number, string> = {};
-        pList.forEach((p: Product) => { initial[p.id] = String(p.default_rate); });
-        setEditedRates(initial);
-      }
+      await loadData();
       setLoading(false);
     })();
-  }, []);
+  }, [loadData]);
 
   const handleRateChange = useCallback((id: number, value: string) => {
     if (value === "" || /^\d*$/.test(value)) {
@@ -149,6 +164,70 @@ export default function ManageProducts() {
     }
   }, [newName, newRate, products]);
 
+  const askDelete = useCallback((product: Product) => {
+    setConfirmProduct(product);
+    setConfirmOpen(true);
+  }, []);
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!confirmProduct) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/products?id=${confirmProduct.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || err.error || "Failed to delete product");
+      }
+      const data = await res.json();
+      invalidateCache("products");
+      invalidateCache("stock");
+
+      if (data.soft) {
+        // Soft delete — mark inactive in local state
+        setProducts((prev) =>
+          prev.map((p) => (p.id === confirmProduct.id ? { ...p, is_active: false } : p))
+        );
+        toast.success(`"${confirmProduct.name}" deactivated`, {
+          description:
+            "Is product ke sales/purchases records maujood hain, is liye permanently delete nahi hua. Historical records safe hain.",
+          duration: 6000,
+        });
+      } else {
+        // Hard delete — remove from local state
+        setProducts((prev) => prev.filter((p) => p.id !== confirmProduct.id));
+        setStockData((prev) => prev.filter((s) => s.product_id !== confirmProduct.id));
+        toast.success(`"${confirmProduct.name}" permanently deleted`, {
+          description: "Product aur uski stock entry database se remove ho gayi.",
+        });
+      }
+      setConfirmOpen(false);
+      setConfirmProduct(null);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to delete product");
+    } finally {
+      setDeleting(false);
+    }
+  }, [confirmProduct]);
+
+  const handleRestore = useCallback(async (product: Product) => {
+    try {
+      const res = await fetch(`/api/products?id=${product.id}&restore=true`, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || err.error || "Failed to restore product");
+      }
+      setProducts((prev) =>
+        prev.map((p) => (p.id === product.id ? { ...p, is_active: true } : p))
+      );
+      invalidateCache("products");
+      toast.success(`"${product.name}" restored`, {
+        description: "Product dobara active ho gaya. Nai sales/purchases me use kar sakte hain.",
+      });
+    } catch (e: any) {
+      toast.error(e.message || "Failed to restore product");
+    }
+  }, []);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -157,22 +236,55 @@ export default function ManageProducts() {
     );
   }
 
+  const activeProducts = products.filter((p) => p.is_active);
+  const inactiveProducts = products.filter((p) => !p.is_active);
+  const visibleProducts = showInactive
+    ? [...activeProducts, ...inactiveProducts]
+    : activeProducts;
+
   return (
     <div className="space-y-6">
-      <PageHeader title="Manage Products & Rates" subtitle="Add products and set default selling rates." />
+      <ConfirmAction
+        open={confirmOpen}
+        onOpenChange={(o) => { setConfirmOpen(o); if (!o) setConfirmProduct(null); }}
+        title={`Delete "${confirmProduct?.name ?? ""}"?`}
+        description="Ye product database se remove hoga. Agar is product ke sales ya purchases maujood hain, to woh historical records barqarar rakhne ke liye product sirf deactivate ho jayega (active = false). Warna permanently delete ho jayega."
+        confirmLabel={deleting ? "Deleting..." : "Yes, Delete"}
+        variant="danger"
+        onConfirm={handleConfirmDelete}
+        loading={deleting}
+      />
+
+      <PageHeader title="Manage Products & Rates" subtitle="Add products, set default selling rates, and remove unused ones." />
 
       <section className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden" aria-label="Current products">
         <div className="px-4 sm:px-6 pt-5 pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center gap-2">
             <BoxesIcon className="size-5 text-slate-700" />
             <h2 className="text-lg font-bold text-slate-900">Current Products</h2>
-            <span className="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{products.length}</span>
+            <span className="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+              {activeProducts.length} active
+              {inactiveProducts.length > 0 && (
+                <span className="text-slate-500"> • {inactiveProducts.length} inactive</span>
+              )}
+            </span>
           </div>
+
+          {inactiveProducts.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowInactive((s) => !s)}
+              className="text-xs gap-1.5 text-slate-600 hover:text-slate-900"
+            >
+              {showInactive ? "Hide inactive" : `Show ${inactiveProducts.length} inactive`}
+            </Button>
+          )}
         </div>
 
         <div className="mx-4 sm:mx-6 mb-4 flex items-start gap-2 rounded-xl bg-amber-50 border border-amber-200/60 px-4 py-3 text-sm text-amber-800">
           <Info className="size-4 mt-0.5 shrink-0" />
-          <p>Rates here are just the starting suggestion shown when entering a sale — you can always override the rate for any individual sale.</p>
+          <p>Rates here are just the starting suggestion shown when entering a sale — you can always override the rate for any individual sale. Delete button sirf tab kaam karega jab product kisi sale/purchase me use nahi hua.</p>
         </div>
 
         <div className="max-h-[32rem] overflow-y-auto">
@@ -183,24 +295,42 @@ export default function ManageProducts() {
                 <TableHead className="text-xs font-semibold text-slate-500 uppercase tracking-wider min-w-[180px]">Product Name</TableHead>
                 <TableHead className="text-xs font-semibold text-slate-500 uppercase tracking-wider text-center min-w-[140px]">Rate (Rs./bag)</TableHead>
                 <TableHead className="text-xs font-semibold text-slate-500 uppercase tracking-wider text-center min-w-[120px]">Stock (bags)</TableHead>
-                <TableHead className="text-xs font-semibold text-slate-500 uppercase tracking-wider text-center min-w-[100px]">Action</TableHead>
+                <TableHead className="text-xs font-semibold text-slate-500 uppercase tracking-wider text-center min-w-[140px]">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {products.map((product, index) => {
+              {visibleProducts.map((product, index) => {
                 const isUpdated = updatedIds.has(product.id);
                 const isUpdating = updating.has(product.id);
+                const isInactive = !product.is_active;
                 return (
-                  <TableRow key={product.id}>
+                  <TableRow
+                    key={product.id}
+                    className={cn(isInactive && "opacity-50 bg-slate-50/50")}
+                  >
                     <TableCell className="text-center text-slate-400 font-medium">{index + 1}</TableCell>
-                    <TableCell className="font-medium text-slate-900">{product.name}</TableCell>
+                    <TableCell className="font-medium text-slate-900">
+                      <div className="flex items-center gap-2">
+                        <span>{product.name}</span>
+                        {isInactive && (
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-red-600 bg-red-100 px-1.5 py-0.5 rounded">
+                            Inactive
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-center">
                       <Input
                         type="text"
                         inputMode="numeric"
                         value={editedRates[product.id] ?? ""}
                         onChange={(e) => handleRateChange(product.id, e.target.value)}
-                        className={cn("w-28 mx-auto text-center h-8 text-sm font-mono tabular-nums", isUpdated && "border-emerald-300 focus-visible:border-emerald-400 focus-visible:ring-emerald-200")}
+                        disabled={isInactive}
+                        className={cn(
+                          "w-28 mx-auto text-center h-8 text-sm font-mono tabular-nums",
+                          isUpdated && "border-emerald-300 focus-visible:border-emerald-400 focus-visible:ring-emerald-200",
+                          isInactive && "bg-slate-100 cursor-not-allowed"
+                        )}
                       />
                     </TableCell>
                     <TableCell className="text-center">
@@ -215,19 +345,52 @@ export default function ManageProducts() {
                       })()}
                     </TableCell>
                     <TableCell className="text-center">
-                      <Button
-                        size="sm"
-                        variant={isUpdated ? "ghost" : "outline"}
-                        onClick={() => handleUpdateRate(product.id)}
-                        disabled={isUpdating}
-                        className={cn("gap-1.5 text-xs font-semibold transition-all", isUpdated && "text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50")}
-                      >
-                        {isUpdating ? <Loader2 className="size-3.5 animate-spin" /> : isUpdated ? <><CheckCircle2 className="size-3.5" /> Saved</> : <><Save className="size-3.5" /> Update</>}
-                      </Button>
+                      <div className="flex items-center justify-center gap-1.5">
+                        {isInactive ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleRestore(product)}
+                            className="gap-1.5 text-xs font-semibold text-emerald-700 border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800"
+                            title="Reactivate product"
+                          >
+                            <RotateCcw className="size-3.5" /> Restore
+                          </Button>
+                        ) : (
+                          <>
+                            <Button
+                              size="sm"
+                              variant={isUpdated ? "ghost" : "outline"}
+                              onClick={() => handleUpdateRate(product.id)}
+                              disabled={isUpdating}
+                              className={cn("gap-1.5 text-xs font-semibold transition-all", isUpdated && "text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50")}
+                            >
+                              {isUpdating ? <Loader2 className="size-3.5 animate-spin" /> : isUpdated ? <><CheckCircle2 className="size-3.5" /> Saved</> : <><Save className="size-3.5" /> Update</>}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => askDelete(product)}
+                              disabled={isUpdating}
+                              className="gap-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 hover:text-red-700"
+                              title="Delete / Deactivate product"
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
               })}
+              {visibleProducts.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-10 text-slate-400 text-sm">
+                    No products yet — add one below.
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </div>

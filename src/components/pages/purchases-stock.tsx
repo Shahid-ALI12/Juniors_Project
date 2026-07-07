@@ -47,6 +47,8 @@ import {
   Download,
   RefreshCw,
   CheckCircle2,
+  PackagePlus,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { pktToday } from "@/lib/pkt-date";
@@ -85,6 +87,12 @@ export default function PurchasesStockPage() {
   const [allStock, setAllStock] = useState<StockRow[]>([]);
   const [savedAllStock, setSavedAllStock] = useState<boolean>(false);
   const [stockSavedAt, setStockSavedAt] = useState<Date | null>(null);
+
+  // Inline Add Product state
+  const [showAddProduct, setShowAddProduct] = useState(false);
+  const [newProductName, setNewProductName] = useState("");
+  const [newProductRate, setNewProductRate] = useState("");
+  const [addingProduct, setAddingProduct] = useState(false);
 
   // Section 2: Purchase form state
   const [purchaseType, setPurchaseType] = useState<"supplier" | "settlement">("supplier");
@@ -289,6 +297,56 @@ export default function PurchasesStockPage() {
       setStockSavedAt(new Date());
     } catch (e: any) {
       toast.error(e.message || "Failed to save stock");
+    }
+  };
+
+  const handleAddProductInline = async () => {
+    const name = newProductName.trim();
+    const rate = Number(newProductRate);
+    if (!name) { toast.error("Product name is required."); return; }
+    if (!rate || rate <= 0) { toast.error("Please enter a valid rate greater than 0."); return; }
+    if (products.some((p) => p.name.toLowerCase() === name.toLowerCase())) {
+      toast.error("A product with this name already exists.");
+      return;
+    }
+
+    setAddingProduct(true);
+    try {
+      const res = await fetch("/api/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, default_rate: rate }),
+      });
+      if (!res.ok) throw new Error(await apiError(res, "Failed to create product"));
+      const data = await res.json();
+      const newProduct: Product = data.product;
+      if (!newProduct) throw new Error("Invalid response from server");
+
+      setProducts((prev) => [...prev, newProduct]);
+      // Add a new stock row to the table so the user can enter its opening stock
+      setAllStock((prev) => [
+        ...prev,
+        {
+          productId: newProduct.id,
+          productName: newProduct.name,
+          bagWeight: 50,
+          bags: 0,
+          totalKg: 0,
+        },
+      ]);
+      invalidateCache("products");
+      setNewProductName("");
+      setNewProductRate("");
+      setShowAddProduct(false);
+      setSavedAllStock(false);
+      toast.success(`"${name}" added`, {
+        description: "Ab is product ka opening stock neeche table me enter karein aur Save Stock Changes par click karein.",
+        duration: 5000,
+      });
+    } catch (e: any) {
+      toast.error(e.message || "Failed to add product");
+    } finally {
+      setAddingProduct(false);
     }
   };
 
@@ -522,6 +580,71 @@ export default function PurchasesStockPage() {
 
     return (
       <div className="space-y-4">
+        {/* Inline Add Product panel */}
+        {showAddProduct ? (
+          <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <PackagePlus className="size-4 text-blue-600" />
+                <h4 className="text-sm font-bold text-slate-800">Add a new product</h4>
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => { setShowAddProduct(false); setNewProductName(""); setNewProductRate(""); }}
+                className="size-7 p-0 text-slate-500 hover:text-slate-900"
+                title="Cancel"
+              >
+                <X className="size-4" />
+              </Button>
+            </div>
+            <div className="flex flex-col sm:flex-row items-end gap-3">
+              <div className="flex-1 w-full space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Product Name</Label>
+                <Input
+                  autoFocus
+                  placeholder="e.g. Barley (Jau)"
+                  value={newProductName}
+                  onChange={(e) => setNewProductName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !addingProduct) handleAddProductInline(); }}
+                  className="h-9"
+                />
+              </div>
+              <div className="w-full sm:w-44 space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Default Rate (Rs./bag)</Label>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="e.g. 3000"
+                  value={newProductRate}
+                  onChange={(e) => { if (e.target.value === "" || /^\d*$/.test(e.target.value)) setNewProductRate(e.target.value); }}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !addingProduct) handleAddProductInline(); }}
+                  className="h-9 font-mono tabular-nums"
+                />
+              </div>
+              <Button
+                onClick={handleAddProductInline}
+                disabled={addingProduct}
+                className="h-9 px-5 gap-2 font-semibold shrink-0"
+              >
+                {addingProduct ? <Loader2 className="size-4 animate-spin" /> : <PackagePlus className="size-4" />}
+                Add
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowAddProduct(true)}
+              className="gap-1.5 text-slate-700"
+            >
+              <PackagePlus className="size-4" /> Add Product
+            </Button>
+          </div>
+        )}
+
         {hasNegative && (
           <Alert className="border-amber-300 bg-amber-50 text-amber-800">
             <AlertTriangle className="size-4 text-amber-600" />
