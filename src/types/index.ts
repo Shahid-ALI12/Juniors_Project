@@ -30,11 +30,10 @@ export interface CashTransfer {
   created_at: string;
 }
 
-export interface Location {
-  id: number;
-  name: string;
-  created_at: string;
-}
+// NOTE: The "locations" concept (Farm / Shop / etc.) has been removed
+// from the project. The locations table may still exist in the database
+// for backward compatibility with old backups, but no UI references it
+// and new rows are created with location_id = NULL.
 
 export interface Product {
   id: number;
@@ -47,12 +46,11 @@ export interface Product {
 export interface ProductStock {
   id: number;
   product_id: number;
-  location_id: number;
+  location_id: number | null;
   stock_quantity: number;
   last_bag_weight_kg: number | null;
   created_at: string;
   products?: Product;
-  locations?: Location;
 }
 
 export interface Customer {
@@ -73,7 +71,7 @@ export interface Sale {
   rickshaw_fare: number;
   cash_received: number;
   sale_date: string;
-  location_id: number;
+  location_id: number | null;
   entered_by: string | null;
   unit_type: "bags" | "kg";
   bag_weight_kg: number | null;
@@ -84,7 +82,6 @@ export interface Sale {
   // Joined
   customers?: Customer;
   products?: Product;
-  locations?: Location;
 }
 
 export interface Expense {
@@ -139,7 +136,7 @@ export interface Purchase {
   supplier_id: number | null;
   settled_by_customer_id: number | null;
   cash_paid: number;
-  location_id: number;
+  location_id: number | null;
   notes: string | null;
   entered_by: string | null;
   unit_type: "bags" | "kg";
@@ -149,7 +146,6 @@ export interface Purchase {
   products?: Product;
   suppliers?: Supplier | null;
   customers?: Customer | null;
-  locations?: Location;
 }
 
 // ─── Computed / UI Types ───
@@ -179,8 +175,8 @@ export interface StatementLine {
 export interface CartItem {
   product: string;
   product_id: number;
-  location: string;
-  location_id: number;
+  location?: string | null;
+  location_id?: number | null;
   quantity: number;
   unit_type: "bags" | "kg";
   bag_weight_kg: number | null;
@@ -194,6 +190,11 @@ export interface MixIngredient {
   weight_kg: number;
   rate_per_kg: number;
   amount: number;
+  // Optional bag-based fields — if user enters bags + rate_per_bag,
+  // a separate "bag amount" is shown alongside the main amount.
+  bags?: number | null;
+  rate_per_bag?: number | null;
+  bag_amount?: number | null;
 }
 
 export interface AccountBalance {
@@ -247,11 +248,14 @@ export type RestoreMode = "merge" | "append";
 export interface MixOrderRow {
   id: number;
   customer_id: number;
-  location_id: number;
+  location_id: number | null;
   order_date: string;
   target_weight_kg: number | null;
   cash_received: number;
   entered_by: string | null;
+  // New — driver info (order-level, both optional)
+  driver_name: string | null;
+  driver_rent: number;
   created_at: string;
 }
 
@@ -268,7 +272,9 @@ export interface DatabaseBackup {
   data: {
     // Master data (always included — no date filter)
     products: Product[];
-    locations: Location[];
+    // locations array kept for backward compat with old backup files.
+    // New backups will write an empty array here.
+    locations: unknown[];
     customers: Customer[];
     suppliers: Supplier[];
     cash_accounts: CashAccount[];

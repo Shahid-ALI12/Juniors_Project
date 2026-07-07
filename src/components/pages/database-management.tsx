@@ -66,7 +66,6 @@ const FILTER_OPTIONS: { value: BackupFilter; label: string; description: string 
 
 const INCLUDED_TABLES = [
   { name: "Products", category: "Master", note: "Always included" },
-  { name: "Locations", category: "Master", note: "Always included" },
   { name: "Customers (business)", category: "Master", note: "Always included" },
   { name: "Suppliers", category: "Master", note: "Always included" },
   { name: "Cash Accounts", category: "Master", note: "Always included" },

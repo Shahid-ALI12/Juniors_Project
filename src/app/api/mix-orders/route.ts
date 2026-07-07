@@ -20,7 +20,7 @@ export async function GET() {
     if (orderIds.length > 0) {
       const { data: allMixSales, error } = await admin
         .from("sales")
-        .select("*, products(id,name), customers(id,name), locations(id,name)")
+        .select("*, products(id,name), customers(id,name)")
         .in("mix_order_id", orderIds);
       if (!error && allMixSales) {
         for (const s of allMixSales) {
@@ -45,15 +45,24 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { customer_id, location_id, order_date, target_weight_kg, cash_received, items } = body;
+    const {
+      customer_id,
+      order_date,
+      target_weight_kg,
+      cash_received,
+      items,
+      driver_name,
+      driver_rent,
+      location_id,
+    } = body;
 
-    if (!customer_id || !location_id || !items?.length) {
-      return NextResponse.json({ error: "customer_id, location_id, items required" }, { status: 400 });
+    if (!customer_id || !items?.length) {
+      return NextResponse.json({ error: "customer_id, items required" }, { status: 400 });
     }
 
     const id = await createMixOrderRPC({
       customer_id,
-      location_id,
+      location_id: location_id ?? null,
       order_date: order_date || pktToday(),
       target_weight_kg: target_weight_kg || null,
       cash_received: Number(cash_received) || 0,
@@ -63,6 +72,8 @@ export async function POST(request: NextRequest) {
         quantity: i.quantity,
         rate_per_kg: i.rate_per_kg,
       })),
+      driver_name: driver_name?.trim() || null,
+      driver_rent: Number(driver_rent) || 0,
     });
 
     return NextResponse.json({ id }, { status: 201 });

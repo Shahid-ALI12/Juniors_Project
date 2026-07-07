@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
-import type { Product, Location, ProductStock } from "@/types";
+import type { Product, ProductStock } from "@/types";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,7 +22,6 @@ import {
   CheckCircle2,
   Info,
   BoxesIcon,
-  Warehouse,
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -31,7 +30,6 @@ import { fetchCached, invalidateCache, apiError } from "@/store";
 export default function ManageProducts() {
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState<Product[]>([]);
-  const [locations, setLocations] = useState<Location[]>([]);
   const [stockData, setStockData] = useState<ProductStock[]>([]);
   const [editedRates, setEditedRates] = useState<Record<number, string>>({});
   const [updatedIds, setUpdatedIds] = useState<Set<number>>(new Set());
@@ -44,13 +42,11 @@ export default function ManageProducts() {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      let pList: Product[] = [], lList: Location[] = [], sList: ProductStock[] = [];
+      let pList: Product[] = [], sList: ProductStock[] = [];
       const failed: string[] = [];
       try { pList = await fetchCached<Product>("products", "/api/products", "products"); } catch { failed.push("products"); }
-      try { lList = await fetchCached<Location>("locations", "/api/locations", "locations"); } catch { failed.push("locations"); }
       try { sList = await fetchCached<ProductStock>("stock", "/api/stock", "stock"); } catch { failed.push("stock"); }
       setProducts(pList);
-      setLocations(lList);
       setStockData(sList);
       if (failed.length > 0) toast.error(`Failed to load: ${failed.join(", ")}`);
       else {
@@ -186,13 +182,7 @@ export default function ManageProducts() {
                 <TableHead className="w-12 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">#</TableHead>
                 <TableHead className="text-xs font-semibold text-slate-500 uppercase tracking-wider min-w-[180px]">Product Name</TableHead>
                 <TableHead className="text-xs font-semibold text-slate-500 uppercase tracking-wider text-center min-w-[140px]">Rate (Rs./bag)</TableHead>
-                {locations.map((loc) => (
-                  <TableHead key={loc.id} className="text-xs font-semibold text-slate-500 uppercase tracking-wider text-center min-w-[120px]">
-                    <span className="inline-flex items-center gap-1.5">
-                      <Warehouse className="size-3" /> {loc.name}
-                    </span>
-                  </TableHead>
-                ))}
+                <TableHead className="text-xs font-semibold text-slate-500 uppercase tracking-wider text-center min-w-[120px]">Stock (bags)</TableHead>
                 <TableHead className="text-xs font-semibold text-slate-500 uppercase tracking-wider text-center min-w-[100px]">Action</TableHead>
               </TableRow>
             </TableHeader>
@@ -213,17 +203,17 @@ export default function ManageProducts() {
                         className={cn("w-28 mx-auto text-center h-8 text-sm font-mono tabular-nums", isUpdated && "border-emerald-300 focus-visible:border-emerald-400 focus-visible:ring-emerald-200")}
                       />
                     </TableCell>
-                    {locations.map((loc) => {
-                      const entry = stockData.find((s) => s.product_id === product.id && s.location_id === loc.id);
-                      const stock = entry?.stock_quantity ?? 0;
-                      return (
-                        <TableCell key={loc.id} className="text-center">
+                    <TableCell className="text-center">
+                      {(() => {
+                        const entry = stockData.find((s) => s.product_id === product.id);
+                        const stock = entry?.stock_quantity ?? 0;
+                        return (
                           <span className={cn("inline-flex items-center gap-1 text-sm font-medium px-2.5 py-0.5 rounded-full", stock > 0 ? "text-emerald-700 bg-emerald-50" : "text-red-600 bg-red-50")}>
                             {stock} bags
                           </span>
-                        </TableCell>
-                      );
-                    })}
+                        );
+                      })()}
+                    </TableCell>
                     <TableCell className="text-center">
                       <Button
                         size="sm"

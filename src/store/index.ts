@@ -35,13 +35,16 @@ interface MixStore {
   customerType: "credit" | "cash";
   orderDate: string;
   locationId: number | null;
+  driverName: string;
+  driverRent: number;
   ingredients: MixIngredient[];
-  startOrder: (name: string, type: "credit" | "cash", date: string, locId: number, target: number) => void;
+  startOrder: (name: string, type: "credit" | "cash", date: string, target: number, opts?: { driverName?: string; driverRent?: number; locationId?: number | null }) => void;
   addIngredient: (ing: MixIngredient) => void;
   removeIngredient: (index: number) => void;
   reset: () => void;
   getUsedWeight: () => number;
   getTotalAmount: () => number;
+  getTotalBagAmount: () => number;
 }
 
 export const useMixStore = create<MixStore>((set, get) => ({
@@ -50,14 +53,26 @@ export const useMixStore = create<MixStore>((set, get) => ({
   customerType: "credit",
   orderDate: pktToday(),
   locationId: null,
+  driverName: "",
+  driverRent: 0,
   ingredients: [],
-  startOrder: (name, type, date, locId, target) =>
-    set({ targetWeight: target, customerName: name, customerType: type, orderDate: date, locationId: locId, ingredients: [] }),
+  startOrder: (name, type, date, target, opts = {}) =>
+    set({
+      targetWeight: target,
+      customerName: name,
+      customerType: type,
+      orderDate: date,
+      locationId: opts.locationId ?? null,
+      driverName: opts.driverName ?? "",
+      driverRent: opts.driverRent ?? 0,
+      ingredients: [],
+    }),
   addIngredient: (ing) => set((s) => ({ ingredients: [...s.ingredients, ing] })),
   removeIngredient: (index) => set((s) => ({ ingredients: s.ingredients.filter((_, i) => i !== index) })),
-  reset: () => set({ targetWeight: null, customerName: "", customerType: "credit", orderDate: pktToday(), locationId: null, ingredients: [] }),
+  reset: () => set({ targetWeight: null, customerName: "", customerType: "credit", orderDate: pktToday(), locationId: null, driverName: "", driverRent: 0, ingredients: [] }),
   getUsedWeight: () => get().ingredients.reduce((sum, i) => sum + i.weight_kg, 0),
   getTotalAmount: () => get().ingredients.reduce((sum, i) => sum + i.amount, 0),
+  getTotalBagAmount: () => get().ingredients.reduce((sum, i) => sum + (i.bag_amount ?? 0), 0),
 }));
 
 interface AppStore {
@@ -78,14 +93,13 @@ const CACHE_TTL = 60_000; // 60 seconds
 
 interface MasterDataCache {
   products: CachedData<any[]> | null;
-  locations: CachedData<any[]> | null;
   customers: CachedData<any[]> | null;
   suppliers: CachedData<any[]> | null;
   stock: CachedData<any[]> | null;
 }
 
 const masterCache: MasterDataCache = {
-  products: null, locations: null, customers: null, suppliers: null, stock: null,
+  products: null, customers: null, suppliers: null, stock: null,
 };
 
 export { masterCache };

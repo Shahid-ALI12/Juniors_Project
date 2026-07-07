@@ -4,7 +4,7 @@ export interface SaleRow {
   id: number;
   customer_id: number;
   product_id: number;
-  location_id: number;
+  location_id: number | null;
   quantity: number;
   rate_per_bag: number;
   rickshaw_fare: number;
@@ -20,7 +20,6 @@ export interface SaleRow {
   // Joins (optional)
   customers?: { id: number; name: string; type: string } | null;
   products?: { id: number; name: string } | null;
-  locations?: { id: number; name: string } | null;
 }
 
 export async function getSales(filters?: {
@@ -33,7 +32,7 @@ export async function getSales(filters?: {
 }): Promise<SaleRow[]> {
   let q = admin
     .from("sales")
-    .select("id, customer_id, product_id, location_id, quantity, rate_per_bag, rickshaw_fare, cash_received, sale_date, unit_type, bag_weight_kg, mix_order_id, transaction_group_id, rickshaw_driver_name, entered_by, created_at, customers(id,name,type), products(id,name), locations(id,name)")
+    .select("id, customer_id, product_id, location_id, quantity, rate_per_bag, rickshaw_fare, cash_received, sale_date, unit_type, bag_weight_kg, mix_order_id, transaction_group_id, rickshaw_driver_name, entered_by, created_at, customers(id,name,type), products(id,name)")
     .order("created_at", { ascending: true });
 
   if (filters?.sale_date) q = q.eq("sale_date", filters.sale_date);
@@ -67,7 +66,7 @@ export async function deleteSalesByMixOrder(mixOrderId: number): Promise<void> {
 export async function createSaleRPC(params: {
   items: { product_id: number; quantity: number; rate_per_bag: number; unit_type: string; bag_weight_kg: number | null }[];
   customer_id: number;
-  location_id: number;
+  location_id?: number | null;
   sale_date: string;
   cash_received: number;
   rickshaw_fare: number;
@@ -80,7 +79,7 @@ export async function createSaleRPC(params: {
     const { error } = await admin.rpc("create_sale", {
       p_items: JSON.stringify(params.items),
       p_customer_id: params.customer_id,
-      p_location_id: params.location_id,
+      p_location_id: params.location_id ?? null,
       p_sale_date: params.sale_date,
       p_cash_received: params.cash_received,
       p_rickshaw_fare: params.rickshaw_fare,
@@ -104,7 +103,7 @@ export async function createSaleRPC(params: {
 async function createSaleFallback(params: {
   items: { product_id: number; quantity: number; rate_per_bag: number; unit_type: string; bag_weight_kg: number | null }[];
   customer_id: number;
-  location_id: number;
+  location_id?: number | null;
   sale_date: string;
   cash_received: number;
   rickshaw_fare: number;
@@ -116,7 +115,7 @@ async function createSaleFallback(params: {
   const rows = params.items.map((item, idx) => ({
     customer_id: params.customer_id,
     product_id: item.product_id,
-    location_id: params.location_id,
+    location_id: params.location_id ?? null,
     quantity: item.quantity,
     rate_per_bag: item.rate_per_bag,
     rickshaw_fare: idx === 0 ? params.rickshaw_fare : 0,
@@ -158,19 +157,21 @@ async function createSaleFallback(params: {
     console.warn("Cash ledger insert failed (non-critical):", ledgerErr);
   }
 
-  // Try to decrement stock (best effort, bags only)
-  for (const item of params.items) {
-    if (item.unit_type === "bags") {
-      try {
-        await admin.rpc("decrement_stock_fallback", {
-          p_product_id: item.product_id,
-          p_location_id: params.location_id,
-          p_quantity: item.quantity,
-          p_bag_weight_kg: item.bag_weight_kg,
-        });
-      } catch {
-        // Stock decrement is best-effort in fallback mode
-        console.warn(`Stock decrement failed for product ${item.product_id} (non-critical)`);
+  // Try to decrement stock (best effort, bags only, only if location_id is set)
+  if (params.location_id !== null && params.location_id !== undefined) {
+    for (const item of params.items) {
+      if (item.unit_type === "bags") {
+        try {
+          await admin.rpc("decrement_stock_fallback", {
+            p_product_id: item.product_id,
+            p_location_id: params.location_id,
+            p_quantity: item.quantity,
+            p_bag_weight_kg: item.bag_weight_kg,
+          });
+        } catch {
+          // Stock decrement is best-effort in fallback mode
+          console.warn(`Stock decrement failed for product ${item.product_id} (non-critical)`);
+        }
       }
     }
   }

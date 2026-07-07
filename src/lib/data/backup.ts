@@ -85,16 +85,17 @@ export async function buildDatabaseBackup(
   const { from, to } = resolveRange(filters);
 
   // ─── Master data (always full) ───
+  // NOTE: "locations" concept was removed. We still emit an empty array
+  // for backward compatibility with old restore tooling that expects
+  // the field to be present.
   const [
     products,
-    locations,
     customers,
     suppliers,
     cash_accounts,
     product_stock,
   ] = await Promise.all([
     fetchAll<any>("products"),
-    fetchAll<any>("locations"),
     fetchAll<any>("customers"),
     fetchAll<any>("suppliers"),
     fetchAll<any>("cash_accounts"),
@@ -130,7 +131,7 @@ export async function buildDatabaseBackup(
     schema_version: SCHEMA_VERSION,
     data: {
       products,
-      locations,
+      locations: [],
       customers,
       suppliers,
       cash_accounts,

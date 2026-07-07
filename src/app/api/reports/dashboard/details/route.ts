@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
       case "sales-today": {
         const { data, error } = await admin
           .from("sales")
-          .select("id, sale_date, quantity, rate_per_bag, rickshaw_fare, cash_received, unit_type, customers(id,name), products(id,name), locations(id,name)")
+          .select("id, sale_date, quantity, rate_per_bag, rickshaw_fare, cash_received, unit_type, customers(id,name), products(id,name)")
           .eq("sale_date", today)
           .order("created_at", { ascending: false });
         if (error) throw error;
@@ -30,7 +30,6 @@ export async function GET(request: NextRequest) {
           date: s.sale_date,
           customer: s.customers?.name || "N/A",
           product: s.products?.name || "N/A",
-          location: s.locations?.name || "N/A",
           qty: s.quantity,
           rate: s.rate_per_bag,
           fare: s.rickshaw_fare,

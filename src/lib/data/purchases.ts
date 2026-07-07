@@ -9,7 +9,7 @@ export interface PurchaseRow {
   supplier_id: number | null;
   settled_by_customer_id: number | null;
   cash_paid: number;
-  location_id: number;
+  location_id: number | null;
   notes: string | null;
   entered_by: string | null;
   unit_type: string;
@@ -19,7 +19,6 @@ export interface PurchaseRow {
   products?: { id: number; name: string } | null;
   suppliers?: { id: number; name: string } | null;
   customers?: { id: number; name: string } | null;
-  locations?: { id: number; name: string } | null;
 }
 
 export async function getPurchases(filters?: {
@@ -28,7 +27,7 @@ export async function getPurchases(filters?: {
 }): Promise<PurchaseRow[]> {
   let q = admin
     .from("purchases")
-    .select("id, purchase_date, product_id, quantity, rate_per_bag, supplier_id, settled_by_customer_id, cash_paid, location_id, notes, entered_by, unit_type, bag_weight_kg, created_at, products(id,name), suppliers(id,name), customers(id,name), locations(id,name)")
+    .select("id, purchase_date, product_id, quantity, rate_per_bag, supplier_id, settled_by_customer_id, cash_paid, location_id, notes, entered_by, unit_type, bag_weight_kg, created_at, products(id,name), suppliers(id,name), customers(id,name)")
     .order("created_at", { ascending: false });
 
   if (filters?.purchase_date_gte) q = q.gte("purchase_date", filters.purchase_date_gte);
@@ -52,7 +51,7 @@ export async function recordPurchaseRPC(params: {
   supplier_id: number | null;
   settled_by_customer_id: number | null;
   cash_paid: number;
-  location_id: number;
+  location_id?: number | null;
   notes: string | null;
   unit_type: string;
   bag_weight_kg: number | null;
@@ -68,7 +67,7 @@ export async function recordPurchaseRPC(params: {
       p_supplier_id: params.supplier_id,
       p_settled_by_customer_id: params.settled_by_customer_id,
       p_cash_paid: params.cash_paid,
-      p_location_id: params.location_id,
+      p_location_id: params.location_id ?? null,
       p_notes: params.notes,
       p_unit_type: params.unit_type,
       p_bag_weight_kg: params.bag_weight_kg,
@@ -96,7 +95,7 @@ async function recordPurchaseFallback(params: {
   supplier_id: number | null;
   settled_by_customer_id: number | null;
   cash_paid: number;
-  location_id: number;
+  location_id?: number | null;
   notes: string | null;
   unit_type: string;
   bag_weight_kg: number | null;
@@ -113,7 +112,7 @@ async function recordPurchaseFallback(params: {
       supplier_id: params.supplier_id,
       settled_by_customer_id: params.settled_by_customer_id,
       cash_paid: params.cash_paid,
-      location_id: params.location_id,
+      location_id: params.location_id ?? null,
       notes: params.notes,
       entered_by: params.entered_by,
       unit_type: params.unit_type,
@@ -124,8 +123,8 @@ async function recordPurchaseFallback(params: {
   if (purErr) throw purErr;
   const purId = (purData as any).id as number;
 
-  // Try to increment stock (best effort, bags only)
-  if (params.unit_type === "bags") {
+  // Try to increment stock (best effort, bags only, only if location_id is set)
+  if (params.unit_type === "bags" && params.location_id !== null && params.location_id !== undefined) {
     try {
       await admin.from("product_stock").upsert(
         {

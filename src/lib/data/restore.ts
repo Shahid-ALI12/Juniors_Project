@@ -176,6 +176,15 @@ export function buildRestoreScript(
   for (const { table, kind } of RESTORE_ORDER) {
     const rows = (backup.data[table] as unknown as Record<string, unknown>[]) || [];
     counts[table] = rows.length;
+
+    // Skip locations table entirely — the concept has been removed.
+    // Old backup files may still have rows here; we ignore them on restore.
+    if (table === "locations") {
+      sections.push(`-- ${table} (${kind}) — ${rows.length} row(s) [SKIPPED — concept removed]`);
+      sections.push(``);
+      continue;
+    }
+
     totalRows += rows.length;
 
     sections.push(`-- ${table} (${kind}) — ${rows.length} row(s)`);

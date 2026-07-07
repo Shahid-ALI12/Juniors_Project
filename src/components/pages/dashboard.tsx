@@ -50,7 +50,6 @@ const columnsMap: Record<CardKey, Col[]> = {
   "sales-today": [
     { key: "customer", label: "Customer" },
     { key: "product", label: "Product" },
-    { key: "location", label: "Location" },
     { key: "qty", label: "Qty", align: "right" },
     { key: "unit", label: "Unit" },
     { key: "rate", label: "Rate", align: "right", fmt: (v) => formatRs(v) },

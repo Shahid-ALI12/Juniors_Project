@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
     // Fetch only THIS customer's sales (non-voided)
     const { data: salesData, error: salesErr } = await admin
       .from("sales")
-      .select("*, customers(id,name,type), products(id,name), locations(id,name)")
+      .select("*, customers(id,name,type), products(id,name)")
       .eq("customer_id", linkedCustomerId)
       .order("sale_date", { ascending: false });
 

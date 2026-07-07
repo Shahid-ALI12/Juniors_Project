@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { fetchCached, invalidateCache, apiError } from "@/store";
 import { PageHeader } from "@/components/shared/page-header";
-import type { Product, Location, Customer, Purchase, Supplier, ProductStock } from "@/types";
+import type { Product, Customer, Purchase, Supplier, ProductStock } from "@/types";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,7 +33,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Package,
@@ -43,8 +42,6 @@ import {
   AlertTriangle,
   UserCheck,
   Truck,
-  Warehouse,
-  Store,
   Scale,
   Loader2,
   Download,
@@ -59,8 +56,8 @@ function fmt(n: number) {
   return n.toLocaleString("en-PK");
 }
 
-function stockKey(productId: number, locationId: number) {
-  return `${productId}-${locationId}`;
+function stockKey(productId: number, locationId: number | null) {
+  return locationId === null ? `p${productId}` : `${productId}-${locationId}`;
 }
 
 interface StockRow {
@@ -78,20 +75,17 @@ export default function PurchasesStockPage() {
 
   // Master data
   const [products, setProducts] = useState<Product[]>([]);
-  const [locations, setLocations] = useState<Location[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [stockData, setStockData] = useState<ProductStock[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
 
-  // Section 1: Stock state
-  const [farmStock, setFarmStock] = useState<StockRow[]>([]);
-  const [shopStock, setShopStock] = useState<StockRow[]>([]);
-  const [savedLocations, setSavedLocations] = useState<Set<string>>(new Set());
+  // Section 1: Stock state — single unified table (no more Farm/Shop tabs)
+  const [allStock, setAllStock] = useState<StockRow[]>([]);
+  const [savedAllStock, setSavedAllStock] = useState<boolean>(false);
 
   // Section 2: Purchase form state
   const [purchaseType, setPurchaseType] = useState<"supplier" | "settlement">("supplier");
-  const [purchaseLocation, setPurchaseLocation] = useState<string>("1");
   const [purchaseUnit, setPurchaseUnit] = useState<"bags" | "kg">("bags");
   const [supplierName, setSupplierName] = useState("");
   const [selectedSupplier, setSelectedSupplier] = useState("");
@@ -105,9 +99,9 @@ export default function PurchasesStockPage() {
 
   const today = pktToday();
 
-  const buildStockRows = useCallback((locationId: number): StockRow[] => {
+  const buildStockRows = useCallback((): StockRow[] => {
     return products.map((p) => {
-      const entry = stockData.find((s) => s.product_id === p.id && s.location_id === locationId);
+      const entry = stockData.find((s) => s.product_id === p.id);
       const bags = entry?.stock_quantity ?? 0;
       const bw = entry?.last_bag_weight_kg ?? DEFAULT_BAG_WEIGHT;
       return {
@@ -130,14 +124,6 @@ export default function PurchasesStockPage() {
       setProducts(list);
     } catch (e: any) {
       errors.push("Products: " + (e.message || "unknown error"));
-    }
-
-    // Locations
-    try {
-      const list = await fetchCached<Location>("locations", "/api/locations", "locations");
-      setLocations(list);
-    } catch (e: any) {
-      errors.push("Locations: " + (e.message || "unknown error"));
     }
 
     // Customers
@@ -196,9 +182,8 @@ export default function PurchasesStockPage() {
 
   useEffect(() => {
     // Build stock rows whenever products or stock data changes
-    // (works even with 0 products — just shows empty tables)
-    setFarmStock(buildStockRows(1));
-    setShopStock(buildStockRows(2));
+    // (works even with 0 products — just shows an empty table)
+    setAllStock(buildStockRows());
   }, [products, stockData, buildStockRows]);
 
   const goodsValue = useMemo(() => {
@@ -229,9 +214,8 @@ export default function PurchasesStockPage() {
   }, [selectedProduct, products]);
 
   const updateBags = useCallback(
-    (locationId: number, productId: number, newBags: number, bw: number) => {
-      const setter = locationId === 1 ? setFarmStock : setShopStock;
-      setter((prev) =>
+    (productId: number, newBags: number, bw: number) => {
+      setAllStock((prev) =>
         prev.map((row) =>
           row.productId === productId
             ? { ...row, bags: newBags, totalKg: newBags * bw }
@@ -243,9 +227,8 @@ export default function PurchasesStockPage() {
   );
 
   const updateTotalKg = useCallback(
-    (locationId: number, productId: number, newTotalKg: number, bw: number) => {
-      const setter = locationId === 1 ? setFarmStock : setShopStock;
-      setter((prev) =>
+    (productId: number, newTotalKg: number, bw: number) => {
+      setAllStock((prev) =>
         prev.map((row) =>
           row.productId === productId
             ? { ...row, totalKg: newTotalKg, bags: bw > 0 ? Math.round((newTotalKg / bw) * 100) / 100 : 0 }
@@ -257,9 +240,8 @@ export default function PurchasesStockPage() {
   );
 
   const updateBagWeight = useCallback(
-    (locationId: number, productId: number, newBw: number, currentBags: number) => {
-      const setter = locationId === 1 ? setFarmStock : setShopStock;
-      setter((prev) =>
+    (productId: number, newBw: number, currentBags: number) => {
+      setAllStock((prev) =>
         prev.map((row) =>
           row.productId === productId
             ? { ...row, bagWeight: newBw, totalKg: currentBags * newBw }
@@ -270,17 +252,16 @@ export default function PurchasesStockPage() {
     []
   );
 
-  const handleSaveStock = async (locationId: number, locationName: string) => {
-    const stock = locationId === 1 ? farmStock : shopStock;
-    setSavedLocations((prev) => new Set(prev).add(locationName));
+  const handleSaveStock = async () => {
+    setSavedAllStock(false);
     try {
-      for (const row of stock) {
+      for (const row of allStock) {
         const res = await fetch("/api/stock", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             product_id: row.productId,
-            location_id: locationId,
+            location_id: null,
             stock_quantity: row.totalKg > 0 ? Math.round(row.bags * 100) / 100 : 0,
             last_bag_weight_kg: row.bagWeight,
           }),
@@ -291,15 +272,11 @@ export default function PurchasesStockPage() {
         }
       }
       await loadAllData();
-      toast.success(`${locationName} stock saved successfully!`);
+      toast.success("Stock saved successfully!");
+      setSavedAllStock(true);
     } catch (e: any) {
-      toast.error(e.message || `Failed to save ${locationName} stock`);
+      toast.error(e.message || "Failed to save stock");
     }
-    setSavedLocations((prev) => {
-      const next = new Set(prev);
-      next.delete(locationName);
-      return next;
-    });
   };
 
   const resetForm = () => {
@@ -320,10 +297,9 @@ export default function PurchasesStockPage() {
     const cp = parseFloat(cashPaid) || 0;
     const bw = parseFloat(bagWeight) || 0;
     const product = products.find((p) => p.id === Number(selectedProduct));
-    const location = locations.find((l) => l.id === Number(purchaseLocation));
 
-    if (!product || !location) {
-      toast.error("Please select a product and location");
+    if (!product) {
+      toast.error("Please select a product");
       return;
     }
     if (qty <= 0 || r <= 0) {
@@ -366,7 +342,6 @@ export default function PurchasesStockPage() {
           supplier_id: supplierId,
           settled_by_customer_id: null,
           cash_paid: cp,
-          location_id: location.id,
           notes: notes?.trim() || null,
           unit_type: purchaseUnit,
           bag_weight_kg: purchaseUnit === "bags" ? bw : null,
@@ -394,10 +369,9 @@ export default function PurchasesStockPage() {
     const bw = parseFloat(bagWeight) || 0;
     const product = products.find((p) => p.id === Number(selectedProduct));
     const customer = customers.find((c) => c.id === Number(selectedCustomer));
-    const location = locations.find((l) => l.id === Number(purchaseLocation));
 
-    if (!product || !customer || !location) {
-      toast.error("Please select customer, product, and location");
+    if (!product || !customer) {
+      toast.error("Please select customer and product");
       return;
     }
     if (qty <= 0 || r <= 0) {
@@ -418,7 +392,6 @@ export default function PurchasesStockPage() {
           supplier_id: null,
           settled_by_customer_id: customer.id,
           cash_paid: 0,
-          location_id: location.id,
           notes: notes?.trim() || null,
           unit_type: purchaseUnit,
           bag_weight_kg: purchaseUnit === "bags" ? bw : null,
@@ -473,7 +446,6 @@ export default function PurchasesStockPage() {
           : p.suppliers?.name || "—",
         Type: p.settled_by_customer_id ? "Settlement" : "Supplier",
         Product: p.products?.name || "—",
-        Location: p.locations?.name || "—",
         "Unit Type": p.unit_type === "bags" ? "Bags" : "KG (loose)",
         Quantity: p.quantity,
         "Rate (Rs.)": p.rate_per_bag,
@@ -491,7 +463,6 @@ export default function PurchasesStockPage() {
         Source: "",
         Type: "",
         Product: "",
-        Location: "",
         "Unit Type": "",
         Quantity: "",
         "Rate (Rs.)": "",
@@ -509,7 +480,6 @@ export default function PurchasesStockPage() {
         { wch: 25 }, // Source
         { wch: 12 }, // Type
         { wch: 20 }, // Product
-        { wch: 12 }, // Location
         { wch: 12 }, // Unit Type
         { wch: 10 }, // Quantity
         { wch: 12 }, // Rate
@@ -534,14 +504,8 @@ export default function PurchasesStockPage() {
     return `${p.quantity} kg`;
   };
 
-  const renderStockTable = (
-    locationId: number,
-    locationName: string,
-    stock: StockRow[],
-    setStock: React.Dispatch<React.SetStateAction<StockRow[]>>
-  ) => {
+  const renderStockTable = (stock: StockRow[]) => {
     const hasNegative = stock.some((row) => row.totalKg < 0);
-    const isSaved = savedLocations.has(locationName);
 
     return (
       <div className="space-y-4">
@@ -549,8 +513,7 @@ export default function PurchasesStockPage() {
           <Alert className="border-amber-300 bg-amber-50 text-amber-800">
             <AlertTriangle className="size-4 text-amber-600" />
             <AlertDescription>
-              Some products show negative stock for {locationName}.
-              Please verify and correct the values.
+              Some products show negative stock. Please verify and correct the values.
             </AlertDescription>
           </Alert>
         )}
@@ -577,13 +540,13 @@ export default function PurchasesStockPage() {
                       )}
                     </TableCell>
                     <TableCell className="text-center">
-                      <Input type="number" value={row.bagWeight} onChange={(e) => updateBagWeight(locationId, row.productId, parseFloat(e.target.value) || 0, row.bags)} className="w-20 h-8 text-center text-sm mx-auto" />
+                      <Input type="number" value={row.bagWeight} onChange={(e) => updateBagWeight(row.productId, parseFloat(e.target.value) || 0, row.bags)} className="w-20 h-8 text-center text-sm mx-auto" />
                     </TableCell>
                     <TableCell className="text-center">
-                      <Input type="number" value={row.bags} onChange={(e) => updateBags(locationId, row.productId, parseFloat(e.target.value) || 0, row.bagWeight)} className="w-20 h-8 text-center text-sm mx-auto" />
+                      <Input type="number" value={row.bags} onChange={(e) => updateBags(row.productId, parseFloat(e.target.value) || 0, row.bagWeight)} className="w-20 h-8 text-center text-sm mx-auto" />
                     </TableCell>
                     <TableCell className="text-center">
-                      <Input type="number" value={row.totalKg} onChange={(e) => updateTotalKg(locationId, row.productId, parseFloat(e.target.value) || 0, row.bagWeight)} className={cn("w-24 h-8 text-center text-sm mx-auto", row.totalKg < 0 && "border-red-300 bg-red-50 text-red-700 focus-visible:border-red-400")} />
+                      <Input type="number" value={row.totalKg} onChange={(e) => updateTotalKg(row.productId, parseFloat(e.target.value) || 0, row.bagWeight)} className={cn("w-24 h-8 text-center text-sm mx-auto", row.totalKg < 0 && "border-red-300 bg-red-50 text-red-700 focus-visible:border-red-400")} />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -592,8 +555,8 @@ export default function PurchasesStockPage() {
           </div>
         </div>
         <div className="flex justify-end">
-          <Button onClick={() => handleSaveStock(locationId, locationName)} disabled={isSaved} className={cn("gap-2", isSaved && "bg-green-600 hover:bg-green-600")}>
-            {isSaved ? <><Save className="size-4" /> Saved ✓</> : <><Save className="size-4" /> Save Stock Changes</>}
+          <Button onClick={handleSaveStock} disabled={savedAllStock} className={cn("gap-2", savedAllStock && "bg-green-600 hover:bg-green-600")}>
+            {savedAllStock ? <><Save className="size-4" /> Saved ✓</> : <><Save className="size-4" /> Save Stock Changes</>}
           </Button>
         </div>
       </div>
@@ -644,14 +607,7 @@ export default function PurchasesStockPage() {
             <CardDescription>Edit bags or total KG — the other value auto-calculates.</CardDescription>
           </CardHeader>
           <CardContent>
-            <Tabs defaultValue="farm">
-              <TabsList className="mb-4">
-                <TabsTrigger value="farm" className="gap-1.5"><Warehouse className="size-4" /> Farm</TabsTrigger>
-                <TabsTrigger value="shop" className="gap-1.5"><Store className="size-4" /> Shop</TabsTrigger>
-              </TabsList>
-              <TabsContent value="farm">{renderStockTable(1, "Farm", farmStock, setFarmStock)}</TabsContent>
-              <TabsContent value="shop">{renderStockTable(2, "Shop", shopStock, setShopStock)}</TabsContent>
-            </Tabs>
+            {renderStockTable(allStock)}
           </CardContent>
         </Card>
 
@@ -681,25 +637,6 @@ export default function PurchasesStockPage() {
             </div>
 
             <div className="grid grid-cols-1 gap-4">
-              <div className="space-y-2">
-                <Label className="text-sm font-semibold text-slate-700">Location</Label>
-                <RadioGroup value={purchaseLocation} onValueChange={(v) => setPurchaseLocation(v)} className="flex flex-wrap gap-2">
-                  {locations.map((loc) => {
-                    const lower = loc.name.toLowerCase();
-                    const isShopLike = lower.includes("shop") || lower.includes("front");
-                    const isFarmLike = lower.includes("farm") || lower.includes("factory") || lower.includes("godown") || lower.includes("warehouse");
-                    const Icon = isShopLike ? Store : isFarmLike ? Warehouse : Warehouse;
-                    return (
-                      <div key={loc.id} className="flex items-center space-x-2 rounded-lg border border-slate-200/60 px-3.5 py-2.5 bg-slate-50/50 cursor-pointer has-[[data-state=checked]]:border-slate-500 has-[[data-state=checked]]:bg-slate-100/70 transition-colors">
-                        <RadioGroupItem value={String(loc.id)} id={`ploc-${loc.id}`} />
-                        <Label htmlFor={`ploc-${loc.id}`} className="cursor-pointer text-sm font-medium flex items-center gap-1.5 whitespace-nowrap">
-                          <Icon className="size-4" /> {loc.name}
-                        </Label>
-                      </div>
-                    );
-                  })}
-                </RadioGroup>
-              </div>
               <div className="space-y-2">
                 <Label className="text-sm font-semibold text-slate-700">Unit</Label>
                 <RadioGroup value={purchaseUnit} onValueChange={(v) => setPurchaseUnit(v as "bags" | "kg")} className="flex gap-3">
@@ -867,7 +804,6 @@ export default function PurchasesStockPage() {
                         <TableRow className="bg-slate-50/80 hover:bg-slate-50/80">
                           <TableHead className="text-xs uppercase text-slate-500 font-semibold">Source</TableHead>
                           <TableHead className="text-xs uppercase text-slate-500 font-semibold">Product</TableHead>
-                          <TableHead className="text-xs uppercase text-slate-500 font-semibold">Location</TableHead>
                           <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Qty</TableHead>
                           <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Rate</TableHead>
                           <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Value</TableHead>
@@ -893,7 +829,6 @@ export default function PurchasesStockPage() {
                                 </div>
                               </TableCell>
                               <TableCell className="text-sm text-slate-700">{p.products?.name ?? "—"}</TableCell>
-                              <TableCell className="text-sm text-slate-600">{p.locations?.name ?? "—"}</TableCell>
                               <TableCell className="text-sm text-slate-700 text-right font-mono">{getQuantityLabel(p)}</TableCell>
                               <TableCell className="text-sm text-slate-700 text-right font-mono">{fmt(p.rate_per_bag)}</TableCell>
                               <TableCell className="text-sm text-slate-900 text-right font-mono font-semibold">{fmt(value)}</TableCell>

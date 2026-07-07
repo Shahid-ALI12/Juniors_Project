@@ -34,8 +34,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { purchase_date, product_id, quantity, rate_per_bag, supplier_id, settled_by_customer_id, cash_paid, location_id, notes, unit_type, bag_weight_kg } = body;
 
-    if (!product_id || !quantity || !location_id) {
-      return NextResponse.json({ error: "product_id, quantity, location_id are required" }, { status: 400 });
+    if (!product_id || !quantity) {
+      return NextResponse.json({ error: "product_id, quantity are required" }, { status: 400 });
     }
 
     const id = await recordPurchaseRPC({
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
       supplier_id: supplier_id || null,
       settled_by_customer_id: settled_by_customer_id || null,
       cash_paid: Number(cash_paid) || 0,
-      location_id,
+      location_id: location_id ?? null,
       notes: notes?.trim() || null,
       unit_type: unit_type || "bags",
       bag_weight_kg: bag_weight_kg ? Number(bag_weight_kg) : null,

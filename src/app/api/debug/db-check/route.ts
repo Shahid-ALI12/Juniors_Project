@@ -120,10 +120,6 @@ export async function GET() {
 
   // Check seed data
   try {
-    const { data: locs } = await admin.from("locations").select("name");
-    const locNames = new Set((locs || []).map((l: any) => l.name));
-    results.seedData["locations (Farm, Shop)"] = locNames.has("Farm") && locNames.has("Shop");
-
     const { data: accts } = await admin.from("cash_accounts").select("name");
     const acctNames = new Set((accts || []).map((a: any) => a.name));
     results.seedData["cash_accounts (Cash In Hand)"] = acctNames.has("Cash In Hand");

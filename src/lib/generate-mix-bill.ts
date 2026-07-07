@@ -1,13 +1,26 @@
+interface BillItem {
+  product: string;
+  weight_kg: number;
+  rate_per_kg: number;
+  amount: number;
+  bags?: number | null;
+  rate_per_bag?: number | null;
+  bag_amount?: number | null;
+}
+
 interface BillData {
   orderId: string;
   customerName: string;
   customerType: "credit" | "cash";
   orderDate: string;
-  location: string;
-  items: { product: string; weight_kg: number; rate_per_kg: number; amount: number }[];
+  location?: string | null;
+  items: BillItem[];
   totalWeight: number;
   totalAmount: number;
+  totalBagAmount?: number;
   cashReceived?: number;
+  driverName?: string | null;
+  driverRent?: number;
 }
 
 export async function generateMixBillPDF(bill: BillData) {
@@ -60,15 +73,32 @@ export async function generateMixBillPDF(bill: BillData) {
   y += 7;
 
   doc.setFont("helvetica", "normal");
-  doc.text("Location:", m, y);
+  doc.text("Target Weight:", m, y);
   doc.setFont("helvetica", "bold");
-  doc.text(bill.location || "N/A", r, y);
+  doc.text(`${bill.totalWeight.toLocaleString("en-PK")} kg`, r, y);
 
   doc.setFont("helvetica", "normal");
-  doc.text("Target Weight:", pw / 2 + 5, y);
-  doc.setFont("helvetica", "bold");
-  doc.text(`${bill.totalWeight.toLocaleString("en-PK")} kg`, pw / 2 + 42, y);
-  y += 12;
+  if (bill.driverName) {
+    doc.text("Driver:", pw / 2 + 5, y);
+    doc.setFont("helvetica", "bold");
+    doc.text(bill.driverName, pw / 2 + 28, y);
+  } else {
+    doc.text("Driver:", pw / 2 + 5, y);
+    doc.setFont("helvetica", "bold");
+    doc.text("—", pw / 2 + 28, y);
+  }
+  y += 7;
+
+  // Driver Rent line — shown only when > 0
+  if (bill.driverRent && bill.driverRent > 0) {
+    doc.setFont("helvetica", "normal");
+    doc.text("Driver Rent:", m, y);
+    doc.setFont("helvetica", "bold");
+    doc.text(`Rs. ${bill.driverRent.toLocaleString("en-PK")}`, r, y);
+    y += 7;
+  }
+
+  y += 5;
 
   // Ingredients Table
   doc.setFont("helvetica", "bold");
@@ -79,27 +109,71 @@ export async function generateMixBillPDF(bill: BillData) {
   doc.line(m, y, pw - m, y);
   y += 4;
 
-  const tData = bill.items.map((ing, i) => [
-    String(i + 1),
-    ing.product,
-    ing.weight_kg.toLocaleString("en-PK"),
-    `Rs. ${ing.rate_per_kg.toLocaleString("en-PK")}`,
-    `Rs. ${ing.amount.toLocaleString("en-PK")}`,
-  ]);
+  // Decide columns: if any item has bag info, show Bags + Rate/Bag + Bag Amount columns
+  const hasBagInfo = bill.items.some(
+    (i) => (i.bags && i.bags > 0) || (i.rate_per_bag && i.rate_per_bag > 0)
+  );
+
+  let tData: string[][];
+  let head: string[];
+  let columnStyles: Record<number, any>;
+
+  if (hasBagInfo) {
+    head = ["#", "Product", "Wt (kg)", "Rate/kg", "Amount", "Bags", "Rate/Bag", "Bag Amt"];
+    tData = bill.items.map((ing, i) => [
+      String(i + 1),
+      ing.product,
+      ing.weight_kg.toLocaleString("en-PK"),
+      `Rs. ${ing.rate_per_kg.toLocaleString("en-PK")}`,
+      `Rs. ${ing.amount.toLocaleString("en-PK")}`,
+      ing.bags ? String(ing.bags) : "—",
+      ing.rate_per_bag ? `Rs. ${ing.rate_per_bag.toLocaleString("en-PK")}` : "—",
+      ing.bag_amount ? `Rs. ${ing.bag_amount.toLocaleString("en-PK")}` : "—",
+    ]);
+    columnStyles = {
+      0: { cellWidth: 8, halign: "center" },
+      1: { cellWidth: 38 },
+      2: { cellWidth: 18, halign: "right" },
+      3: { cellWidth: 22, halign: "right" },
+      4: { cellWidth: 26, halign: "right" },
+      5: { cellWidth: 14, halign: "right" },
+      6: { cellWidth: 22, halign: "right" },
+      7: { cellWidth: 22, halign: "right" },
+    };
+  } else {
+    head = ["#", "Product Name", "Weight (kg)", "Rate / kg", "Amount"];
+    tData = bill.items.map((ing, i) => [
+      String(i + 1),
+      ing.product,
+      ing.weight_kg.toLocaleString("en-PK"),
+      `Rs. ${ing.rate_per_kg.toLocaleString("en-PK")}`,
+      `Rs. ${ing.amount.toLocaleString("en-PK")}`,
+    ]);
+    columnStyles = {
+      0: { cellWidth: 12, halign: "center" },
+      2: { cellWidth: 30, halign: "right" },
+      3: { cellWidth: 35, halign: "right" },
+      4: { cellWidth: 40, halign: "right" },
+    };
+  }
 
   const tw = bill.items.reduce((s, i) => s + i.weight_kg, 0).toLocaleString("en-PK");
   const ta = `Rs. ${bill.totalAmount.toLocaleString("en-PK")}`;
 
+  const foot: string[] = hasBagInfo
+    ? ["", "TOTAL", `${tw} kg`, "", ta, "", "", (bill.totalBagAmount ?? 0) > 0 ? `Rs. ${(bill.totalBagAmount ?? 0).toLocaleString("en-PK")}` : ""]
+    : ["", "TOTAL", `${tw} kg`, "", ta];
+
   autoTable(doc, {
     startY: y,
-    head: [["#", "Product Name", "Weight (kg)", "Rate / kg", "Amount"]],
+    head: [head],
     body: tData,
-    foot: [["", "TOTAL", `${tw} kg`, "", ta]],
+    foot: [foot],
     theme: "grid",
-    headStyles: { fillColor: [16, 185, 129], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 9 },
-    footStyles: { fillColor: [241, 245, 249], textColor: [30, 41, 59], fontStyle: "bold", fontSize: 9 },
-    bodyStyles: { fontSize: 9, textColor: [51, 65, 85] },
-    columnStyles: { 0: { cellWidth: 12, halign: "center" }, 2: { cellWidth: 30, halign: "right" }, 3: { cellWidth: 35, halign: "right" }, 4: { cellWidth: 40, halign: "right" } },
+    headStyles: { fillColor: [16, 185, 129], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 8 },
+    footStyles: { fillColor: [241, 245, 249], textColor: [30, 41, 59], fontStyle: "bold", fontSize: 8 },
+    bodyStyles: { fontSize: 8, textColor: [51, 65, 85] },
+    columnStyles,
     margin: { left: m, right: m },
   });
 
@@ -107,7 +181,11 @@ export async function generateMixBillPDF(bill: BillData) {
   const fy = (doc as any).lastAutoTable.finalY + 10;
   const bx = m;
   const bw = pw - m * 2;
-  const bh = bill.customerType === "cash" ? 38 : 22;
+  // Taller box if driver rent is shown
+  const hasDriverRent = bill.driverRent && bill.driverRent > 0;
+  const bh = bill.customerType === "cash"
+    ? (hasDriverRent ? 52 : 38)
+    : (hasDriverRent ? 36 : 22);
 
   doc.setFillColor(248, 250, 252);
   doc.setDrawColor(203, 213, 225);
@@ -119,6 +197,17 @@ export async function generateMixBillPDF(bill: BillData) {
   doc.setTextColor(16, 185, 129);
   doc.text("Grand Total:", bx + 10, sy);
   doc.text(ta, bx + bw - 15, sy, { align: "right" });
+
+  // Driver Rent in summary box
+  if (hasDriverRent) {
+    sy += 8;
+    doc.setFontSize(10);
+    doc.setTextColor(51, 65, 85);
+    doc.setFont("helvetica", "normal");
+    doc.text("Driver Rent:", bx + 10, sy);
+    doc.setFont("helvetica", "bold");
+    doc.text(`Rs. ${bill.driverRent!.toLocaleString("en-PK")}`, bx + bw - 15, sy, { align: "right" });
+  }
 
   if (bill.customerType === "cash" && bill.cashReceived !== undefined) {
     sy += 8;

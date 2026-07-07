@@ -37,8 +37,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { items, customer_id, location_id, sale_date, cash_received, rickshaw_fare, rickshaw_driver } = body;
 
-    if (!items?.length || !customer_id || !location_id) {
-      return NextResponse.json({ error: "items, customer_id, location_id are required" }, { status: 400 });
+    if (!items?.length || !customer_id) {
+      return NextResponse.json({ error: "items, customer_id are required" }, { status: 400 });
     }
 
     const groupId = `g-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     await createSaleRPC({
       items,
       customer_id,
-      location_id,
+      location_id: location_id ?? null,
       sale_date: sale_date || pktToday(),
       cash_received: Number(cash_received) || 0,
       rickshaw_fare: Number(rickshaw_fare) || 0,

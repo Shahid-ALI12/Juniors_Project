@@ -60,7 +60,6 @@ const columnsMap: Record<ReconcileCardKey, Col[]> = {
     { key: "date", label: "Date" },
     { key: "customer", label: "Customer" },
     { key: "product", label: "Product" },
-    { key: "location", label: "Location" },
     { key: "qty", label: "Qty", align: "right" },
     { key: "unit", label: "Unit" },
     { key: "rate", label: "Rate/Bag", align: "right", fmt: (v) => formatRs(v) },

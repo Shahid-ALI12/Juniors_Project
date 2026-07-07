@@ -110,10 +110,8 @@ export default function CustomerPortal() {
     // Trigger background prefetch of commonly used data
     Promise.all([
       fetch("/api/products").then(r => r.ok ? r.json() : null).catch(() => null),
-      fetch("/api/locations").then(r => r.ok ? r.json() : null).catch(() => null),
-    ]).then(([p, l]) => {
+    ]).then(([p]) => {
       if (p?.products) masterCache.products = { data: p.products, fetchedAt: Date.now() };
-      if (l?.locations) masterCache.locations = { data: l.locations, fetchedAt: Date.now() };
     });
   }, []);
 

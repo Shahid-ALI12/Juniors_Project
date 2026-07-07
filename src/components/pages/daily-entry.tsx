@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { useCartStore, fetchCached, invalidateCache, apiError } from "@/store";
 import { PageHeader } from "@/components/shared/page-header";
-import type { CartItem, Sale, Expense, Product, Location, Customer, ProductStock } from "@/types";
+import type { CartItem, Sale, Expense, Product, Customer, ProductStock } from "@/types";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,7 +45,6 @@ import {
   Search,
   CheckCircle2,
   Package,
-  MapPin,
   ChevronDown,
   Receipt,
   TrendingDown,
@@ -65,7 +64,6 @@ export default function DailyEntryPage() {
   const { items: cartItems, addItem, removeItem, clearCart, getTotal: getCartTotal } = useCartStore();
 
   const [date, setDate] = useState(today);
-  const [locationChoice, setLocationChoice] = useState("");
   const [unitChoice, setUnitChoice] = useState<"bags" | "kg">("bags");
   const [productId, setProductId] = useState<string>("");
   const [quantity, setQuantity] = useState<string>("");
@@ -83,7 +81,6 @@ export default function DailyEntryPage() {
 
   // Data from API
   const [products, setProducts] = useState<Product[]>([]);
-  const [locations, setLocations] = useState<Location[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [stockData, setStockData] = useState<ProductStock[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
@@ -104,8 +101,6 @@ export default function DailyEntryPage() {
     const errors: string[] = [];
     try { setProducts(await fetchCached<Product>("products", "/api/products", "products")); }
     catch (e: any) { errors.push("Products"); }
-    try { setLocations(await fetchCached<Location>("locations", "/api/locations", "locations")); }
-    catch (e: any) { errors.push("Locations"); }
     try { setCustomers(await fetchCached<Customer>("customers", "/api/customers?active=true", "customers")); }
     catch (e: any) { errors.push("Customers"); }
     try { setStockData(await fetchCached<ProductStock>("stock", "/api/stock", "stock")); }
@@ -139,19 +134,9 @@ export default function DailyEntryPage() {
     loadDayData(date);
   }, [date, loadDayData]);
 
-  // Set default location
-  useEffect(() => {
-    if (!locationChoice && locations.length > 0) {
-      setLocationChoice(locations[0].name);
-    }
-  }, [locations, locationChoice]);
-
-  const selectedLocation = locations.find((l) => l.name === locationChoice);
   const selectedProduct = products.find((p) => String(p.id) === productId);
 
-  const stockEntry = stockData.find(
-    (s) => s.product_id === Number(productId) && s.location_id === selectedLocation?.id
-  );
+  const stockEntry = stockData.find((s) => s.product_id === Number(productId));
   const stockBags = stockEntry?.stock_quantity ?? 0;
 
   const defaultRate = selectedProduct?.default_rate ?? 0;
@@ -200,8 +185,8 @@ export default function DailyEntryPage() {
     const item: CartItem = {
       product: selectedProduct.name,
       product_id: selectedProduct.id,
-      location: selectedLocation?.name ?? "",
-      location_id: selectedLocation?.id ?? 0,
+      location: null,
+      location_id: null,
       quantity: quantityNum,
       unit_type: unitChoice,
       bag_weight_kg: unitChoice === "bags" ? bagWeightNum : null,
@@ -221,10 +206,6 @@ export default function DailyEntryPage() {
     }
     if (cartItems.length === 0) {
       toast.error("Cart is empty — add at least one product first.");
-      return;
-    }
-    if (!selectedLocation) {
-      toast.error("Please select a location.");
       return;
     }
 
@@ -263,7 +244,6 @@ export default function DailyEntryPage() {
         body: JSON.stringify({
           items,
           customer_id: customerId,
-          location_id: selectedLocation.id,
           sale_date: date,
           cash_received: Number(cashReceived) || 0,
           rickshaw_fare: rickshawNum,
@@ -433,31 +413,18 @@ export default function DailyEntryPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="text-xs uppercase text-slate-500 font-semibold">Location</Label>
-                <RadioGroup value={locationChoice} onValueChange={setLocationChoice} className="flex gap-4">
-                  {locations.map((loc) => (
-                    <div key={loc.id} className="flex items-center gap-2">
-                      <RadioGroupItem value={loc.name} id={`loc-${loc.id}`} />
-                      <Label htmlFor={`loc-${loc.id}`} className="font-normal cursor-pointer">{loc.name}</Label>
-                    </div>
-                  ))}
-                </RadioGroup>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs uppercase text-slate-500 font-semibold">Selling in</Label>
-                <RadioGroup value={unitChoice} onValueChange={(v) => setUnitChoice(v as "bags" | "kg")} className="flex gap-4">
-                  <div className="flex items-center gap-2">
-                    <RadioGroupItem value="bags" id="unit-bags" />
-                    <Label htmlFor="unit-bags" className="font-normal cursor-pointer">Bags</Label>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <RadioGroupItem value="kg" id="unit-kg" />
-                    <Label htmlFor="unit-kg" className="font-normal cursor-pointer">KG (loose)</Label>
-                  </div>
-                </RadioGroup>
-              </div>
+            <div className="space-y-2">
+              <Label className="text-xs uppercase text-slate-500 font-semibold">Selling in</Label>
+              <RadioGroup value={unitChoice} onValueChange={(v) => setUnitChoice(v as "bags" | "kg")} className="flex gap-4">
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="bags" id="unit-bags" />
+                  <Label htmlFor="unit-bags" className="font-normal cursor-pointer">Bags</Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="kg" id="unit-kg" />
+                  <Label htmlFor="unit-kg" className="font-normal cursor-pointer">KG (loose)</Label>
+                </div>
+              </RadioGroup>
             </div>
 
             <Separator />
@@ -475,10 +442,10 @@ export default function DailyEntryPage() {
                     ))}
                   </SelectContent>
                 </Select>
-                {selectedProduct && selectedLocation && (
+                {selectedProduct && (
                   <p className="text-xs text-slate-500 flex items-center gap-1">
-                    <MapPin className="size-3" />
-                    Stock at {locationChoice}: <span className="font-semibold text-slate-700">{fmt(stockBags)} bags</span>
+                    <Package className="size-3" />
+                    Stock available: <span className="font-semibold text-slate-700">{fmt(stockBags)} bags</span>
                   </p>
                 )}
               </div>
@@ -535,7 +502,6 @@ export default function DailyEntryPage() {
                     <TableHeader>
                       <TableRow>
                         <TableHead className="text-xs uppercase text-slate-500 font-semibold">Product</TableHead>
-                        <TableHead className="text-xs uppercase text-slate-500 font-semibold">Location</TableHead>
                         <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Qty</TableHead>
                         <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Rate</TableHead>
                         <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Amount</TableHead>
@@ -546,7 +512,6 @@ export default function DailyEntryPage() {
                       {cartItems.map((item, idx) => (
                         <TableRow key={idx}>
                           <TableCell className="font-medium text-sm">{item.product}</TableCell>
-                          <TableCell className="text-sm text-slate-600">{item.location}</TableCell>
                           <TableCell className="text-sm text-right">{fmt(item.quantity)}{item.unit_type === "kg" ? " kg" : ""}</TableCell>
                           <TableCell className="text-sm text-right">{fmt(item.rate)}</TableCell>
                           <TableCell className="text-sm text-right font-semibold">Rs. {fmt(item.amount)}</TableCell>
@@ -674,7 +639,6 @@ export default function DailyEntryPage() {
                             <TableHead className="text-xs uppercase text-slate-500 font-semibold">Customer</TableHead>
                             <TableHead className="text-xs uppercase text-slate-500 font-semibold">Type</TableHead>
                             <TableHead className="text-xs uppercase text-slate-500 font-semibold hidden lg:table-cell">Product</TableHead>
-                            <TableHead className="text-xs uppercase text-slate-500 font-semibold hidden md:table-cell">Location</TableHead>
                             <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Qty</TableHead>
                             <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right hidden sm:table-cell">Rate</TableHead>
                             <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right hidden md:table-cell">Rickshaw</TableHead>
@@ -696,7 +660,6 @@ export default function DailyEntryPage() {
                                   <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold", s.customers?.type === "credit" ? "bg-amber-100 text-amber-800" : "bg-green-100 text-green-800")}>{s.customers?.type ?? "—"}</span>
                                 </TableCell>
                                 <TableCell className="text-sm hidden lg:table-cell">{s.products?.name ?? "—"}</TableCell>
-                                <TableCell className="text-sm text-slate-600 hidden md:table-cell">{s.locations?.name ?? "—"}</TableCell>
                                 <TableCell className="text-sm text-right">{fmt(s.quantity)}{unitSuffix}</TableCell>
                                 <TableCell className="text-sm text-right hidden sm:table-cell">{fmt(s.rate_per_bag)}</TableCell>
                                 <TableCell className="text-sm text-right hidden md:table-cell">{s.rickshaw_fare > 0 ? fmt(s.rickshaw_fare) : "—"}{s.rickshaw_driver_name && <span className="block text-xs text-slate-400"><Truck className="inline size-3" /> {s.rickshaw_driver_name}</span>}</TableCell>
@@ -729,7 +692,6 @@ export default function DailyEntryPage() {
                           <TableRow className="bg-slate-50">
                             <TableHead className="text-xs uppercase text-slate-500 font-semibold">Customer</TableHead>
                             <TableHead className="text-xs uppercase text-slate-500 font-semibold">Order</TableHead>
-                            <TableHead className="text-xs uppercase text-slate-500 font-semibold hidden sm:table-cell">Location</TableHead>
                             <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Total Qty</TableHead>
                             <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right hidden md:table-cell">Total Bill</TableHead>
                             <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right hidden md:table-cell">Cash</TableHead>
@@ -740,7 +702,6 @@ export default function DailyEntryPage() {
                         <TableBody>
                           {Array.from(mixGroups.entries()).map(([mixOrderId, lines]) => {
                             const custName = lines[0].customers?.name ?? "—";
-                            const locName = lines[0].locations?.name ?? "—";
                             const totalQty = lines.reduce((sum, l) => sum + l.quantity, 0);
                             const totalMixBill = lines.reduce((sum, l) => sum + l.quantity * l.rate_per_bag, 0);
                             const totalMixCash = lines.reduce((sum, l) => sum + l.cash_received, 0);
@@ -787,7 +748,6 @@ export default function DailyEntryPage() {
                                     <Beaker className="size-3" /> Mix Order
                                   </span>
                                 </TableCell>
-                                <TableCell className="text-sm text-slate-600 hidden sm:table-cell">{locName}</TableCell>
                                 <TableCell className="text-sm text-right">{fmt(totalQty)} kg</TableCell>
                                 <TableCell className="text-sm text-right font-semibold hidden md:table-cell">{fmt(totalMixBill)}</TableCell>
                                 <TableCell className="text-sm text-right hidden md:table-cell">{totalMixCash > 0 ? fmt(totalMixCash) : "—"}</TableCell>

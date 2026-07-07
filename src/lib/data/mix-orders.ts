@@ -3,20 +3,21 @@ import { admin } from "@/lib/supabase/server-admin";
 export interface MixOrderRow {
   id: number;
   customer_id: number;
-  location_id: number;
+  location_id: number | null;
   order_date: string;
   target_weight_kg: number | null;
   cash_received: number;
   entered_by: string | null;
+  driver_name: string | null;
+  driver_rent: number;
   created_at: string;
   customers?: { id: number; name: string } | null;
-  locations?: { id: number; name: string } | null;
 }
 
 export async function getMixOrders(): Promise<MixOrderRow[]> {
   const { data, error } = await admin
     .from("mix_orders")
-    .select("id, customer_id, location_id, order_date, target_weight_kg, cash_received, entered_by, created_at, customers(id,name), locations(id,name)")
+    .select("id, customer_id, location_id, order_date, target_weight_kg, cash_received, entered_by, driver_name, driver_rent, created_at, customers(id,name)")
     .order("created_at", { ascending: false });
   if (error) throw error;
   return (data || []) as unknown as MixOrderRow[];
@@ -25,7 +26,7 @@ export async function getMixOrders(): Promise<MixOrderRow[]> {
 export async function getMixOrderById(id: number): Promise<MixOrderRow | null> {
   const { data, error } = await admin
     .from("mix_orders")
-    .select("id, customer_id, location_id, order_date, target_weight_kg, cash_received, entered_by, created_at, customers(id,name), locations(id,name)")
+    .select("id, customer_id, location_id, order_date, target_weight_kg, cash_received, entered_by, driver_name, driver_rent, created_at, customers(id,name)")
     .eq("id", id)
     .single();
   if (error) return null;
@@ -34,23 +35,27 @@ export async function getMixOrderById(id: number): Promise<MixOrderRow | null> {
 
 export async function createMixOrderRPC(params: {
   customer_id: number;
-  location_id: number;
   order_date: string;
   target_weight_kg: number | null;
   cash_received: number;
   entered_by: string | null;
   items: { product_id: number; quantity: number; rate_per_kg: number }[];
+  driver_name?: string | null;
+  driver_rent?: number;
+  location_id?: number | null;
 }): Promise<number> {
   try {
     // Try RPC first (atomic: mix_orders row + sale lines + cash ledger)
     const { data, error } = await admin.rpc("create_mix_order", {
       p_customer_id: params.customer_id,
-      p_location_id: params.location_id,
+      p_location_id: params.location_id ?? null,
       p_order_date: params.order_date,
       p_target_weight_kg: params.target_weight_kg,
       p_cash_received: params.cash_received,
       p_entered_by: params.entered_by,
       p_items: JSON.stringify(params.items),
+      p_driver_name: params.driver_name ?? null,
+      p_driver_rent: params.driver_rent ?? 0,
     });
     if (error) throw error;
     // RPC returns TABLE(id bigint) — extract first row's id
@@ -68,23 +73,27 @@ export async function createMixOrderRPC(params: {
 // Fallback: direct inserts without cash ledger (non-atomic)
 async function createMixOrderFallback(params: {
   customer_id: number;
-  location_id: number;
   order_date: string;
   target_weight_kg: number | null;
   cash_received: number;
   entered_by: string | null;
   items: { product_id: number; quantity: number; rate_per_kg: number }[];
+  driver_name?: string | null;
+  driver_rent?: number;
+  location_id?: number | null;
 }): Promise<number> {
   // Insert mix_orders parent
   const { data: mixData, error: mixErr } = await admin
     .from("mix_orders")
     .insert({
       customer_id: params.customer_id,
-      location_id: params.location_id,
+      location_id: params.location_id ?? null,
       order_date: params.order_date,
       target_weight_kg: params.target_weight_kg,
       cash_received: params.cash_received,
       entered_by: params.entered_by,
+      driver_name: params.driver_name ?? null,
+      driver_rent: params.driver_rent ?? 0,
     })
     .select("id")
     .single();
@@ -98,7 +107,7 @@ async function createMixOrderFallback(params: {
   const saleRows = params.items.map((item) => ({
     customer_id: params.customer_id,
     product_id: item.product_id,
-    location_id: params.location_id,
+    location_id: params.location_id ?? null,
     quantity: item.quantity,
     rate_per_bag: item.rate_per_kg,
     rickshaw_fare: 0,

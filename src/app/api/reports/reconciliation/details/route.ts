@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
       case "bags-sold": {
         const { data, error } = await admin
           .from("sales")
-          .select("id, sale_date, quantity, unit_type, rate_per_bag, customers(id,name), products(id,name), locations(id,name)")
+          .select("id, sale_date, quantity, unit_type, rate_per_bag, customers(id,name), products(id,name)")
           .gte("sale_date", from).lte("sale_date", to)
           .order("created_at", { ascending: false });
         if (error) throw error;
@@ -28,7 +28,6 @@ export async function GET(request: NextRequest) {
           date: s.sale_date,
           customer: s.customers?.name || "N/A",
           product: s.products?.name || "N/A",
-          location: s.locations?.name || "N/A",
           qty: s.quantity,
           unit: s.unit_type || "bags",
           rate: s.rate_per_bag,

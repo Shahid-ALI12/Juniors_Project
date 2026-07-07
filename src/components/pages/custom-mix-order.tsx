@@ -17,7 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useMixStore, fetchCached, invalidateCache, apiError } from "@/store";
 import { PageHeader, MetricCard } from "@/components/shared/page-header";
-import type { MixIngredient, Product, Location } from "@/types";
+import type { MixIngredient, Product } from "@/types";
 import { generateMixBillPDF } from "@/lib/generate-mix-bill";
 
 import { Input } from "@/components/ui/input";
@@ -48,13 +48,31 @@ function fmtRs(n: number) {
   return n.toLocaleString("en-PK");
 }
 
-function printMixBill(order: { id: string | number; customer: string; date: string; location: string }, items: { product: string; weight_kg: number; rate_per_kg: number; amount: number }[], totalWeight: number, totalAmount: number) {
-  const rows = items.map((it, i) => `<tr>
-    <td>${i + 1}</td><td>${it.product}</td>
-    <td style="text-align:right">${it.weight_kg}</td>
-    <td style="text-align:right">${it.rate_per_kg}</td>
-    <td style="text-align:right">${it.amount.toLocaleString("en-PK")}</td>
-  </tr>`).join("");
+function printMixBill(order: { id: string | number; customer: string; date: string; driverName?: string; driverRent?: number }, items: { product: string; weight_kg: number; rate_per_kg: number; amount: number; bags?: number | null; rate_per_bag?: number | null; bag_amount?: number | null }[], totalWeight: number, totalAmount: number, totalBagAmount: number = 0) {
+  const hasBagInfo = items.some((i) => (i.bags && i.bags > 0) || (i.rate_per_bag && i.rate_per_bag > 0));
+  const rows = items.map((it, i) => hasBagInfo
+    ? `<tr>
+      <td>${i + 1}</td><td>${it.product}</td>
+      <td style="text-align:right">${it.weight_kg}</td>
+      <td style="text-align:right">${it.rate_per_kg}</td>
+      <td style="text-align:right">${it.amount.toLocaleString("en-PK")}</td>
+      <td style="text-align:right">${it.bags ?? "—"}</td>
+      <td style="text-align:right">${it.rate_per_bag ?? "—"}</td>
+      <td style="text-align:right">${it.bag_amount ? it.bag_amount.toLocaleString("en-PK") : "—"}</td>
+    </tr>`
+    : `<tr>
+      <td>${i + 1}</td><td>${it.product}</td>
+      <td style="text-align:right">${it.weight_kg}</td>
+      <td style="text-align:right">${it.rate_per_kg}</td>
+      <td style="text-align:right">${it.amount.toLocaleString("en-PK")}</td>
+    </tr>`).join("");
+
+  const driverLine = order.driverName
+    ? `<div class="info-row"><span>Driver:</span><strong>${order.driverName}</strong></div>${order.driverRent && order.driverRent > 0 ? `<div class="info-row"><span>Driver Rent:</span><strong>Rs. ${order.driverRent.toLocaleString("en-PK")}</strong></div>` : ""}`
+    : "";
+
+  const bagHead = hasBagInfo ? `<th style="text-align:right">Bags</th><th style="text-align:right">Rate/Bag</th><th style="text-align:right">Bag Amt</th>` : "";
+  const bagFoot = hasBagInfo ? `<td style="text-align:right">${totalBagAmount > 0 ? totalBagAmount.toLocaleString("en-PK") : ""}</td><td></td><td></td>` : "";
 
   const html = `<!DOCTYPE html><html><head><style>
     @page{size:auto;margin:8mm}
@@ -77,12 +95,12 @@ function printMixBill(order: { id: string | number; customer: string; date: stri
     <div class="info">
       <div class="info-row"><span>Order: #${order.id}</span><span>${order.date}</span></div>
       <div>Customer: <strong>${order.customer}</strong></div>
-      <div>Location: ${order.location}</div>
+      ${driverLine}
     </div>
     <table>
-      <thead><tr><th>#</th><th>Item</th><th style="text-align:right">Wt(kg)</th><th style="text-align:right">Rate</th><th style="text-align:right">Amt</th></tr></thead>
+      <thead><tr><th>#</th><th>Item</th><th style="text-align:right">Wt(kg)</th><th style="text-align:right">Rate</th><th style="text-align:right">Amt</th>${bagHead}</tr></thead>
       <tbody>${rows}
-        <tr class="total-row"><td colspan="2">Total</td><td style="text-align:right">${fmtRs(totalWeight)} kg</td><td></td><td style="text-align:right">Rs. ${fmtRs(totalAmount)}</td></tr>
+        <tr class="total-row"><td colspan="2">Total</td><td style="text-align:right">${fmtRs(totalWeight)} kg</td><td></td><td style="text-align:right">Rs. ${fmtRs(totalAmount)}</td>${bagFoot}</tr>
       </tbody>
     </table>
     <div class="footer">Thank you for your business!</div>
@@ -114,21 +132,25 @@ export default function CustomMixOrder() {
   const isBuilding = store.targetWeight !== null;
 
   const [products, setProducts] = useState<Product[]>([]);
-  const [locations, setLocations] = useState<Location[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   /* ── State 1 form ── */
   const [s1Name, setS1Name] = useState("");
   const [s1Type, setS1Type] = useState<"credit" | "cash">("credit");
-  const [s1Loc, setS1Loc] = useState<string>("");
   const [s1Date, setS1Date] = useState(today);
   const [s1Target, setS1Target] = useState("");
+  // Driver fields (optional) — order level
+  const [s1DriverName, setS1DriverName] = useState("");
+  const [s1DriverRent, setS1DriverRent] = useState("");
 
   /* ── State 2 form ── */
   const [addProduct, setAddProduct] = useState<string>("");
   const [addWeight, setAddWeight] = useState("");
   const [addRate, setAddRate] = useState("");
+  // Optional bag fields — if user enters Bags + Rate/Bag, we show a separate Bag Amount
+  const [addBags, setAddBags] = useState("");
+  const [addRatePerBag, setAddRatePerBag] = useState("");
   const [cashReceived, setCashReceived] = useState("");
 
   useEffect(() => {
@@ -137,8 +159,6 @@ export default function CustomMixOrder() {
       const failed: string[] = [];
       try { setProducts(await fetchCached<Product>("products", "/api/products", "products")); }
       catch { failed.push("products"); }
-      try { setLocations(await fetchCached<Location>("locations", "/api/locations", "locations")); }
-      catch { failed.push("locations"); }
       if (failed.length > 0) toast.error(`Failed to load: ${failed.join(", ")}`);
       setLoading(false);
     })();
@@ -161,7 +181,8 @@ export default function CustomMixOrder() {
         ...o,
         customer: o.customers?.name ?? "",
         date: o.order_date ?? "",
-        location: o.locations?.name ?? "",
+        driverName: o.driver_name ?? "",
+        driverRent: o.driver_rent ?? 0,
         sales: salesByMix[o.id] ?? [],
       }));
       setPastOrders(orders);
@@ -182,27 +203,29 @@ export default function CustomMixOrder() {
 
   const usedWeight = store.getUsedWeight();
   const totalAmount = store.getTotalAmount();
+  const totalBagAmount = store.getTotalBagAmount();
   const remaining = (store.targetWeight ?? 0) - usedWeight;
 
   /* ── Handlers ── */
   const handleStartOrder = useCallback(() => {
-    const locId = Number(s1Loc);
     const target = Number(s1Target);
     if (!s1Name.trim()) {
       toast.error("Customer name is required");
-      return;
-    }
-    if (!s1Loc) {
-      toast.error("Please select a location");
       return;
     }
     if (!target || target <= 0) {
       toast.error("Enter a valid target weight");
       return;
     }
-    store.startOrder(s1Name.trim(), s1Type, s1Date, locId, target);
+    const driverName = s1DriverName.trim();
+    const driverRentNum = Number(s1DriverRent) || 0;
+    store.startOrder(s1Name.trim(), s1Type, s1Date, target, {
+      driverName,
+      driverRent: driverRentNum,
+      locationId: null,
+    });
     toast.success("Mix order started — add ingredients below");
-  }, [s1Name, s1Type, s1Loc, s1Date, s1Target, store]);
+  }, [s1Name, s1Type, s1Date, s1Target, s1DriverName, s1DriverRent, store]);
 
   const handleAddIngredient = useCallback(() => {
     if (!addProduct) {
@@ -222,19 +245,30 @@ export default function CustomMixOrder() {
     const product = products.find((p) => p.id === Number(addProduct));
     if (!product) return;
 
+    // Optional bags + rate_per_bag → compute bag_amount for display
+    const bagsNum = addBags ? Number(addBags) : 0;
+    const ratePerBagNum = addRatePerBag ? Number(addRatePerBag) : 0;
+    const hasBagInfo = bagsNum > 0 && ratePerBagNum > 0;
+    const bagAmount = hasBagInfo ? bagsNum * ratePerBagNum : null;
+
     const ing: MixIngredient = {
       product: product.name,
       product_id: product.id,
       weight_kg: weight,
       rate_per_kg: rate,
       amount: weight * rate,
+      bags: hasBagInfo ? bagsNum : null,
+      rate_per_bag: hasBagInfo ? ratePerBagNum : null,
+      bag_amount: bagAmount,
     };
     store.addIngredient(ing);
     setAddProduct("");
     setAddWeight("");
     setAddRate("");
+    setAddBags("");
+    setAddRatePerBag("");
     toast.success(`${product.name} added to mix`);
-  }, [addProduct, addWeight, addRate, store, products]);
+  }, [addProduct, addWeight, addRate, addBags, addRatePerBag, store, products]);
 
   const handleFinishOrder = useCallback(async () => {
     if (store.ingredients.length === 0) {
@@ -247,10 +281,6 @@ export default function CustomMixOrder() {
         toast.error("Enter cash received amount");
         return;
       }
-    }
-    if (!store.locationId) {
-      toast.error("Location missing");
-      return;
     }
 
     setSaving(true);
@@ -281,7 +311,6 @@ export default function CustomMixOrder() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           customer_id: customerId,
-          location_id: store.locationId,
           order_date: store.orderDate,
           target_weight_kg: store.targetWeight,
           items: store.ingredients.map((ing) => ({
@@ -290,6 +319,8 @@ export default function CustomMixOrder() {
             rate_per_kg: ing.rate_per_kg,
           })),
           cash_received: store.customerType === "cash" ? Number(cashReceived) || 0 : 0,
+          driver_name: store.driverName || null,
+          driver_rent: store.driverRent || 0,
         }),
       });
       if (!res.ok) {
@@ -297,17 +328,26 @@ export default function CustomMixOrder() {
         throw new Error(err.detail || err.error || "Failed to save mix order");
       }
       // Generate PDF bill BEFORE resetting store
-      const locName = locations.find(l => l.id === store.locationId)?.name || "N/A";
       const billData = {
         orderId: `mix-${Date.now()}`,
         customerName: store.customerName,
         customerType: store.customerType as "credit" | "cash",
         orderDate: store.orderDate,
-        location: locName,
-        items: store.ingredients.map(i => ({ product: i.product, weight_kg: i.weight_kg, rate_per_kg: i.rate_per_kg, amount: i.amount })),
+        items: store.ingredients.map(i => ({
+          product: i.product,
+          weight_kg: i.weight_kg,
+          rate_per_kg: i.rate_per_kg,
+          amount: i.amount,
+          bags: i.bags ?? null,
+          rate_per_bag: i.rate_per_bag ?? null,
+          bag_amount: i.bag_amount ?? null,
+        })),
         totalWeight: store.targetWeight!,
         totalAmount: totalAmount,
+        totalBagAmount: store.getTotalBagAmount(),
         cashReceived: store.customerType === "cash" ? Number(cashReceived) || 0 : undefined,
+        driverName: store.driverName || null,
+        driverRent: store.driverRent || 0,
       };
       store.reset();
       generateMixBillPDF(billData).catch(() => toast.error("PDF bill generate nahi ho saki"));
@@ -315,11 +355,14 @@ export default function CustomMixOrder() {
       setAddProduct("");
       setAddWeight("");
       setAddRate("");
+      setAddBags("");
+      setAddRatePerBag("");
       setS1Name("");
       setS1Type("credit");
-      setS1Loc("");
       setS1Date(today);
       setS1Target("");
+      setS1DriverName("");
+      setS1DriverRent("");
       toast.success("Order finished! Bill PDF download ho rahi hai.");
       invalidateCache("stock");
       await reloadPastOrders();
@@ -328,7 +371,7 @@ export default function CustomMixOrder() {
     } finally {
       setSaving(false);
     }
-  }, [store, cashReceived, reloadPastOrders]);
+  }, [store, cashReceived, reloadPastOrders, totalAmount]);
 
   const handleCancel = useCallback(() => {
     store.reset();
@@ -336,6 +379,8 @@ export default function CustomMixOrder() {
     setAddProduct("");
     setAddWeight("");
     setAddRate("");
+    setAddBags("");
+    setAddRatePerBag("");
     toast.info("Order cancelled");
   }, [store]);
 
@@ -401,24 +446,6 @@ export default function CustomMixOrder() {
               </RadioGroup>
             </div>
 
-            <div className="space-y-3">
-              <Label className="text-slate-600">Location</Label>
-              <RadioGroup
-                value={s1Loc}
-                onValueChange={setS1Loc}
-                className="flex flex-row gap-6"
-              >
-                {locations.map((loc) => (
-                  <div key={loc.id} className="flex items-center gap-2">
-                    <RadioGroupItem value={String(loc.id)} id={`loc-${loc.id}`} />
-                    <Label htmlFor={`loc-${loc.id}`} className="font-normal cursor-pointer">
-                      {loc.name}
-                    </Label>
-                  </div>
-                ))}
-              </RadioGroup>
-            </div>
-
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="order-date" className="text-slate-600">
@@ -445,6 +472,42 @@ export default function CustomMixOrder() {
                   onChange={(e) => setS1Target(e.target.value)}
                   className="max-w-xs"
                 />
+              </div>
+            </div>
+
+            {/* ── Optional Driver fields (order-level) ── */}
+            <div className="rounded-xl border border-slate-200/60 bg-slate-50/40 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Label className="text-slate-700 font-semibold text-sm">
+                  Driver Details <span className="text-slate-400 font-normal">(optional)</span>
+                </Label>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="driver-name" className="text-xs font-semibold uppercase text-slate-500">
+                    Driver Name
+                  </Label>
+                  <Input
+                    id="driver-name"
+                    placeholder="e.g. Rana"
+                    value={s1DriverName}
+                    onChange={(e) => setS1DriverName(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="driver-rent" className="text-xs font-semibold uppercase text-slate-500">
+                    Driver Rent (Rs.)
+                  </Label>
+                  <Input
+                    id="driver-rent"
+                    type="number"
+                    min={0}
+                    step="any"
+                    placeholder="0"
+                    value={s1DriverRent}
+                    onChange={(e) => setS1DriverRent(e.target.value)}
+                  />
+                </div>
               </div>
             </div>
 
@@ -496,7 +559,7 @@ export default function CustomMixOrder() {
             Add an Ingredient
           </h3>
 
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold uppercase text-slate-500">Product</Label>
               <Select value={addProduct} onValueChange={setAddProduct}>
@@ -522,12 +585,37 @@ export default function CustomMixOrder() {
               <Label className="text-xs font-semibold uppercase text-slate-500">Rate / kg</Label>
               <Input type="number" min={0} step="any" placeholder="0" value={addRate} onChange={(e) => setAddRate(e.target.value)} />
             </div>
-
-            <Button onClick={handleAddIngredient} className="bg-slate-900 hover:bg-slate-800 text-white font-semibold w-full sm:w-auto">
-              <Plus className="w-4 h-4 mr-1" />
-              Add to Mix
-            </Button>
           </div>
+
+          {/* ── Optional bag fields (collapsible-style row) ── */}
+          <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3">
+            <div className="text-xs font-semibold text-slate-500 uppercase mb-2">
+              Bag details <span className="font-normal normal-case text-slate-400">(optional — fill both to compute Bag Amount)</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase text-slate-500">Bags</Label>
+                <Input type="number" min={0} step="any" placeholder="0" value={addBags} onChange={(e) => setAddBags(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase text-slate-500">Rate / Bag</Label>
+                <Input type="number" min={0} step="any" placeholder="0" value={addRatePerBag} onChange={(e) => setAddRatePerBag(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase text-slate-500">Bag Amount (auto)</Label>
+                <div className="h-9 px-3 flex items-center rounded-md border border-slate-200 bg-white text-sm font-semibold tabular-nums text-slate-700">
+                  {(Number(addBags) > 0 && Number(addRatePerBag) > 0)
+                    ? `Rs. ${(Number(addBags) * Number(addRatePerBag)).toLocaleString("en-PK")}`
+                    : "—"}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <Button onClick={handleAddIngredient} className="bg-slate-900 hover:bg-slate-800 text-white font-semibold w-full sm:w-auto">
+            <Plus className="w-4 h-4 mr-1" />
+            Add to Mix
+          </Button>
         </div>
 
         {/* ── Current Mix Table ── */}
@@ -556,6 +644,7 @@ export default function CustomMixOrder() {
                     <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Weight (kg)</TableHead>
                     <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Rate/kg</TableHead>
                     <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Amount</TableHead>
+                    {totalBagAmount > 0 && <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Bag Amt</TableHead>}
                     <TableHead className="text-xs uppercase text-slate-500 font-semibold w-16">Del</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -567,6 +656,11 @@ export default function CustomMixOrder() {
                       <TableCell className="text-right tabular-nums text-sm">{fmtRs(ing.weight_kg)}</TableCell>
                       <TableCell className="text-right tabular-nums text-sm">{fmtRs(ing.rate_per_kg)}</TableCell>
                       <TableCell className="text-right tabular-nums text-sm font-semibold text-slate-800">Rs. {fmtRs(ing.amount)}</TableCell>
+                      {totalBagAmount > 0 && (
+                        <TableCell className="text-right tabular-nums text-sm text-slate-600">
+                          {ing.bag_amount ? `Rs. ${fmtRs(ing.bag_amount)}` : "—"}
+                        </TableCell>
+                      )}
                       <TableCell>
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-red-400 hover:text-red-600 hover:bg-red-50" onClick={() => store.removeIngredient(idx)}>
                           <Trash2 className="w-4 h-4" />
@@ -579,6 +673,9 @@ export default function CustomMixOrder() {
                     <TableCell className="text-right tabular-nums text-sm text-slate-800">{fmtRs(usedWeight)} kg</TableCell>
                     <TableCell />
                     <TableCell className="text-right tabular-nums text-sm text-slate-800">Rs. {fmtRs(totalAmount)}</TableCell>
+                    {totalBagAmount > 0 && (
+                      <TableCell className="text-right tabular-nums text-sm text-slate-800">Rs. {fmtRs(totalBagAmount)}</TableCell>
+                    )}
                     <TableCell />
                   </TableRow>
                 </TableBody>
@@ -594,6 +691,11 @@ export default function CustomMixOrder() {
             <div className="flex-1">
               <div className="text-xs font-bold uppercase text-slate-500">💰 Bill So Far</div>
               <div className="text-2xl font-extrabold text-slate-900 mt-0.5">Rs. {fmtRs(totalAmount)}</div>
+              {totalBagAmount > 0 && (
+                <div className="text-xs font-medium text-slate-500 mt-1">
+                  Bag Amount total: <span className="font-semibold text-slate-700">Rs. {fmtRs(totalBagAmount)}</span>
+                </div>
+              )}
             </div>
             {store.customerType === "credit" && (
               <span className="text-xs font-medium text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-3 py-1">
@@ -606,6 +708,19 @@ export default function CustomMixOrder() {
               </span>
             )}
           </div>
+
+          {/* Driver info readout (if entered) */}
+          {(store.driverName || store.driverRent > 0) && (
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-blue-50/60 border border-blue-100">
+              <div className="text-xs font-bold uppercase text-blue-600">🚚 Driver</div>
+              <div className="flex-1 text-sm">
+                {store.driverName && <span className="text-slate-700 font-medium">{store.driverName}</span>}
+                {store.driverRent > 0 && (
+                  <span className="text-slate-500 ml-3">Rent: <span className="font-semibold text-slate-700">Rs. {fmtRs(store.driverRent)}</span></span>
+                )}
+              </div>
+            </div>
+          )}
 
           {store.customerType === "cash" && (
             <div className="space-y-2">
@@ -699,7 +814,7 @@ function PastMixOrdersSection({
                   <TableHead className="text-xs uppercase text-slate-500 font-semibold">Order ID</TableHead>
                   <TableHead className="text-xs uppercase text-slate-500 font-semibold">Customer</TableHead>
                   <TableHead className="text-xs uppercase text-slate-500 font-semibold">Date</TableHead>
-                  <TableHead className="text-xs uppercase text-slate-500 font-semibold">Location</TableHead>
+                  <TableHead className="text-xs uppercase text-slate-500 font-semibold">Driver</TableHead>
                   <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Items</TableHead>
                 </TableRow>
               </TableHeader>
@@ -713,7 +828,7 @@ function PastMixOrdersSection({
                     <TableCell className="font-mono text-xs text-slate-600">{order.id}</TableCell>
                     <TableCell className="font-medium text-slate-800 text-sm">{order.customer}</TableCell>
                     <TableCell className="text-sm text-slate-600">{order.date}</TableCell>
-                    <TableCell className="text-sm text-slate-600">{order.location}</TableCell>
+                    <TableCell className="text-sm text-slate-600">{order.driverName || "—"}{order.driverRent > 0 ? <span className="block text-xs text-slate-400">Rs. {fmtRs(order.driverRent)}</span> : null}</TableCell>
                     <TableCell className="text-right text-sm text-slate-600">{order.sales?.length ?? 0}</TableCell>
                   </TableRow>
                 ))}
@@ -749,10 +864,11 @@ function PastMixOrdersSection({
                         customerName: selectedPast.customer,
                         customerType: "credit",
                         orderDate: selectedPast.date,
-                        location: selectedPast.location,
                         items: billItems,
                         totalWeight: billTotalWeight,
                         totalAmount: billTotalAmount,
+                        driverName: selectedPast.driverName || null,
+                        driverRent: selectedPast.driverRent || 0,
                       }).then(() => toast.success("Bill PDF download ho rahi hai!"))
                       .catch(() => toast.error("PDF bill generate nahi ho saki"));
                     }}
@@ -767,7 +883,7 @@ function PastMixOrdersSection({
                     onClick={(e) => {
                       e.stopPropagation();
                       printMixBill(
-                        { id: selectedPast.id, customer: selectedPast.customer, date: selectedPast.date, location: selectedPast.location },
+                        { id: selectedPast.id, customer: selectedPast.customer, date: selectedPast.date, driverName: selectedPast.driverName, driverRent: selectedPast.driverRent },
                         billItems,
                         billTotalWeight,
                         billTotalAmount,
