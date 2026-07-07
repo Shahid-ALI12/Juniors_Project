@@ -46,6 +46,7 @@ import {
   Loader2,
   Download,
   RefreshCw,
+  CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { pktToday } from "@/lib/pkt-date";
@@ -83,6 +84,7 @@ export default function PurchasesStockPage() {
   // Section 1: Stock state — single unified table (no more Farm/Shop tabs)
   const [allStock, setAllStock] = useState<StockRow[]>([]);
   const [savedAllStock, setSavedAllStock] = useState<boolean>(false);
+  const [stockSavedAt, setStockSavedAt] = useState<Date | null>(null);
 
   // Section 2: Purchase form state
   const [purchaseType, setPurchaseType] = useState<"supplier" | "settlement">("supplier");
@@ -222,6 +224,7 @@ export default function PurchasesStockPage() {
             : row
         )
       );
+      setSavedAllStock(false);
     },
     []
   );
@@ -235,6 +238,7 @@ export default function PurchasesStockPage() {
             : row
         )
       );
+      setSavedAllStock(false);
     },
     []
   );
@@ -248,6 +252,7 @@ export default function PurchasesStockPage() {
             : row
         )
       );
+      setSavedAllStock(false);
     },
     []
   );
@@ -255,6 +260,7 @@ export default function PurchasesStockPage() {
   const handleSaveStock = async () => {
     setSavedAllStock(false);
     try {
+      const savedRows: { name: string; bags: number }[] = [];
       for (const row of allStock) {
         const res = await fetch("/api/stock", {
           method: "POST",
@@ -270,10 +276,17 @@ export default function PurchasesStockPage() {
           const err = await res.json().catch(() => ({}));
           throw new Error(err.detail || err.error || "Failed to update stock");
         }
+        savedRows.push({ name: row.productName, bags: row.totalKg > 0 ? Math.round(row.bags * 100) / 100 : 0 });
       }
       await loadAllData();
-      toast.success("Stock saved successfully!");
+      const totalProducts = savedRows.length;
+      const nonZero = savedRows.filter(r => r.bags > 0).length;
+      toast.success("✓ Changes saved successfully!", {
+        description: `${totalProducts} product(s) updated • ${nonZero} with stock • ${totalProducts - nonZero} zeroed out`,
+        duration: 5000,
+      });
       setSavedAllStock(true);
+      setStockSavedAt(new Date());
     } catch (e: any) {
       toast.error(e.message || "Failed to save stock");
     }
@@ -554,7 +567,18 @@ export default function PurchasesStockPage() {
             </Table>
           </div>
         </div>
-        <div className="flex justify-end">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+          {savedAllStock && stockSavedAt && (
+            <div className="flex items-center gap-2 rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-800">
+              <CheckCircle2 className="size-4 text-green-600 shrink-0" />
+              <span>
+                <strong>Changes saved successfully</strong>
+                <span className="text-green-600 ml-1.5">
+                  at {stockSavedAt.toLocaleTimeString("en-PK", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                </span>
+              </span>
+            </div>
+          )}
           <Button onClick={handleSaveStock} disabled={savedAllStock} className={cn("gap-2", savedAllStock && "bg-green-600 hover:bg-green-600")}>
             {savedAllStock ? <><Save className="size-4" /> Saved ✓</> : <><Save className="size-4" /> Save Stock Changes</>}
           </Button>
