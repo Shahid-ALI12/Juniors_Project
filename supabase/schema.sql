@@ -34,9 +34,10 @@ create table if not exists products (
   name         text not null,
   default_rate numeric(12,2) not null default 0,
   is_active    boolean not null default true,
-  created_at   timestamptz not null default now()
+  created_at   timestamptz not null default now(),
+  deleted_at   timestamptz
 );
-create unique index if not exists products_name_key on products (lower(name));
+create unique index if not exists products_name_key on products (lower(name)) where deleted_at is null;
 
 create table if not exists locations (
   id         bigint generated always as identity primary key,

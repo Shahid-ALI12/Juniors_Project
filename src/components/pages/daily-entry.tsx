@@ -99,7 +99,7 @@ export default function DailyEntryPage() {
 
   const loadMasterData = useCallback(async () => {
     const errors: string[] = [];
-    try { setProducts(await fetchCached<Product>("products", "/api/products", "products")); }
+    try { setProducts(await fetchCached<Product>("products", "/api/products?active=true", "products")); }
     catch (e: any) { errors.push("Products"); }
     try { setCustomers(await fetchCached<Customer>("customers", "/api/customers?active=true", "customers")); }
     catch (e: any) { errors.push("Customers"); }

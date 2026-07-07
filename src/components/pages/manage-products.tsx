@@ -26,6 +26,7 @@ import {
   Loader2,
   Trash2,
   RotateCcw,
+  Ban,
 } from "lucide-react";
 import { toast } from "sonner";
 import { fetchCached, invalidateCache, apiError } from "@/store";
@@ -37,15 +38,15 @@ export default function ManageProducts() {
   const [editedRates, setEditedRates] = useState<Record<number, string>>({});
   const [updatedIds, setUpdatedIds] = useState<Set<number>>(new Set());
   const [updating, setUpdating] = useState<Set<number>>(new Set());
-  const [showInactive, setShowInactive] = useState(false);
 
   const [newName, setNewName] = useState("");
   const [newRate, setNewRate] = useState("");
   const [adding, setAdding] = useState(false);
 
-  // Delete confirm state
+  // Confirm dialog (shared by both soft-delete and permanent-delete)
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmProduct, setConfirmProduct] = useState<Product | null>(null);
+  const [confirmMode, setConfirmMode] = useState<"soft" | "permanent">("soft");
   const [deleting, setDeleting] = useState(false);
 
   const loadData = useCallback(async () => {
@@ -133,7 +134,7 @@ export default function ManageProducts() {
       toast.error("Please enter a valid starting rate greater than 0.");
       return;
     }
-    if (products.some((p) => p.name.toLowerCase() === trimmedName.toLowerCase())) {
+    if (products.some((p) => p.name.toLowerCase() === trimmedName.toLowerCase() && !p.deleted_at)) {
       toast.error("A product with this name already exists.");
       return;
     }
@@ -164,8 +165,17 @@ export default function ManageProducts() {
     }
   }, [newName, newRate, products]);
 
-  const askDelete = useCallback((product: Product) => {
+  // ─── Soft-delete (deactivate) ───
+  const askSoftDelete = useCallback((product: Product) => {
     setConfirmProduct(product);
+    setConfirmMode("soft");
+    setConfirmOpen(true);
+  }, []);
+
+  // ─── Permanent delete (tombstone) ───
+  const askPermanentDelete = useCallback((product: Product) => {
+    setConfirmProduct(product);
+    setConfirmMode("permanent");
     setConfirmOpen(true);
   }, []);
 
@@ -173,7 +183,11 @@ export default function ManageProducts() {
     if (!confirmProduct) return;
     setDeleting(true);
     try {
-      const res = await fetch(`/api/products?id=${confirmProduct.id}`, { method: "DELETE" });
+      const isPermanent = confirmMode === "permanent";
+      const url = isPermanent
+        ? `/api/products?id=${confirmProduct.id}&permanent=true`
+        : `/api/products?id=${confirmProduct.id}`;
+      const res = await fetch(url, { method: "DELETE" });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail || err.error || "Failed to delete product");
@@ -182,22 +196,34 @@ export default function ManageProducts() {
       invalidateCache("products");
       invalidateCache("stock");
 
-      if (data.soft) {
-        // Soft delete — mark inactive in local state
+      if (isPermanent) {
+        // Permanent delete → remove from local state entirely.
+        // Historical sales/purchases keep their product_id link and the
+        // product name will still render on old receipts because the
+        // row is tombstoned (deleted_at set), not physically removed.
+        setProducts((prev) => prev.filter((p) => p.id !== confirmProduct.id));
+        setStockData((prev) => prev.filter((s) => s.product_id !== confirmProduct.id));
+        toast.success(`"${confirmProduct.name}" permanently deleted`, {
+          description:
+            "Product sabhi dropdowns aur Manage Products list se hata diya gaya. Historical sales/purchases records safe hain — purani receipts par product name abhi bhi dikhega.",
+          duration: 7000,
+        });
+      } else if (data.soft) {
+        // Soft-delete → mark inactive in local state, keep visible in Inactive section
         setProducts((prev) =>
           prev.map((p) => (p.id === confirmProduct.id ? { ...p, is_active: false } : p))
         );
         toast.success(`"${confirmProduct.name}" deactivated`, {
           description:
-            "Is product ke sales/purchases records maujood hain, is liye permanently delete nahi hua. Historical records safe hain.",
+            "Product inactive ho gaya. Nai sales/purchases me use nahi hoga. Agar chahein to neeche 'Inactive Products' section se restore ya permanently delete kar sakte hain.",
           duration: 6000,
         });
       } else {
-        // Hard delete — remove from local state
+        // No references → API hard-deleted (rare path for soft-delete flow)
         setProducts((prev) => prev.filter((p) => p.id !== confirmProduct.id));
         setStockData((prev) => prev.filter((s) => s.product_id !== confirmProduct.id));
-        toast.success(`"${confirmProduct.name}" permanently deleted`, {
-          description: "Product aur uski stock entry database se remove ho gayi.",
+        toast.success(`"${confirmProduct.name}" deleted`, {
+          description: "Product database se remove ho gaya — koi historical records nahi the.",
         });
       }
       setConfirmOpen(false);
@@ -207,7 +233,7 @@ export default function ManageProducts() {
     } finally {
       setDeleting(false);
     }
-  }, [confirmProduct]);
+  }, [confirmProduct, confirmMode]);
 
   const handleRestore = useCallback(async (product: Product) => {
     try {
@@ -236,58 +262,60 @@ export default function ManageProducts() {
     );
   }
 
+  // Tombstoned products (deleted_at set) are NEVER returned by GET /api/products
+  // (filtered server-side), so we don't need to filter them again here.
+  // The lists below show only living products: active + soft-deleted (inactive).
   const activeProducts = products.filter((p) => p.is_active);
   const inactiveProducts = products.filter((p) => !p.is_active);
-  const visibleProducts = showInactive
-    ? [...activeProducts, ...inactiveProducts]
-    : activeProducts;
+
+  const confirmTitle =
+    confirmMode === "permanent"
+      ? `Permanently delete "${confirmProduct?.name ?? ""}"?`
+      : `Deactivate "${confirmProduct?.name ?? ""}"?`;
+
+  const confirmDescription =
+    confirmMode === "permanent"
+      ? "Ye product sabhi dropdowns, sale/purchase forms, aur is list se hamesha ke liye hata diya jayega. Lekin is product ki purani sales aur purchases records SAFE rahengi — purani receipts par product name abhi bhi dikhega. Ye action reverse nahi hoga."
+      : "Ye product inactive ho jayega (nai sales/purchases me use nahi hoga) lekin is list ke 'Inactive Products' section me dikhayi dega. Wahan se aap isko Restore ya Permanently Delete kar sakte hain. Historical records safe rahenge.";
+
+  const confirmLabel =
+    confirmMode === "permanent"
+      ? (deleting ? "Deleting..." : "Yes, Permanently Delete")
+      : (deleting ? "Deactivating..." : "Yes, Deactivate");
 
   return (
     <div className="space-y-6">
       <ConfirmAction
         open={confirmOpen}
         onOpenChange={(o) => { setConfirmOpen(o); if (!o) setConfirmProduct(null); }}
-        title={`Delete "${confirmProduct?.name ?? ""}"?`}
-        description="Ye product database se remove hoga. Agar is product ke sales ya purchases maujood hain, to woh historical records barqarar rakhne ke liye product sirf deactivate ho jayega (active = false). Warna permanently delete ho jayega."
-        confirmLabel={deleting ? "Deleting..." : "Yes, Delete"}
+        title={confirmTitle}
+        description={confirmDescription}
+        confirmLabel={confirmLabel}
         variant="danger"
         onConfirm={handleConfirmDelete}
         loading={deleting}
       />
 
-      <PageHeader title="Manage Products & Rates" subtitle="Add products, set default selling rates, and remove unused ones." />
+      <PageHeader title="Manage Products & Rates" subtitle="Add products, set default selling rates, deactivate, or permanently delete." />
 
-      <section className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden" aria-label="Current products">
+      {/* ───────────── ACTIVE PRODUCTS ───────────── */}
+      <section className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden" aria-label="Active products">
         <div className="px-4 sm:px-6 pt-5 pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center gap-2">
-            <BoxesIcon className="size-5 text-slate-700" />
-            <h2 className="text-lg font-bold text-slate-900">Current Products</h2>
-            <span className="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
-              {activeProducts.length} active
-              {inactiveProducts.length > 0 && (
-                <span className="text-slate-500"> • {inactiveProducts.length} inactive</span>
-              )}
+            <BoxesIcon className="size-5 text-emerald-600" />
+            <h2 className="text-lg font-bold text-slate-900">Active Products</h2>
+            <span className="text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
+              {activeProducts.length}
             </span>
           </div>
-
-          {inactiveProducts.length > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowInactive((s) => !s)}
-              className="text-xs gap-1.5 text-slate-600 hover:text-slate-900"
-            >
-              {showInactive ? "Hide inactive" : `Show ${inactiveProducts.length} inactive`}
-            </Button>
-          )}
         </div>
 
         <div className="mx-4 sm:mx-6 mb-4 flex items-start gap-2 rounded-xl bg-amber-50 border border-amber-200/60 px-4 py-3 text-sm text-amber-800">
           <Info className="size-4 mt-0.5 shrink-0" />
-          <p>Rates here are just the starting suggestion shown when entering a sale — you can always override the rate for any individual sale. Delete button sirf tab kaam karega jab product kisi sale/purchase me use nahi hua.</p>
+          <p>Rates here are just the starting suggestion shown when entering a sale — you can always override the rate for any individual sale. Trash icon product ko inactive kar dega (soft-delete). Permanently delete karne ke liye neeche <strong>Inactive Products</strong> section me jayein.</p>
         </div>
 
-        <div className="max-h-[32rem] overflow-y-auto">
+        <div className="max-h-[28rem] overflow-y-auto">
           <Table>
             <TableHeader className="bg-slate-100/80 sticky top-0 z-10">
               <TableRow className="hover:bg-transparent">
@@ -299,37 +327,22 @@ export default function ManageProducts() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {visibleProducts.map((product, index) => {
+              {activeProducts.map((product, index) => {
                 const isUpdated = updatedIds.has(product.id);
                 const isUpdating = updating.has(product.id);
-                const isInactive = !product.is_active;
                 return (
-                  <TableRow
-                    key={product.id}
-                    className={cn(isInactive && "opacity-50 bg-slate-50/50")}
-                  >
+                  <TableRow key={product.id}>
                     <TableCell className="text-center text-slate-400 font-medium">{index + 1}</TableCell>
-                    <TableCell className="font-medium text-slate-900">
-                      <div className="flex items-center gap-2">
-                        <span>{product.name}</span>
-                        {isInactive && (
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-red-600 bg-red-100 px-1.5 py-0.5 rounded">
-                            Inactive
-                          </span>
-                        )}
-                      </div>
-                    </TableCell>
+                    <TableCell className="font-medium text-slate-900">{product.name}</TableCell>
                     <TableCell className="text-center">
                       <Input
                         type="text"
                         inputMode="numeric"
                         value={editedRates[product.id] ?? ""}
                         onChange={(e) => handleRateChange(product.id, e.target.value)}
-                        disabled={isInactive}
                         className={cn(
                           "w-28 mx-auto text-center h-8 text-sm font-mono tabular-nums",
-                          isUpdated && "border-emerald-300 focus-visible:border-emerald-400 focus-visible:ring-emerald-200",
-                          isInactive && "bg-slate-100 cursor-not-allowed"
+                          isUpdated && "border-emerald-300 focus-visible:border-emerald-400 focus-visible:ring-emerald-200"
                         )}
                       />
                     </TableCell>
@@ -346,48 +359,34 @@ export default function ManageProducts() {
                     </TableCell>
                     <TableCell className="text-center">
                       <div className="flex items-center justify-center gap-1.5">
-                        {isInactive ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleRestore(product)}
-                            className="gap-1.5 text-xs font-semibold text-emerald-700 border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800"
-                            title="Reactivate product"
-                          >
-                            <RotateCcw className="size-3.5" /> Restore
-                          </Button>
-                        ) : (
-                          <>
-                            <Button
-                              size="sm"
-                              variant={isUpdated ? "ghost" : "outline"}
-                              onClick={() => handleUpdateRate(product.id)}
-                              disabled={isUpdating}
-                              className={cn("gap-1.5 text-xs font-semibold transition-all", isUpdated && "text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50")}
-                            >
-                              {isUpdating ? <Loader2 className="size-3.5 animate-spin" /> : isUpdated ? <><CheckCircle2 className="size-3.5" /> Saved</> : <><Save className="size-3.5" /> Update</>}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => askDelete(product)}
-                              disabled={isUpdating}
-                              className="gap-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 hover:text-red-700"
-                              title="Delete / Deactivate product"
-                            >
-                              <Trash2 className="size-3.5" />
-                            </Button>
-                          </>
-                        )}
+                        <Button
+                          size="sm"
+                          variant={isUpdated ? "ghost" : "outline"}
+                          onClick={() => handleUpdateRate(product.id)}
+                          disabled={isUpdating}
+                          className={cn("gap-1.5 text-xs font-semibold transition-all", isUpdated && "text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50")}
+                        >
+                          {isUpdating ? <Loader2 className="size-3.5 animate-spin" /> : isUpdated ? <><CheckCircle2 className="size-3.5" /> Saved</> : <><Save className="size-3.5" /> Update</>}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => askSoftDelete(product)}
+                          disabled={isUpdating}
+                          className="gap-1.5 text-xs font-semibold text-amber-600 hover:bg-amber-50 hover:text-amber-700"
+                          title="Deactivate product (soft delete)"
+                        >
+                          <Ban className="size-3.5" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
                 );
               })}
-              {visibleProducts.length === 0 && (
+              {activeProducts.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center py-10 text-slate-400 text-sm">
-                    No products yet — add one below.
+                    No active products yet — add one below.
                   </TableCell>
                 </TableRow>
               )}
@@ -396,6 +395,94 @@ export default function ManageProducts() {
         </div>
       </section>
 
+      {/* ───────────── INACTIVE PRODUCTS ───────────── */}
+      {inactiveProducts.length > 0 && (
+        <section className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden" aria-label="Inactive products">
+          <div className="px-4 sm:px-6 pt-5 pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Ban className="size-5 text-slate-500" />
+              <h2 className="text-lg font-bold text-slate-900">Inactive Products</h2>
+              <span className="text-xs font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
+                {inactiveProducts.length}
+              </span>
+            </div>
+          </div>
+
+          <div className="mx-4 sm:mx-6 mb-4 flex items-start gap-2 rounded-xl bg-blue-50 border border-blue-200/60 px-4 py-3 text-sm text-blue-800">
+            <Info className="size-4 mt-0.5 shrink-0" />
+            <p>
+              Yahan <strong>Restore</strong> se product dobara active kar sakte hain, ya <strong>Delete Permanently</strong> se hamesha ke liye hata sakte hain. Permanently delete karne ke baad bhi is product ki <strong>historical sales/purchases records safe rahengi</strong> — purani receipts par name abhi bhi dikhega. Bas nai sales/purchases me yeh product available nahi hoga.
+            </p>
+          </div>
+
+          <div className="max-h-[24rem] overflow-y-auto">
+            <Table>
+              <TableHeader className="bg-slate-100/80 sticky top-0 z-10">
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-12 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">#</TableHead>
+                  <TableHead className="text-xs font-semibold text-slate-500 uppercase tracking-wider min-w-[180px]">Product Name</TableHead>
+                  <TableHead className="text-xs font-semibold text-slate-500 uppercase tracking-wider text-center min-w-[120px]">Last Rate (Rs./bag)</TableHead>
+                  <TableHead className="text-xs font-semibold text-slate-500 uppercase tracking-wider text-center min-w-[120px]">Stock (bags)</TableHead>
+                  <TableHead className="text-xs font-semibold text-slate-500 uppercase tracking-wider text-center min-w-[220px]">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {inactiveProducts.map((product, index) => (
+                  <TableRow key={product.id} className="bg-slate-50/40">
+                    <TableCell className="text-center text-slate-400 font-medium">{index + 1}</TableCell>
+                    <TableCell className="font-medium text-slate-700">
+                      <div className="flex items-center gap-2">
+                        <span>{product.name}</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 bg-slate-200 px-1.5 py-0.5 rounded">
+                          Inactive
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-center text-sm text-slate-600 font-mono tabular-nums">
+                      Rs. {(product.default_rate ?? 0).toLocaleString("en-PK")}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {(() => {
+                        const entry = stockData.find((s) => s.product_id === product.id);
+                        const stock = entry?.stock_quantity ?? 0;
+                        return (
+                          <span className="text-sm text-slate-500 font-medium">
+                            {stock} bags
+                          </span>
+                        );
+                      })()}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleRestore(product)}
+                          className="gap-1.5 text-xs font-semibold text-emerald-700 border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800"
+                          title="Reactivate product"
+                        >
+                          <RotateCcw className="size-3.5" /> Restore
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => askPermanentDelete(product)}
+                          className="gap-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 hover:text-red-700"
+                          title="Permanently delete (historical records stay safe)"
+                        >
+                          <Trash2 className="size-3.5" /> Delete Permanently
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </section>
+      )}
+
+      {/* ───────────── ADD NEW PRODUCT ───────────── */}
       <section className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-6" aria-label="Add a new product">
         <div className="flex items-center gap-2 mb-5">
           <PackagePlus className="size-5 text-slate-700" />

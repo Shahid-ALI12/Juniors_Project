@@ -41,6 +41,10 @@ export interface Product {
   default_rate: number;
   is_active: boolean;
   created_at: string;
+  // Tombstone for permanent UI deletion. NULL = visible in UI.
+  // Set = product removed from all dropdowns / Manage Products page,
+  // but the DB row stays so historical sales/purchases keep working.
+  deleted_at?: string | null;
 }
 
 export interface ProductStock {

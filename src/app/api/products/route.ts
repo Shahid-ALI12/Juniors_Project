@@ -1,18 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
-import { getAllProducts, createProduct, updateProduct, deleteProduct, restoreProduct } from "@/lib/data/products";
+import { getAllProducts, createProduct, updateProduct, deleteProduct, restoreProduct, permanentDeleteProduct } from "@/lib/data/products";
 import { getErrorDetail } from "@/lib/api-error";
+import { admin } from "@/lib/supabase/server-admin";
 
 // Prevent Next.js from caching GET responses
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   try {
-    const products = await getAllProducts();
-    return NextResponse.json({ products });
+    // Query params:
+    //   ?active=true  → return only is_active=true AND deleted_at IS NULL
+    //                   (used by sale/purchase dropdowns)
+    //   (no params)   → return everything except tombstoned (deleted_at IS NULL)
+    //                   (used by Manage Products page so it can show inactive ones)
+    const url = new URL(request.url);
+    const onlyActive = url.searchParams.get("active") === "true";
+
+    let q = admin.from("products").select("*").is("deleted_at", null);
+    if (onlyActive) q = q.eq("is_active", true);
+    q = q.order("name", { ascending: true });
+
+    const { data, error } = await q;
+    if (error) throw error;
+    return NextResponse.json({ products: data || [] });
   } catch (err) {
     console.error("Fetch products error:", err);
     return NextResponse.json({ error: "Failed to fetch products", detail: getErrorDetail(err) }, { status: 500 });
@@ -58,7 +72,11 @@ export async function PUT(request: NextRequest) {
 }
 
 // DELETE — soft-delete (mark is_active=false) if product has sales/purchases
-// references; otherwise hard-delete. Use ?restore=true to reactivate.
+// references; otherwise hard-delete.
+//   ?restore=true     → reactivate a soft-deleted (is_active=false) product
+//   ?permanent=true   → tombstone: remove product from ALL UI surfaces but
+//                       keep the row in DB so historical sales/purchases
+//                       keep their product_id link and product name.
 export async function DELETE(request: NextRequest) {
   const auth = await requireUser();
   if (!auth.ok) return auth.response;
@@ -67,12 +85,18 @@ export async function DELETE(request: NextRequest) {
     const url = new URL(request.url);
     const id = Number(url.searchParams.get("id"));
     const restore = url.searchParams.get("restore") === "true";
+    const permanent = url.searchParams.get("permanent") === "true";
 
     if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
 
     if (restore) {
       const product = await restoreProduct(id);
       return NextResponse.json({ product, restored: true });
+    }
+
+    if (permanent) {
+      const result = await permanentDeleteProduct(id);
+      return NextResponse.json({ deleted: true, permanent: true, ...result });
     }
 
     const result = await deleteProduct(id);

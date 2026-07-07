@@ -219,7 +219,7 @@ export default function CustomMixOrder() {
     (async () => {
       setLoading(true);
       const failed: string[] = [];
-      try { setProducts(await fetchCached<Product>("products", "/api/products", "products")); }
+      try { setProducts(await fetchCached<Product>("products", "/api/products?active=true", "products")); }
       catch { failed.push("products"); }
       if (failed.length > 0) toast.error(`Failed to load: ${failed.join(", ")}`);
       setLoading(false);
