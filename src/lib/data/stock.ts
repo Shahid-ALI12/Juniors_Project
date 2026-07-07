@@ -42,7 +42,7 @@ export async function upsertStock(params: {
 }): Promise<StockRow> {
   const { data, error } = await admin
     .from("product_stock")
-    .upsert(params, { onConflict: "product_id,location_id" })
+    .upsert(params, { onConflict: "product_id" })
     .select()
     .single();
   if (error) throw error;
