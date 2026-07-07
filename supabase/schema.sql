@@ -51,8 +51,18 @@ create table if not exists customers (
   type       text not null default 'credit' check (type in ('credit','cash')),
   phone      text,
   is_active  boolean not null default true,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- Tombstone for permanent UI deletion. NULL = visible in UI.
+  -- Set = customer removed from all dropdowns / Manage Customers page,
+  -- but the DB row stays so historical sales/purchases keep working.
+  deleted_at timestamptz
 );
+
+-- Partial unique index: prevents duplicate customer names among
+-- non-tombstoned rows, but allows reusing a tombstoned name in future.
+create unique index if not exists customers_name_active_key
+  on customers (lower(name))
+  where deleted_at is null;
 
 create table if not exists suppliers (
   id         bigint generated always as identity primary key,

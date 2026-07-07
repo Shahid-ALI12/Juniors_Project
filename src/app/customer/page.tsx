@@ -9,13 +9,15 @@ import { useAppStore, masterCache } from "@/store";
 import {
   LayoutDashboard, FileText, BookOpen, CheckCircle,
   Package, Settings, FlaskConical, Landmark, LogOut, User, Info, Database,
-  HardHat,
+  HardHat, UserPen, Users,
 } from "lucide-react";
 import { toast } from "sonner";
 
 const Dashboard = dynamic(() => import("@/components/pages/dashboard"), { ssr: false, loading: () => <PageLoader /> });
 const DailyEntry = dynamic(() => import("@/components/pages/daily-entry"), { ssr: false, loading: () => <PageLoader /> });
 const CustomerKhata = dynamic(() => import("@/components/pages/customer-khata"), { ssr: false, loading: () => <PageLoader /> });
+const EditCustomer = dynamic(() => import("@/components/pages/edit-customer"), { ssr: false, loading: () => <PageLoader /> });
+const ManageCustomers = dynamic(() => import("@/components/pages/manage-customers"), { ssr: false, loading: () => <PageLoader /> });
 const DayReconciliation = dynamic(() => import("@/components/pages/day-reconciliation"), { ssr: false, loading: () => <PageLoader /> });
 const CashManagement = dynamic(() => import("@/components/pages/cash-management"), { ssr: false, loading: () => <PageLoader /> });
 const ManageProducts = dynamic(() => import("@/components/pages/manage-products"), { ssr: false, loading: () => <PageLoader /> });
@@ -34,6 +36,8 @@ const pageMap: Record<string, React.ComponentType<{ customer?: AppCustomer }>> =
   dashboard: Dashboard,
   "daily-entry": DailyEntry,
   "customer-khata": CustomerKhata,
+  "edit-customer": EditCustomer,
+  "manage-customers": ManageCustomers,
   reconciliation: DayReconciliation,
   "cash-mgmt": CashManagement,
   "manage-products": ManageProducts,
@@ -55,7 +59,11 @@ const navSections = [
       { id: "cash-mgmt", label: "Cash Management", icon: Landmark },
     ],
   },
-  { label: "Customers", items: [{ id: "customer-khata", label: "Customer Khata", icon: BookOpen }] },
+  { label: "Customers", items: [
+    { id: "customer-khata", label: "Customer Khata", icon: BookOpen },
+    { id: "manage-customers", label: "Manage Customers", icon: Users },
+    { id: "edit-customer", label: "Edit Customer (OB)", icon: UserPen },
+  ] },
   {
     label: "Labours",
     items: [

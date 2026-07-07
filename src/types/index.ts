@@ -68,6 +68,10 @@ export interface Customer {
   // re-entering all historical sales). Added to total bill on every
   // statement so balance_due = opening_balance + total_bill - cash_paid - goods.
   opening_balance: number;
+  // Tombstone for permanent UI deletion. NULL = visible in UI.
+  // Set = customer removed from all dropdowns / Manage Customers page,
+  // but the DB row stays so historical sales/purchases keep working.
+  deleted_at?: string | null;
 }
 
 export interface Sale {

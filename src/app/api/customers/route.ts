@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
-import { getAllCustomers, createCustomer as createBizCustomer, updateCustomer as updateBizCustomer, deleteCustomer } from "@/lib/data/customers";
+import {
+  getAllCustomers,
+  createCustomer as createBizCustomer,
+  updateCustomer as updateBizCustomer,
+  deactivateCustomer,
+  restoreCustomer,
+  permanentDeleteCustomer,
+  deleteCustomer,
+} from "@/lib/data/customers";
 import { getErrorDetail } from "@/lib/api-error";
 
 // Prevent Next.js from caching GET responses
@@ -81,8 +89,34 @@ export async function DELETE(request: NextRequest) {
     const id = Number(searchParams.get("id"));
     if (!id) return NextResponse.json({ error: "ID is required" }, { status: 400 });
 
-    await deleteCustomer(id);
-    return NextResponse.json({ success: true });
+    const mode = searchParams.get("mode"); // undefined | "soft" | "permanent" | "restore"
+
+    if (mode === "restore") {
+      await restoreCustomer(id);
+      return NextResponse.json({ success: true, action: "restored" });
+    }
+
+    if (mode === "permanent") {
+      await permanentDeleteCustomer(id);
+      return NextResponse.json({ success: true, action: "permanent_deleted" });
+    }
+
+    // Default behavior: try hard-delete (works only if no FK references).
+    // If FK restrict blocks it, fall back to soft-delete so the user
+    // still sees the customer on the Manage page (with restore option).
+    try {
+      await deleteCustomer(id);
+      return NextResponse.json({ success: true, action: "hard_deleted" });
+    } catch (fkErr: any) {
+      // FK restrict — fall back to soft-delete
+      console.warn("Hard delete failed (likely FK restrict), falling back to soft-delete:", fkErr?.message);
+      await deactivateCustomer(id);
+      return NextResponse.json({
+        success: true,
+        action: "soft_deleted",
+        note: "Customer has historical sales — soft-deleted instead. Use 'Delete Permanently' to tombstone.",
+      });
+    }
   } catch (err) {
     console.error("Delete customer error:", err);
     return NextResponse.json({ error: "Failed to delete customer", detail: getErrorDetail(err) }, { status: 500 });

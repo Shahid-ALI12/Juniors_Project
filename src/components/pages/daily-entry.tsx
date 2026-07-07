@@ -163,6 +163,21 @@ export default function DailyEntryPage() {
     return customers.filter((c) => c.is_active && c.name.toLowerCase().includes(q));
   }, [customerSearch, customers]);
 
+  // ── Track whether the OB input differs from the customer's saved value ──
+  // Used to show a "Modified" badge + confirm to the user that the saved
+  // opening_balance will be overwritten when the sale is completed.
+  const savedOpeningBalance = useMemo(() => {
+    if (!selectedCustomerId) return null;
+    const c = customers.find((x) => String(x.id) === selectedCustomerId);
+    return c ? c.opening_balance ?? 0 : null;
+  }, [selectedCustomerId, customers]);
+
+  const obModified = useMemo(() => {
+    if (savedOpeningBalance === null) return false;
+    const current = parseFloat(openingBalance) || 0;
+    return Math.abs(current - savedOpeningBalance) > 0.001;
+  }, [openingBalance, savedOpeningBalance]);
+
   const handleCustomerSelect = (id: string) => {
     setSelectedCustomerId(id);
     const c = customers.find((x) => String(x.id) === id);
@@ -228,30 +243,37 @@ export default function DailyEntryPage() {
       const existing = customers.find(
         (c) => c.name.toLowerCase() === customerName.trim().toLowerCase()
       );
+      // Track whether OB was actually changed so we can toast about it
+      // after the sale completes.
+      let obWasUpdated = false;
+      let obOldValue = 0;
+      let obNewValue = 0;
       if (existing) {
         customerId = existing.id;
-        // Persist opening balance update (PUT is cheap — even if the value
-        // is unchanged we still send it; the API normalises to a number).
-        // We do this BEFORE creating the sale so the balance_due calc on the
-        // next reload reflects the latest opening balance.
-        try {
-          const upRes = await fetch("/api/customers", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: customerId, opening_balance: obNum }),
-          });
-          if (upRes.ok) {
-            // Update local state so the customer dropdown reflects the new OB
-            const upData = await upRes.json();
-            if (upData?.customer) {
+        obOldValue = existing.opening_balance ?? 0;
+        obNewValue = obNum;
+        // Persist opening balance update — only send PUT if the value
+        // actually changed, to avoid unnecessary writes. We do this BEFORE
+        // creating the sale so the balance_due calc on the next reload
+        // reflects the latest opening balance.
+        if (Math.abs(obNum - obOldValue) > 0.001) {
+          try {
+            const upRes = await fetch("/api/customers", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: customerId, opening_balance: obNum }),
+            });
+            if (upRes.ok) {
+              obWasUpdated = true;
+              // Update local state so the customer dropdown reflects the new OB
               setCustomers((prev) =>
                 prev.map((c) => (c.id === customerId ? { ...c, opening_balance: obNum } : c))
               );
             }
+          } catch {
+            // Non-fatal — sale should still go through even if OB update fails
+            console.warn("Failed to update opening balance for customer", customerId);
           }
-        } catch {
-          // Non-fatal — sale should still go through even if OB update fails
-          console.warn("Failed to update opening balance for customer", customerId);
         }
       } else {
         const res = await fetch("/api/customers", {
@@ -301,7 +323,18 @@ export default function DailyEntryPage() {
       setOpeningBalance("0");
       setCustomerName("");
       setSelectedCustomerId("");
-      toast.success(`Sale completed for ${customerName} — Rs. ${fmt(grandTotal)} total bill.`);
+
+      // ── Compose the success toast ──
+      // If the OB was changed for an existing customer, mention the overwrite
+      // explicitly so the user knows the saved opening_balance was updated.
+      if (obWasUpdated) {
+        toast.success(`Sale completed for ${customerName} — Rs. ${fmt(grandTotal)} total bill.`, {
+          description: `Opening balance OVERWRITTEN: Rs. ${fmt(obOldValue)} → Rs. ${fmt(obNewValue)} for ${existing?.name ?? customerName}.`,
+          duration: 6000,
+        });
+      } else {
+        toast.success(`Sale completed for ${customerName} — Rs. ${fmt(grandTotal)} total bill.`);
+      }
       invalidateCache("stock");
       invalidateCache("customers");
       await Promise.all([loadDayData(date), loadMasterData()]);
@@ -693,11 +726,16 @@ export default function DailyEntryPage() {
             </div>
 
             {/* Opening Balance — one-time previous balance the user can enter */}
-            <div className="rounded-lg border border-amber-200 bg-amber-50/60 px-4 py-3 space-y-2">
+            <div className={`rounded-lg border px-4 py-3 space-y-2 transition-colors ${obModified ? "border-blue-300 bg-blue-50/60" : "border-amber-200 bg-amber-50/60"}`}>
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex-1 min-w-[200px] space-y-1.5">
-                  <Label className="text-xs uppercase text-amber-700 font-semibold flex items-center gap-1.5">
+                  <Label className="text-xs uppercase text-amber-700 font-semibold flex items-center gap-1.5 flex-wrap">
                     Opening Balance (Rs.) — purana balance
+                    {obModified && savedOpeningBalance !== null && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-blue-600 text-white px-2 py-0.5 text-[10px] font-bold tracking-normal normal-case">
+                        Modified · will overwrite Rs. {fmt(savedOpeningBalance)}
+                      </span>
+                    )}
                   </Label>
                   <Input
                     type="number"
@@ -712,7 +750,9 @@ export default function DailyEntryPage() {
                     Agar customer ka koi purana balance hai jo aap ko pata hai (system se pehle ke sales),
                     wo yahan likh dein. Ye customer ki Khata me <strong>opening balance</strong> ke roop me
                     save ho jayega aur har bill me total ke saath add hoga. Existing customer select karne par
-                    purani value auto-fill ho jati hai.
+                    purani value auto-fill ho jati hai.{" "}
+                    <strong className="text-blue-700">Agar value change ki to sale complete karte hi
+                    database me overwrite ho jayega.</strong>
                   </p>
                 </div>
                 <div className="flex flex-col items-end shrink-0">
