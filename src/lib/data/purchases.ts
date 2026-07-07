@@ -123,21 +123,37 @@ async function recordPurchaseFallback(params: {
   if (purErr) throw purErr;
   const purId = (purData as any).id as number;
 
-  // Try to increment stock (best effort, bags only, only if location_id is set)
-  if (params.unit_type === "bags" && params.location_id !== null && params.location_id !== undefined) {
-    try {
-      await admin.from("product_stock").upsert(
+  // Always increment stock (locations concept removed — stock keyed by product_id only).
+  // Handle both 'bags' and 'kg' units: convert kg → bags using bag_weight_kg.
+  // We reuse decrement_stock_fallback with NEGATIVE qty (it clamps via GREATEST,
+  // so adding works too: GREATEST(0 + qty, 0) = qty).
+  try {
+    const bw = params.bag_weight_kg ?? 50;
+    const qtyBags = params.unit_type === "kg"
+      ? (bw > 0 ? params.quantity / bw : params.quantity)
+      : params.quantity;
+
+    // Upsert stock row to make sure it exists (with bag weight if provided)
+    await admin
+      .from("product_stock")
+      .upsert(
         {
           product_id: params.product_id,
-          location_id: params.location_id,
-          stock_quantity: params.quantity,
-          last_bag_weight_kg: params.bag_weight_kg,
+          location_id: null,
+          stock_quantity: 0,
+          last_bag_weight_kg: params.bag_weight_kg ?? null,
         },
-        { onConflict: "product_id,location_id" }
+        { onConflict: "product_id" }
       );
-    } catch (stockErr) {
-      console.warn("Stock upsert failed (non-critical):", stockErr);
-    }
+
+    // Use the decrement RPC with NEGATIVE qty → effectively increments stock
+    await admin.rpc("decrement_stock_fallback", {
+      p_product_id: params.product_id,
+      p_location_id: null,
+      p_quantity: -qtyBags, // negative = increment
+    });
+  } catch (stockErr) {
+    console.warn("Stock increment failed (non-critical):", stockErr);
   }
 
   // Try to insert cash_ledger entry (best effort, only if not goods settlement)

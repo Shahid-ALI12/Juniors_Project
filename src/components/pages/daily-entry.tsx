@@ -442,12 +442,36 @@ export default function DailyEntryPage() {
                     ))}
                   </SelectContent>
                 </Select>
-                {selectedProduct && (
-                  <p className="text-xs text-slate-500 flex items-center gap-1">
-                    <Package className="size-3" />
-                    Stock available: <span className="font-semibold text-slate-700">{fmt(stockBags)} bags</span>
-                  </p>
-                )}
+                {selectedProduct && (() => {
+                  // Calculate how many bags this sale will consume
+                  const bw = bagWeightNum || (stockEntry?.last_bag_weight_kg ?? 50);
+                  const saleBags = unitChoice === "kg"
+                    ? (bw > 0 ? quantityNum / bw : quantityNum)
+                    : quantityNum;
+                  const remainingBags = stockBags - saleBags;
+                  const stockKg = stockBags * bw;
+                  const remainingKg = remainingBags * bw;
+                  const isShort = remainingBags < 0;
+                  return (
+                    <div className={`rounded-md border px-3 py-2 text-xs space-y-1 ${isShort ? "border-red-300 bg-red-50" : "border-slate-200 bg-slate-50"}`}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500 flex items-center gap-1">
+                          <Package className="size-3" /> Current Stock
+                        </span>
+                        <span className="font-semibold text-slate-700">{fmt(stockBags)} bags <span className="text-slate-400">({fmt(stockKg)} kg)</span></span>
+                      </div>
+                      {quantityNum > 0 && (
+                        <div className="flex items-center justify-between">
+                          <span className={isShort ? "text-red-600 font-medium" : "text-slate-500"}>After this sale</span>
+                          <span className={`font-semibold ${isShort ? "text-red-600" : "text-emerald-700"}`}>
+                            {fmt(remainingBags)} bags <span className="text-slate-400">({fmt(remainingKg)} kg)</span>
+                            {isShort && <span className="ml-1 text-red-600 font-bold">⚠ Short</span>}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               <div className="space-y-2">
@@ -505,23 +529,45 @@ export default function DailyEntryPage() {
                         <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Qty</TableHead>
                         <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Rate</TableHead>
                         <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Amount</TableHead>
+                        <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Stock After</TableHead>
                         <TableHead className="w-10" />
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {cartItems.map((item, idx) => (
-                        <TableRow key={idx}>
-                          <TableCell className="font-medium text-sm">{item.product}</TableCell>
-                          <TableCell className="text-sm text-right">{fmt(item.quantity)}{item.unit_type === "kg" ? " kg" : ""}</TableCell>
-                          <TableCell className="text-sm text-right">{fmt(item.rate)}</TableCell>
-                          <TableCell className="text-sm text-right font-semibold">Rs. {fmt(item.amount)}</TableCell>
-                          <TableCell>
-                            <Button variant="ghost" size="icon" className="size-7 text-slate-400 hover:text-red-600" onClick={() => removeItem(idx)}>
-                              <Trash2 className="size-3.5" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {cartItems.map((item, idx) => {
+                        // Compute remaining stock for THIS product after considering
+                        // ALL cart items of the same product (not just this row).
+                        const entry = stockData.find((s) => s.product_id === item.product_id);
+                        const currentBags = entry?.stock_quantity ?? 0;
+                        const bw = item.bag_weight_kg ?? (entry?.last_bag_weight_kg ?? 50);
+                        const totalCartBags = cartItems
+                          .filter((c) => c.product_id === item.product_id)
+                          .reduce((sum, c) => {
+                            const cbw = c.bag_weight_kg ?? bw;
+                            return sum + (c.unit_type === "kg"
+                              ? (cbw > 0 ? c.quantity / cbw : c.quantity)
+                              : c.quantity);
+                          }, 0);
+                        const remaining = currentBags - totalCartBags;
+                        const isShort = remaining < 0;
+                        return (
+                          <TableRow key={idx}>
+                            <TableCell className="font-medium text-sm">{item.product}</TableCell>
+                            <TableCell className="text-sm text-right">{fmt(item.quantity)}{item.unit_type === "kg" ? " kg" : ""}</TableCell>
+                            <TableCell className="text-sm text-right">{fmt(item.rate)}</TableCell>
+                            <TableCell className="text-sm text-right font-semibold">Rs. {fmt(item.amount)}</TableCell>
+                            <TableCell className={`text-sm text-right font-semibold ${isShort ? "text-red-600" : "text-emerald-700"}`}>
+                              {fmt(remaining)} bags
+                              {isShort && <span className="ml-1 text-red-600">⚠</span>}
+                            </TableCell>
+                            <TableCell>
+                              <Button variant="ghost" size="icon" className="size-7 text-slate-400 hover:text-red-600" onClick={() => removeItem(idx)}>
+                                <Trash2 className="size-3.5" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>

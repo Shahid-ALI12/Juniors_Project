@@ -157,22 +157,35 @@ async function createSaleFallback(params: {
     console.warn("Cash ledger insert failed (non-critical):", ledgerErr);
   }
 
-  // Try to decrement stock (best effort, bags only, only if location_id is set)
-  if (params.location_id !== null && params.location_id !== undefined) {
-    for (const item of params.items) {
-      if (item.unit_type === "bags") {
-        try {
-          await admin.rpc("decrement_stock_fallback", {
-            p_product_id: item.product_id,
-            p_location_id: params.location_id,
-            p_quantity: item.quantity,
-            p_bag_weight_kg: item.bag_weight_kg,
-          });
-        } catch {
-          // Stock decrement is best-effort in fallback mode
-          console.warn(`Stock decrement failed for product ${item.product_id} (non-critical)`);
-        }
-      }
+  // Always decrement stock (locations concept removed — stock keyed by product_id only).
+  // Handle both 'bags' and 'kg' units: convert kg → bags using bag_weight_kg.
+  for (const item of params.items) {
+    try {
+      const bw = item.bag_weight_kg ?? 50;
+      const qtyBags = item.unit_type === "kg"
+        ? (bw > 0 ? item.quantity / bw : item.quantity)
+        : item.quantity;
+      // Upsert stock row (location_id NULL)
+      await admin
+        .from("product_stock")
+        .upsert(
+          {
+            product_id: item.product_id,
+            location_id: null,
+            stock_quantity: 0,
+            last_bag_weight_kg: item.bag_weight_kg ?? null,
+          },
+          { onConflict: "product_id" }
+        );
+      // Decrement (clamped to 0 via RPC; here we do a direct update)
+      await admin.rpc("decrement_stock_fallback", {
+        p_product_id: item.product_id,
+        p_location_id: null,
+        p_quantity: qtyBags,
+      });
+    } catch {
+      // Stock decrement is best-effort in fallback mode
+      console.warn(`Stock decrement failed for product ${item.product_id} (non-critical)`);
     }
   }
 }
