@@ -96,6 +96,33 @@ export interface Expense {
   created_at: string;
 }
 
+// ─── Labours Khata ───
+
+export type LabourPaymentType = "salary" | "advance" | "expense";
+
+export interface Labour {
+  id: number;
+  name: string;
+  phone: string | null;
+  role: string | null;
+  daily_wage: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface LabourPayment {
+  id: number;
+  labour_id: number;
+  payment_date: string;
+  amount: number;
+  payment_type: LabourPaymentType;
+  description: string | null;
+  entered_by: string | null;
+  created_at: string;
+  // Joined (optional — only present when API includes it)
+  labours?: Labour;
+}
+
 export interface Supplier {
   id: number;
   name: string;

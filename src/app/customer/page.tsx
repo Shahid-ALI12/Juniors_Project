@@ -9,6 +9,7 @@ import { useAppStore, masterCache } from "@/store";
 import {
   LayoutDashboard, FileText, BookOpen, CheckCircle,
   Package, Settings, FlaskConical, Landmark, LogOut, User, Info, Database,
+  HardHat,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -22,6 +23,7 @@ const PurchasesStock = dynamic(() => import("@/components/pages/purchases-stock"
 const CustomMixOrder = dynamic(() => import("@/components/pages/custom-mix-order"), { ssr: false, loading: () => <PageLoader /> });
 const CustomerAbout = dynamic(() => import("@/components/pages/customer-about"), { ssr: false, loading: () => <PageLoader /> });
 const DatabaseManagement = dynamic(() => import("@/components/pages/database-management"), { ssr: false, loading: () => <PageLoader /> });
+const LabourKhata = dynamic(() => import("@/components/pages/labour-khata"), { ssr: false, loading: () => <PageLoader /> });
 
 function PageLoader() {
   return <div className="flex items-center justify-center py-20"><div className="animate-spin w-7 h-7 border-2 border-emerald-500 border-t-transparent rounded-full" /></div>;
@@ -38,6 +40,7 @@ const pageMap: Record<string, React.ComponentType<{ customer?: AppCustomer }>> =
   "purchases-stock": PurchasesStock,
   "custom-mix": CustomMixOrder,
   "database-mgmt": DatabaseManagement,
+  "labour-khata": LabourKhata,
 };
 
 const navSections = [
@@ -53,6 +56,12 @@ const navSections = [
     ],
   },
   { label: "Customers", items: [{ id: "customer-khata", label: "Customer Khata", icon: BookOpen }] },
+  {
+    label: "Labours",
+    items: [
+      { id: "labour-khata", label: "Labours Khata", icon: HardHat },
+    ],
+  },
   {
     label: "Inventory",
     items: [
