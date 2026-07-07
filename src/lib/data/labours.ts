@@ -105,9 +105,12 @@ export async function getLabourPayments(filters?: {
   payment_type?: LabourPaymentType;
   includeLabour?: boolean;
 }): Promise<LabourPaymentRow[]> {
+  // Cast to `any` first because Supabase's typed parser produces
+  // `ParserError<...>` for the "*, labours(*)" select string at TS level
+  // (runtime works fine — it's only the static types that complain).
   let q = admin
     .from("labour_payments")
-    .select(filters?.includeLabour ? "*, labours(*)" : "*")
+    .select(filters?.includeLabour ? "*, labours(*)" : "*") as any
     .order("payment_date", { ascending: false })
     .order("id", { ascending: false });
 
@@ -170,9 +173,9 @@ export async function getLabourSummaries(activeOnly = false): Promise<LabourSumm
     getAllLabours(activeOnly),
     admin
       .from("labour_payments")
-      .select("labour_id, amount, payment_date")
+      .select("labour_id, amount, payment_date") as any
       .order("payment_date", { ascending: false })
-      .then(({ data, error }) => {
+      .then(({ data, error }: { data: any; error: any }) => {
         if (error) throw error;
         return (data || []) as { labour_id: number; amount: number; payment_date: string }[];
       }),
