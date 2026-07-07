@@ -105,12 +105,15 @@ export async function getLabourPayments(filters?: {
   payment_type?: LabourPaymentType;
   includeLabour?: boolean;
 }): Promise<LabourPaymentRow[]> {
-  // Cast to `any` first because Supabase's typed parser produces
-  // `ParserError<...>` for the "*, labours(*)" select string at TS level
-  // (runtime works fine — it's only the static types that complain).
-  let q = admin
+  // Type the query builder as `any` because Supabase's static parser
+  // produces `ParserError<...>` for the "*, labours(*)" join string
+  // at TS level (runtime works fine — it's only the static types that
+  // complain). Casting mid-chain (`x as any .y()`) breaks SWC's parser,
+  // so we annotate the variable instead.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let q: any = admin
     .from("labour_payments")
-    .select(filters?.includeLabour ? "*, labours(*)" : "*") as any
+    .select(filters?.includeLabour ? "*, labours(*)" : "*")
     .order("payment_date", { ascending: false })
     .order("id", { ascending: false });
 
@@ -169,16 +172,19 @@ export interface LabourSummary {
  * If `activeOnly` is true, only active labours are returned.
  */
 export async function getLabourSummaries(activeOnly = false): Promise<LabourSummary[]> {
+  // Same `as any` mid-chain issue — type the query as `any` upfront.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const paymentsQ: any = admin
+    .from("labour_payments")
+    .select("labour_id, amount, payment_date")
+    .order("payment_date", { ascending: false });
+
   const [labours, payments] = await Promise.all([
     getAllLabours(activeOnly),
-    admin
-      .from("labour_payments")
-      .select("labour_id, amount, payment_date") as any
-      .order("payment_date", { ascending: false })
-      .then(({ data, error }: { data: any; error: any }) => {
-        if (error) throw error;
-        return (data || []) as { labour_id: number; amount: number; payment_date: string }[];
-      }),
+    paymentsQ.then(({ data, error }: { data: any; error: any }) => {
+      if (error) throw error;
+      return (data || []) as { labour_id: number; amount: number; payment_date: string }[];
+    }),
   ]);
 
   // Aggregate by labour_id
