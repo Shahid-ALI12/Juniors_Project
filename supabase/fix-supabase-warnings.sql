@@ -150,6 +150,16 @@ END $$;
 -- IMPORTANT: REVOKE requires the FULL function signature (with arg types),
 -- not just the name. We dynamically fetch the signature from pg_proc and
 -- build the REVOKE statement using pg_get_function_identity_arguments().
+--
+-- CRITICAL: Must also REVOKE FROM PUBLIC, not just anon + authenticated.
+-- PostgreSQL grants EXECUTE on new functions to PUBLIC by default, and
+-- anon/authenticated inherit EXECUTE via PUBLIC membership. Revoking only
+-- from anon/authenticated is NOT enough — warnings will persist.
+--
+-- Safety: All 8 functions are called via the service_role client
+-- (src/lib/supabase/server-admin.ts), which bypasses RLS and EXECUTE
+-- permissions. This REVOKE will NOT break the app. verify_customer_login
+-- SQL function is actually dead code (app verifies via bcrypt in Node.js).
 -- ════════════════════════════════════════════════════════════════════════
 
 DO $$
@@ -183,14 +193,14 @@ BEGIN
         AND p.proname = fn_name
     LOOP
       -- Build the REVOKE statement with the FULL function signature.
-      -- Example: REVOKE EXECUTE ON FUNCTION public.correct_cash_balance(bigint, numeric, date, text) FROM anon;
+      -- Example: REVOKE EXECUTE ON FUNCTION public.correct_cash_balance(bigint, numeric, date, text) FROM PUBLIC, anon, authenticated;
       revoke_sql := format(
-        'REVOKE EXECUTE ON FUNCTION public.%I(%s) FROM anon, authenticated;',
+        'REVOKE EXECUTE ON FUNCTION public.%I(%s) FROM PUBLIC, anon, authenticated;',
         fn_rec.proname,
         fn_rec.arg_types
       );
       EXECUTE revoke_sql;
-      RAISE NOTICE '✅ Revoked EXECUTE on public.%(%) from anon + authenticated',
+      RAISE NOTICE '✅ Revoked EXECUTE on public.%(%) from PUBLIC, anon, authenticated',
         fn_rec.proname, fn_rec.arg_types;
     END LOOP;
   END LOOP;
