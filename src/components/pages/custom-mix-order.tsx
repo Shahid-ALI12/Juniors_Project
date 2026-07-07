@@ -76,46 +76,61 @@ function printMixBill(order: { id: string | number; customer: string; date: stri
   const bagFoot = hasBagInfo ? `<td style="text-align:right">${totalBagAmount > 0 ? totalBagAmount.toLocaleString("en-PK") : ""}</td><td></td><td></td>` : "";
 
   const html = `<!DOCTYPE html><html><head><style>
-    @page{size:auto;margin:6mm}
+    @page{size:auto;margin:5mm}
     *{margin:0;padding:0;box-sizing:border-box}
-    body{font-family:'Courier New',monospace;max-width:300px;margin:0 auto;padding:10px;color:#000;font-size:10px}
-    .farm-banner{background:#085039;color:#fff;text-align:center;padding:8px 6px;border-bottom:2px solid #f5c438}
-    .farm-banner h1{font-size:18px;font-weight:bold;letter-spacing:1px}
-    .farm-banner .tag{font-size:9px;font-style:italic;color:#f5e6c8;margin-top:2px}
-    .farm-banner .addr{font-size:8px;color:#dce6de;margin-top:2px}
-    .farm-banner .inv{font-size:9px;font-weight:bold;letter-spacing:1px;margin-top:3px;color:#f5c438}
-    .info{margin:6px 0;padding:6px;border:1px solid #085039;border-radius:2px}
-    .info-row{display:flex;justify-content:space-between;margin-bottom:2px;font-size:9.5px}
-    .info strong{font-weight:bold}
-    .info-row span:first-child{color:#444}
-    .label{font-size:8px;color:#666;text-transform:uppercase;letter-spacing:0.5px}
-    table{width:100%;border-collapse:collapse;margin:6px 0}
-    th,td{padding:3px 4px;font-size:9.5px}
-    th{background:#085039;color:#fff;text-align:left;border-bottom:1px solid #f5c438;font-weight:bold}
+    body{font-family:'Courier New',monospace;max-width:280px;margin:0 auto;padding:8px;color:#000;font-size:10px}
+    .top-line{height:3px;background:#f5c438;margin-bottom:4px}
+    .farm-banner{text-align:center;padding:6px 4px;border-bottom:2px solid #085039;margin-bottom:6px}
+    .farm-banner h1{font-size:19px;font-weight:bold;letter-spacing:1.5px;color:#085039}
+    .farm-banner .tag{font-size:9px;font-style:italic;color:#666;margin-top:1px}
+    .farm-banner .addr{font-size:7.5px;color:#888;margin-top:1px}
+    .inv-label{text-align:center;background:#085039;color:#f5c438;font-size:9px;font-weight:bold;letter-spacing:1px;padding:2px;margin-bottom:6px}
+    .meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:6px}
+    .meta-box{border:1px solid #085039;border-radius:2px;padding:4px;background:#fcfcfc}
+    .meta-box .title{font-size:7px;color:#085039;font-weight:bold;letter-spacing:0.5px;border-bottom:1px solid #ccc;padding-bottom:2px;margin-bottom:2px}
+    .meta-box .row{display:flex;justify-content:space-between;font-size:8.5px;margin-bottom:1px}
+    .meta-box .row span:first-child{color:#666}
+    .meta-box .row strong{font-weight:bold;color:#000}
+    table{width:100%;border-collapse:collapse;margin:4px 0}
+    th,td{padding:3px 4px;font-size:9px}
+    th{background:#085039;color:#fff;text-align:left;border-bottom:1px solid #f5c438;font-weight:bold;font-size:8.5px}
     td{border-bottom:1px dotted #ddd}
-    .total-row{font-weight:bold;border-top:2px solid #085039;border-bottom:none !important;background:#f0f4f0}
-    .grand{margin-top:6px;padding:6px;border:1.5px solid #085039;border-radius:2px;background:#fcfcfc}
-    .grand .row{display:flex;justify-content:space-between;font-size:11px;font-weight:bold;color:#085039;margin-bottom:2px}
-    .grand .words{font-size:8px;font-style:italic;color:#666;margin-top:4px}
-    .sig{margin-top:14px;display:flex;justify-content:space-between;font-size:9px}
-    .sig-line{border-top:1px solid #444;width:55%;text-align:center;padding-top:2px}
-    .stamp{width:36px;height:36px;border:1.2px solid #085039;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:6px;font-weight:bold;color:#085039;text-align:center;line-height:1.1}
-    .footer{margin-top:10px;border-top:1.5px solid #085039;padding-top:5px;text-align:center}
-    .footer .dev{font-size:9.5px;font-weight:bold;color:#085039;letter-spacing:0.3px}
+    .total-row{font-weight:bold;border-top:2px solid #085039;border-bottom:none !important;background:#fcf7e8;color:#085039}
+    .totals-box{margin-top:6px;border:1.5px solid #085039;border-radius:2px;background:#fcfcfc}
+    .totals-box .trow{display:flex;justify-content:space-between;padding:3px 6px;font-size:9px;border-bottom:1px dotted #ddd}
+    .totals-box .trow.grand{background:#085039;color:#fff;font-size:11px;font-weight:bold;border-bottom:none;padding:5px 6px}
+    .totals-box .trow span:first-child{color:#666}
+    .totals-box .trow.grand span:first-child{color:#fff}
+    .words{font-size:7.5px;font-style:italic;color:#666;padding:2px 6px;text-align:left}
+    .tc{margin-top:8px;border-top:1px dashed #aaa;padding-top:3px;font-size:6.5px;color:#888;line-height:1.3}
+    .sig{margin-top:12px;display:flex;justify-content:space-between;align-items:flex-end}
+    .sig-line{border-top:1px solid #444;width:55%;text-align:center;padding-top:2px;font-size:8px;color:#444}
+    .stamp{width:40px;height:40px;border:1.5px solid #085039;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:6px;font-weight:bold;color:#085039;text-align:center;line-height:1.2;position:relative}
+    .stamp::after{content:'';position:absolute;inset:3px;border:0.5px solid #f5c438;border-radius:50%}
+    .footer{margin-top:10px;border-top:2px solid #085039;padding-top:5px;text-align:center}
+    .footer .dev{font-size:10px;font-weight:bold;color:#085039;letter-spacing:0.5px}
     .footer .contact{font-size:9px;color:#444;margin-top:1px}
-    .footer .meta{font-size:7px;color:#888;margin-top:3px}
+    .footer .meta{font-size:6.5px;color:#aaa;margin-top:3px}
+    .bottom-line{height:2px;background:#f5c438;margin-top:4px}
   </style></head><body>
+    <div class="top-line"></div>
     <div class="farm-banner">
       <h1>DANISH FARMHOUSE</h1>
       <div class="tag">Cattle Feed Supplier</div>
       <div class="addr">Main Road, Kasur, Punjab &nbsp;|&nbsp; 0300-0000000</div>
-      <div class="inv">MIX ORDER INVOICE</div>
     </div>
-    <div class="info">
-      <div class="info-row"><span class="label">Bill No.</span><strong>#${order.id}</strong></div>
-      <div class="info-row"><span class="label">Date</span><strong>${order.date}</strong></div>
-      <div class="info-row"><span class="label">Customer</span><strong>${order.customer}</strong></div>
-      ${driverLine}
+    <div class="inv-label">MIX ORDER INVOICE</div>
+    <div class="meta-grid">
+      <div class="meta-box">
+        <div class="title">BILL TO</div>
+        <div class="row"><span>Customer:</span><strong>${order.customer?.slice(0, 16) || "N/A"}</strong></div>
+        <div class="row"><span>Driver:</span><strong>${order.driverName?.slice(0, 16) || "—"}</strong></div>
+      </div>
+      <div class="meta-box">
+        <div class="title">INVOICE</div>
+        <div class="row"><span>Bill #</span><strong>${order.id}</strong></div>
+        <div class="row"><span>Date</span><strong>${order.date}</strong></div>
+      </div>
     </div>
     <table>
       <thead><tr><th>#</th><th>Item</th><th style="text-align:right">Wt(kg)</th><th style="text-align:right">Rate</th><th style="text-align:right">Amt</th>${bagHead}</tr></thead>
@@ -123,19 +138,25 @@ function printMixBill(order: { id: string | number; customer: string; date: stri
         <tr class="total-row"><td colspan="2">TOTAL</td><td style="text-align:right">${fmtRs(totalWeight)} kg</td><td></td><td style="text-align:right">Rs. ${fmtRs(totalAmount)}</td>${bagFoot}</tr>
       </tbody>
     </table>
-    <div class="grand">
-      <div class="row"><span>Grand Total:</span><span>Rs. ${fmtRs(totalAmount)}</span></div>
-      <div class="words">(In words: ${numberToRupeeWords(totalAmount)})</div>
+    <div class="totals-box">
+      <div class="trow"><span>Subtotal:</span><strong>Rs. ${fmtRs(totalAmount)}</strong></div>
+      ${order.driverRent && order.driverRent > 0 ? `<div class="trow"><span>Driver Rent:</span><strong>Rs. ${fmtRs(order.driverRent)}</strong></div>` : ""}
+      <div class="trow grand"><span>GRAND TOTAL:</span><span>Rs. ${fmtRs(totalAmount)}</span></div>
+      <div class="words">In words: ${numberToRupeeWords(totalAmount)}</div>
+    </div>
+    <div class="tc">
+      Terms: Goods once sold will not be returned. • All disputes subject to Kasur jurisdiction. • Please verify at delivery.
     </div>
     <div class="sig">
-      <div class="stamp"><span>DANISH</span><span>FARMHOUSE</span><span>KASUR</span></div>
-      <div class="sig-line">Authorised Signature</div>
+      <div class="stamp"><span>DANISH</span><span>FARMHOUSE</span><span>★ KASUR ★</span></div>
+      <div class="sig-line">For Danish Farmhouse<br/>Authorised Signatory</div>
     </div>
     <div class="footer">
       <div class="dev">Software By: Shahid ALI</div>
       <div class="contact">Contact: 03271487858</div>
       <div class="meta">Computer-generated invoice &nbsp;•&nbsp; ${new Date().toLocaleString("en-PK")}</div>
     </div>
+    <div class="bottom-line"></div>
   </body></html>`;
 
   const iframe = document.createElement("iframe");

@@ -31,8 +31,17 @@ const FARM_PHONE = "0300-0000000";
 const DEV_LINE1 = "Software By: Shahid ALI";
 const DEV_LINE2 = "Contact: 03271487858";
 
+/* Color palette — deep emerald + gold accent */
+const C_GREEN: [number, number, number] = [8, 80, 57];
+const C_GREEN_LIGHT: [number, number, number] = [240, 244, 240];
+const C_GOLD: [number, number, number] = [245, 196, 56];
+const C_GOLD_LIGHT: [number, number, number] = [252, 247, 232];
+const C_DARK: [number, number, number] = [30, 40, 50];
+const C_GRAY: [number, number, number] = [110, 120, 130];
+const C_GRAY_LIGHT: [number, number, number] = [218, 222, 220];
+const C_WHITE: [number, number, number] = [255, 255, 255];
+
 export async function generateMixBillPDF(bill: BillData) {
-  // Dynamic imports to avoid SSR crash on Vercel (jsPDF needs window/document)
   const { default: jsPDF } = await import("jspdf");
   const { default: autoTable } = await import("jspdf-autotable");
   const { numberToRupeeWords } = await import("@/lib/number-to-words");
@@ -44,98 +53,129 @@ export async function generateMixBillPDF(bill: BillData) {
   let y = m;
 
   /* ════════════════════════════════════════════════════════
-   *  HEADER BAND — Dark green double-border farmhouse style
+   *  TOP GOLD LINE
    * ════════════════════════════════════════════════════════ */
-  const headerH = 38;
-  // Outer dark green band
-  doc.setFillColor(8, 80, 57); // deep emerald
-  doc.rect(0, 0, pw, headerH, "F");
-  // Inner accent line
-  doc.setDrawColor(245, 196, 56); // gold accent
-  doc.setLineWidth(0.6);
-  doc.line(0, headerH - 4, pw, headerH - 4);
-  doc.setLineWidth(0.2);
-  doc.setDrawColor(255, 255, 255);
-  doc.line(0, headerH - 1.5, pw, headerH - 1.5);
+  doc.setFillColor(...C_GOLD);
+  doc.rect(0, 0, pw, 2.5, "F");
 
-  // Farm name — big bold
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(26);
+  /* ════════════════════════════════════════════════════════
+   *  HEADER — Clean letterhead style (white bg, green text)
+   * ════════════════════════════════════════════════════════ */
+  const headerH = 36;
+  // Left: Farm name block
   doc.setFont("helvetica", "bold");
-  doc.text(FARM_NAME, pw / 2, 16, { align: "center" });
+  doc.setFontSize(22);
+  doc.setTextColor(...C_GREEN);
+  doc.text(FARM_NAME, m, 14);
 
-  // Tagline
-  doc.setFontSize(11);
   doc.setFont("helvetica", "italic");
-  doc.setTextColor(245, 230, 200);
-  doc.text(FARM_TAGLINE, pw / 2, 23, { align: "center" });
+  doc.setFontSize(9.5);
+  doc.setTextColor(...C_GRAY);
+  doc.text(FARM_TAGLINE, m, 20);
 
-  // Address + phone
-  doc.setFontSize(8.5);
   doc.setFont("helvetica", "normal");
-  doc.setTextColor(220, 230, 222);
-  doc.text(`${FARM_ADDRESS}  |  Phone: ${FARM_PHONE}`, pw / 2, 30, { align: "center" });
+  doc.setFontSize(7.5);
+  doc.setTextColor(120, 130, 140);
+  doc.text(FARM_ADDRESS, m, 26);
+  doc.text(`Phone: ${FARM_PHONE}`, m, 30);
 
-  // Bill subtitle
-  doc.setFontSize(10);
+  // Right: INVOICE label
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(255, 255, 255);
-  doc.text("MIX ORDER INVOICE", pw / 2, 36, { align: "center" });
+  doc.setFontSize(20);
+  doc.setTextColor(...C_GREEN);
+  doc.text("INVOICE", pw - m, 14, { align: "right" });
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(...C_GRAY);
+  doc.text("Mix Order", pw - m, 20, { align: "right" });
+
+  // Bill No + Date on right
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(...C_DARK);
+  doc.text(`Bill No: #${bill.orderId}`, pw - m, 27, { align: "right" });
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...C_GRAY);
+  doc.text(`Date: ${bill.orderDate}`, pw - m, 31, { align: "right" });
+
+  // Horizontal divider line (gold)
+  doc.setDrawColor(...C_GOLD);
+  doc.setLineWidth(0.8);
+  doc.line(m, headerH, pw - m, headerH);
+  doc.setLineWidth(0.2);
+  // Thin green line below gold
+  doc.setDrawColor(...C_GREEN);
+  doc.line(m, headerH + 1.2, pw - m, headerH + 1.2);
 
   y = headerH + 8;
 
   /* ════════════════════════════════════════════════════════
-   *  META BOX — Order #, Date, Type, Driver (two-column table)
+   *  TWO-COLUMN: Bill To (left) | Order Details (right)
    * ════════════════════════════════════════════════════════ */
-  const metaBoxX = m;
-  const metaBoxW = pw - m * 2;
-  const metaBoxH = 22;
+  const colW = (pw - m * 2 - 6) / 2; // 6mm gap between columns
+  const colH = 26;
+  const leftX = m;
+  const rightX = m + colW + 6;
 
-  doc.setFillColor(252, 253, 252);
-  doc.setDrawColor(8, 80, 57);
-  doc.setLineWidth(0.5);
-  doc.roundedRect(metaBoxX, y, metaBoxW, metaBoxH, 1.5, 1.5, "FD");
-  doc.setLineWidth(0.2);
+  // Left box — Bill To
+  doc.setFillColor(...C_GREEN_LIGHT);
+  doc.setDrawColor(...C_GRAY_LIGHT);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(leftX, y, colW, colH, 1.5, 1.5, "FD");
 
-  // Left column block
-  const lx = metaBoxX + 5;
-  const rx = metaBoxX + metaBoxW / 2 + 3;
-
-  doc.setFontSize(8);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(110, 120, 130);
-  doc.text("Bill No.", lx, y + 6);
-  doc.text("Date", lx, y + 13);
-  doc.text("Customer", lx, y + 20);
+  // Left accent bar
+  doc.setFillColor(...C_GREEN);
+  doc.rect(leftX, y, 1.5, colH, "F");
 
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(20, 30, 40);
-  doc.setFontSize(9.5);
-  doc.text(`#${bill.orderId}`, lx + 16, y + 6);
-  doc.text(bill.orderDate, lx + 16, y + 13);
-  doc.setFontSize(9);
-  doc.text(bill.customerName?.slice(0, 28) || "N/A", lx + 22, y + 20);
-
   doc.setFontSize(8);
+  doc.setTextColor(...C_GREEN);
+  doc.text("BILL TO", leftX + 5, y + 6);
+
   doc.setFont("helvetica", "normal");
-  doc.setTextColor(110, 120, 130);
-  doc.text("Type", rx, y + 6);
-  doc.text("Target Wt.", rx, y + 13);
-  doc.text("Driver", rx, y + 20);
+  doc.setFontSize(7);
+  doc.setTextColor(...C_GRAY);
+  doc.text("Customer Name", leftX + 5, y + 11);
+  doc.text("Order Type", leftX + 5, y + 17);
+  doc.text("Driver", leftX + 5, y + 23);
 
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(20, 30, 40);
   doc.setFontSize(9.5);
-  doc.text(bill.customerType === "credit" ? "Credit (Udhaar)" : "Cash (Nagad)", rx + 14, y + 6);
-  doc.text(`${bill.totalWeight.toLocaleString("en-PK")} kg`, rx + 22, y + 13);
-  doc.setFontSize(9);
-  doc.text(bill.driverName?.slice(0, 22) || "—", rx + 16, y + 20);
+  doc.setTextColor(...C_DARK);
+  doc.text(bill.customerName?.slice(0, 24) || "N/A", leftX + 32, y + 11);
+  doc.setFontSize(8.5);
+  doc.text(bill.customerType === "credit" ? "Credit (Udhaar)" : "Cash (Nagad)", leftX + 32, y + 17);
+  doc.text(bill.driverName?.slice(0, 20) || "—", leftX + 32, y + 23);
 
-  // Vertical divider
-  doc.setDrawColor(210, 215, 220);
-  doc.line(metaBoxX + metaBoxW / 2, y + 4, metaBoxX + metaBoxW / 2, y + metaBoxH - 4);
+  // Right box — Order Details
+  doc.setFillColor(...C_GREEN_LIGHT);
+  doc.setDrawColor(...C_GRAY_LIGHT);
+  doc.roundedRect(rightX, y, colW, colH, 1.5, 1.5, "FD");
+  doc.setFillColor(...C_GREEN);
+  doc.rect(rightX, y, 1.5, colH, "F");
 
-  y += metaBoxH + 6;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(...C_GREEN);
+  doc.text("ORDER DETAILS", rightX + 5, y + 6);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  doc.setTextColor(...C_GRAY);
+  doc.text("Bill No.", rightX + 5, y + 11);
+  doc.text("Order Date", rightX + 5, y + 17);
+  doc.text("Target Weight", rightX + 5, y + 23);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.5);
+  doc.setTextColor(...C_DARK);
+  doc.text(`#${bill.orderId}`, rightX + 32, y + 11);
+  doc.setFontSize(8.5);
+  doc.text(bill.orderDate, rightX + 32, y + 17);
+  doc.text(`${bill.totalWeight.toLocaleString("en-PK")} kg`, rightX + 32, y + 23);
+
+  y += colH + 8;
 
   /* ════════════════════════════════════════════════════════
    *  INGREDIENTS TABLE
@@ -201,154 +241,213 @@ export async function generateMixBillPDF(bill: BillData) {
     foot: [foot],
     theme: "grid",
     headStyles: {
-      fillColor: [8, 80, 57],
-      textColor: [255, 255, 255],
+      fillColor: C_GREEN,
+      textColor: C_WHITE,
       fontStyle: "bold",
       fontSize: 8.5,
       halign: "center",
-      lineColor: [245, 196, 56],
+      lineColor: C_GREEN,
       lineWidth: 0.1,
+      cellPadding: 2.5,
     },
     footStyles: {
-      fillColor: [240, 244, 240],
-      textColor: [8, 80, 57],
+      fillColor: C_GOLD_LIGHT,
+      textColor: C_GREEN,
       fontStyle: "bold",
       fontSize: 9,
+      cellPadding: 2.5,
     },
-    bodyStyles: { fontSize: 8.5, textColor: [40, 50, 60], lineColor: [218, 222, 220] },
-    alternateRowStyles: { fillColor: [248, 250, 248] },
+    bodyStyles: {
+      fontSize: 8.5,
+      textColor: [40, 50, 60],
+      lineColor: C_GRAY_LIGHT,
+      cellPadding: 2.5,
+    },
+    alternateRowStyles: { fillColor: [249, 251, 249] },
     columnStyles,
     margin: { left: m, right: m },
   });
 
   /* ════════════════════════════════════════════════════════
-   *  TOTALS BOX + Amount in words
+   *  TOTALS BOX (right-aligned) + Amount in words (left)
    * ════════════════════════════════════════════════════════ */
   const fy = (doc as any).lastAutoTable.finalY + 8;
-  const bx = m;
-  const bw = pw - m * 2;
   const hasDriverRent = bill.driverRent && bill.driverRent > 0;
   const isCash = bill.customerType === "cash" && bill.cashReceived !== undefined;
-  // Calculate box height
-  let extraRows = 0;
-  if (hasDriverRent) extraRows++;
-  if (isCash) extraRows += 2; // cash received + change
-  const bh = 18 + extraRows * 8 + 10; // base + extras + words
 
-  // Outer box
-  doc.setFillColor(252, 253, 252);
-  doc.setDrawColor(8, 80, 57);
+  // Totals box on right side
+  const tBoxW = 80;
+  const tBoxX = pw - m - tBoxW;
+  // Calculate height based on rows
+  let totalRows = 1; // subtotal
+  if (hasDriverRent) totalRows++;
+  if (isCash) totalRows += 2; // cash + change
+  const tBoxH = 8 + totalRows * 7 + 10; // grand total row is taller
+
+  doc.setFillColor(...C_WHITE);
+  doc.setDrawColor(...C_GREEN);
   doc.setLineWidth(0.5);
-  doc.roundedRect(bx, fy, bw, bh, 1.5, 1.5, "FD");
+  doc.roundedRect(tBoxX, fy, tBoxW, tBoxH, 1.5, 1.5, "FD");
   doc.setLineWidth(0.2);
 
-  // Inner gold accent line on left
-  doc.setDrawColor(245, 196, 56);
-  doc.setLineWidth(1.2);
-  doc.line(bx + 2, fy + 4, bx + 2, fy + bh - 4);
-  doc.setLineWidth(0.2);
+  let ty = fy + 7;
+  const labelX = tBoxX + 6;
+  const valX = tBoxX + tBoxW - 6;
 
-  let sy = fy + 9;
-  // Grand Total
+  // Subtotal
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(...C_GRAY);
+  doc.text("Subtotal:", labelX, ty);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(15);
-  doc.setTextColor(8, 80, 57);
-  doc.text("Grand Total:", bx + 10, sy);
-  doc.text(ta, bx + bw - 10, sy, { align: "right" });
-
-  // Amount in words
-  sy += 6;
-  doc.setFont("helvetica", "italic");
-  doc.setFontSize(8);
-  doc.setTextColor(100, 110, 120);
-  doc.text(`(In words: ${numberToRupeeWords(bill.totalAmount)})`, bx + 10, sy);
+  doc.setTextColor(...C_DARK);
+  doc.text(ta, valX, ty, { align: "right" });
 
   // Driver Rent
   if (hasDriverRent) {
-    sy += 8;
+    ty += 7;
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.setTextColor(60, 70, 80);
-    doc.text("Driver Rent:", bx + 10, sy);
+    doc.setFontSize(9);
+    doc.setTextColor(...C_GRAY);
+    doc.text("Driver Rent:", labelX, ty);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(8, 80, 57);
-    doc.text(`Rs. ${bill.driverRent!.toLocaleString("en-PK")}`, bx + bw - 10, sy, { align: "right" });
+    doc.setTextColor(...C_DARK);
+    doc.text(`Rs. ${bill.driverRent!.toLocaleString("en-PK")}`, valX, ty, { align: "right" });
   }
+
+  // Divider line
+  ty += 5;
+  doc.setDrawColor(...C_GOLD);
+  doc.setLineWidth(0.5);
+  doc.line(tBoxX + 4, ty, tBoxX + tBoxW - 4, ty);
+  doc.setLineWidth(0.2);
+
+  // Grand Total
+  ty += 7;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(...C_GREEN);
+  doc.text("GRAND TOTAL", labelX, ty);
+  doc.text(ta, valX, ty, { align: "right" });
 
   // Cash received + change
   if (isCash) {
     const cash = bill.cashReceived as number;
-    sy += 8;
+    ty += 7;
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.setTextColor(60, 70, 80);
-    doc.text("Cash Received:", bx + 10, sy);
+    doc.setFontSize(8.5);
+    doc.setTextColor(...C_GRAY);
+    doc.text("Cash Received:", labelX, ty);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(20, 30, 40);
-    doc.text(`Rs. ${cash.toLocaleString("en-PK")}`, bx + bw - 10, sy, { align: "right" });
+    doc.setTextColor(...C_DARK);
+    doc.text(`Rs. ${cash.toLocaleString("en-PK")}`, valX, ty, { align: "right" });
 
-    sy += 7;
+    ty += 6;
     const change = cash - bill.totalAmount;
     doc.setFont("helvetica", "normal");
-    doc.setTextColor(60, 70, 80);
-    doc.text("Change:", bx + 10, sy);
+    doc.setTextColor(...C_GRAY);
+    doc.text("Change:", labelX, ty);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(change >= 0 ? 8 : 180, change >= 0 ? 120 : 30, change >= 0 ? 60 : 30);
-    doc.text(`Rs. ${change.toLocaleString("en-PK")}`, bx + bw - 10, sy, { align: "right" });
+    doc.text(`Rs. ${change.toLocaleString("en-PK")}`, valX, ty, { align: "right" });
   }
 
-  /* ════════════════════════════════════════════════════════
-   *  SIGNATURE LINE
-   * ════════════════════════════════════════════════════════ */
-  let sigY = fy + bh + 18;
-  if (sigY > ph - 35) sigY = ph - 35;
-  doc.setDrawColor(120, 130, 140);
-  doc.setLineWidth(0.3);
-  doc.line(pw - m - 60, sigY, pw - m, sigY);
-  doc.setFontSize(9);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(80, 90, 100);
-  doc.text("Authorised Signature", pw - m - 30, sigY + 5, { align: "center" });
-
-  // Stamp-like circle on left
-  doc.setDrawColor(8, 80, 57);
-  doc.setLineWidth(0.4);
-  doc.circle(m + 18, sigY - 2, 10, "S");
-  doc.setFontSize(6);
+  // Amount in words — left side, below table
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...C_GRAY);
+  doc.text("Amount in words:", m, fy + 6);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(8, 80, 57);
-  doc.text("DANISH", m + 18, sigY - 4, { align: "center" });
-  doc.text("FARMHOUSE", m + 18, sigY - 0.5, { align: "center" });
-  doc.text("• KASUR •", m + 18, sigY + 2.5, { align: "center" });
+  doc.setFontSize(9);
+  doc.setTextColor(...C_DARK);
+  const wordsText = numberToRupeeWords(bill.totalAmount);
+  // Wrap if too long
+  const wordsLines = doc.splitTextToSize(wordsText, tBoxX - m - 6);
+  doc.text(wordsLines, m, fy + 12);
 
   /* ════════════════════════════════════════════════════════
-   *  FOOTER BAND — Software By credit (mandatory on every bill)
+   *  TERMS & CONDITIONS
    * ════════════════════════════════════════════════════════ */
-  const footBandH = 14;
-  const footY = ph - footBandH - 4;
-
-  // Top divider
-  doc.setDrawColor(8, 80, 57);
-  doc.setLineWidth(0.5);
-  doc.line(m, footY - 2, pw - m, footY - 2);
+  const tcY = Math.max(fy + tBoxH + 8, fy + 22);
+  doc.setDrawColor(...C_GRAY_LIGHT);
+  doc.setLineWidth(0.3);
+  doc.line(m, tcY, pw - m, tcY);
   doc.setLineWidth(0.2);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.5);
+  doc.setTextColor(...C_GREEN);
+  doc.text("TERMS & CONDITIONS", m, tcY + 4);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  doc.setTextColor(...C_GRAY);
+  doc.text("1. Goods once sold will not be returned or exchanged.", m, tcY + 8);
+  doc.text("2. All disputes are subject to Kasur jurisdiction.", m, tcY + 11.5);
+  doc.text("3. Please verify bill details at the time of delivery.", m, tcY + 15);
+
+  /* ════════════════════════════════════════════════════════
+   *  SIGNATURE SECTION
+   * ════════════════════════════════════════════════════════ */
+  let sigY = tcY + 22;
+  if (sigY > ph - 30) sigY = ph - 30;
+
+  // Signature line on right
+  doc.setDrawColor(...C_DARK);
+  doc.setLineWidth(0.3);
+  doc.line(pw - m - 65, sigY, pw - m, sigY);
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...C_GRAY);
+  doc.text("For Danish Farmhouse", pw - m - 32.5, sigY + 4, { align: "center" });
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...C_DARK);
+  doc.text("Authorised Signatory", pw - m - 32.5, sigY + 8, { align: "center" });
+
+  // Stamp circle on left
+  doc.setDrawColor(...C_GREEN);
+  doc.setLineWidth(0.5);
+  doc.circle(m + 14, sigY - 3, 11, "S");
+  doc.setLineWidth(0.2);
+  doc.setDrawColor(...C_GOLD);
+  doc.circle(m + 14, sigY - 3, 9, "S");
+  doc.setFontSize(5.5);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...C_GREEN);
+  doc.text("DANISH", m + 14, sigY - 5, { align: "center" });
+  doc.text("FARMHOUSE", m + 14, sigY - 1.5, { align: "center" });
+  doc.setFontSize(4.5);
+  doc.setTextColor(...C_GOLD);
+  doc.text("★ KASUR ★", m + 14, sigY + 2, { align: "center" });
+
+  /* ════════════════════════════════════════════════════════
+   *  FOOTER BAND — Software By credit
+   * ════════════════════════════════════════════════════════ */
+  const footBandH = 13;
+  const footY = ph - footBandH - 3;
+
+  // Top divider (gold + green)
+  doc.setDrawColor(...C_GOLD);
+  doc.setLineWidth(0.6);
+  doc.line(m, footY - 2, pw - m, footY - 2);
+  doc.setDrawColor(...C_GREEN);
+  doc.setLineWidth(0.2);
+  doc.line(m, footY - 0.8, pw - m, footY - 0.8);
 
   // Footer text
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
-  doc.setTextColor(8, 80, 57);
-  doc.text(DEV_LINE1, pw / 2, footY + 4, { align: "center" });
+  doc.setTextColor(...C_GREEN);
+  doc.text(DEV_LINE1, pw / 2, footY + 3.5, { align: "center" });
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
-  doc.setTextColor(80, 90, 100);
-  doc.text(DEV_LINE2, pw / 2, footY + 9, { align: "center" });
+  doc.setTextColor(...C_GRAY);
+  doc.text(DEV_LINE2, pw / 2, footY + 8, { align: "center" });
 
-  // Small generated-on tag (left) + farm name (right)
-  doc.setFontSize(7);
-  doc.setTextColor(150, 160, 170);
-  doc.text(`Generated: ${new Date().toLocaleString("en-PK")}`, m, footY + 9);
-  doc.text(`${FARM_NAME} • Computer-generated invoice`, pw - m, footY + 9, { align: "right" });
+  // Bottom gold line
+  doc.setFillColor(...C_GOLD);
+  doc.rect(0, ph - 1.5, pw, 1.5, "F");
 
   doc.save(`Mix-Bill-${bill.orderId}-${bill.customerName.replace(/\s+/g, "-")}.pdf`);
 }
