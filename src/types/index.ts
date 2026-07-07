@@ -208,6 +208,15 @@ export interface BackupFilters {
   to?: string;   // YYYY-MM-DD (for custom)
 }
 
+// ─── Database Restore ───
+
+/**
+ * Restore modes:
+ * - "merge"  → UPSERT (overwrite existing rows with backup data)
+ * - "append" → skip existing IDs, only insert new rows
+ */
+export type RestoreMode = "merge" | "append";
+
 export interface MixOrderRow {
   id: number;
   customer_id: number;
