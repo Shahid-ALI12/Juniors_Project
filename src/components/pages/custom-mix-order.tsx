@@ -19,6 +19,7 @@ import { useMixStore, fetchCached, invalidateCache, apiError } from "@/store";
 import { PageHeader, MetricCard } from "@/components/shared/page-header";
 import type { MixIngredient, Product } from "@/types";
 import { generateMixBillPDF } from "@/lib/generate-mix-bill";
+import { numberToRupeeWords } from "@/lib/number-to-words";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -75,36 +76,66 @@ function printMixBill(order: { id: string | number; customer: string; date: stri
   const bagFoot = hasBagInfo ? `<td style="text-align:right">${totalBagAmount > 0 ? totalBagAmount.toLocaleString("en-PK") : ""}</td><td></td><td></td>` : "";
 
   const html = `<!DOCTYPE html><html><head><style>
-    @page{size:auto;margin:8mm}
+    @page{size:auto;margin:6mm}
     *{margin:0;padding:0;box-sizing:border-box}
-    body{font-family:monospace;max-width:300px;margin:0 auto;padding:12px;color:#000;font-size:10px}
-    .header{text-align:center;border-bottom:1px dashed #999;padding-bottom:8px;margin-bottom:8px}
-    .header h1{font-size:14px;font-weight:bold}
-    .header p{font-size:10px;margin-top:2px}
-    .info{margin-bottom:6px}
-    .info-row{display:flex;justify-content:space-between;margin-bottom:2px}
+    body{font-family:'Courier New',monospace;max-width:300px;margin:0 auto;padding:10px;color:#000;font-size:10px}
+    .farm-banner{background:#085039;color:#fff;text-align:center;padding:8px 6px;border-bottom:2px solid #f5c438}
+    .farm-banner h1{font-size:18px;font-weight:bold;letter-spacing:1px}
+    .farm-banner .tag{font-size:9px;font-style:italic;color:#f5e6c8;margin-top:2px}
+    .farm-banner .addr{font-size:8px;color:#dce6de;margin-top:2px}
+    .farm-banner .inv{font-size:9px;font-weight:bold;letter-spacing:1px;margin-top:3px;color:#f5c438}
+    .info{margin:6px 0;padding:6px;border:1px solid #085039;border-radius:2px}
+    .info-row{display:flex;justify-content:space-between;margin-bottom:2px;font-size:9.5px}
     .info strong{font-weight:bold}
+    .info-row span:first-child{color:#444}
+    .label{font-size:8px;color:#666;text-transform:uppercase;letter-spacing:0.5px}
     table{width:100%;border-collapse:collapse;margin:6px 0}
-    th,td{padding:3px 4px;font-size:10px}
-    th{text-align:left;border-bottom:1px solid #ccc;font-weight:bold}
+    th,td{padding:3px 4px;font-size:9.5px}
+    th{background:#085039;color:#fff;text-align:left;border-bottom:1px solid #f5c438;font-weight:bold}
     td{border-bottom:1px dotted #ddd}
-    .total-row{font-weight:bold;border-top:1px solid #999;border-bottom:none !important}
-    .footer{text-align:center;font-size:9px;color:#666;border-top:1px dashed #999;margin-top:8px;padding-top:6px}
+    .total-row{font-weight:bold;border-top:2px solid #085039;border-bottom:none !important;background:#f0f4f0}
+    .grand{margin-top:6px;padding:6px;border:1.5px solid #085039;border-radius:2px;background:#fcfcfc}
+    .grand .row{display:flex;justify-content:space-between;font-size:11px;font-weight:bold;color:#085039;margin-bottom:2px}
+    .grand .words{font-size:8px;font-style:italic;color:#666;margin-top:4px}
+    .sig{margin-top:14px;display:flex;justify-content:space-between;font-size:9px}
+    .sig-line{border-top:1px solid #444;width:55%;text-align:center;padding-top:2px}
+    .stamp{width:36px;height:36px;border:1.2px solid #085039;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:6px;font-weight:bold;color:#085039;text-align:center;line-height:1.1}
+    .footer{margin-top:10px;border-top:1.5px solid #085039;padding-top:5px;text-align:center}
+    .footer .dev{font-size:9.5px;font-weight:bold;color:#085039;letter-spacing:0.3px}
+    .footer .contact{font-size:9px;color:#444;margin-top:1px}
+    .footer .meta{font-size:7px;color:#888;margin-top:3px}
   </style></head><body>
-    <div class="header"><h1>MIX ORDER BILL</h1><p>Cattle Feed Supply</p></div>
+    <div class="farm-banner">
+      <h1>DANISH FARMHOUSE</h1>
+      <div class="tag">Cattle Feed Supplier</div>
+      <div class="addr">Main Road, Kasur, Punjab &nbsp;|&nbsp; 0300-0000000</div>
+      <div class="inv">MIX ORDER INVOICE</div>
+    </div>
     <div class="info">
-      <div class="info-row"><span>Order: #${order.id}</span><span>${order.date}</span></div>
-      <div>Customer: <strong>${order.customer}</strong></div>
+      <div class="info-row"><span class="label">Bill No.</span><strong>#${order.id}</strong></div>
+      <div class="info-row"><span class="label">Date</span><strong>${order.date}</strong></div>
+      <div class="info-row"><span class="label">Customer</span><strong>${order.customer}</strong></div>
       ${driverLine}
     </div>
     <table>
       <thead><tr><th>#</th><th>Item</th><th style="text-align:right">Wt(kg)</th><th style="text-align:right">Rate</th><th style="text-align:right">Amt</th>${bagHead}</tr></thead>
       <tbody>${rows}
-        <tr class="total-row"><td colspan="2">Total</td><td style="text-align:right">${fmtRs(totalWeight)} kg</td><td></td><td style="text-align:right">Rs. ${fmtRs(totalAmount)}</td>${bagFoot}</tr>
+        <tr class="total-row"><td colspan="2">TOTAL</td><td style="text-align:right">${fmtRs(totalWeight)} kg</td><td></td><td style="text-align:right">Rs. ${fmtRs(totalAmount)}</td>${bagFoot}</tr>
       </tbody>
     </table>
-    <div class="footer">Thank you for your business!</div>
-    <div class="dev" style="text-align:center;font-size:8px;color:#888;margin-top:10px;border-top:1px dashed #ccc;padding-top:6px;line-height:1.5">Software By Shahid Ali<br/>Contact Number: 0327-1487858</div>
+    <div class="grand">
+      <div class="row"><span>Grand Total:</span><span>Rs. ${fmtRs(totalAmount)}</span></div>
+      <div class="words">(In words: ${numberToRupeeWords(totalAmount)})</div>
+    </div>
+    <div class="sig">
+      <div class="stamp"><span>DANISH</span><span>FARMHOUSE</span><span>KASUR</span></div>
+      <div class="sig-line">Authorised Signature</div>
+    </div>
+    <div class="footer">
+      <div class="dev">Software By: Shahid ALI</div>
+      <div class="contact">Contact: 03271487858</div>
+      <div class="meta">Computer-generated invoice &nbsp;•&nbsp; ${new Date().toLocaleString("en-PK")}</div>
+    </div>
   </body></html>`;
 
   const iframe = document.createElement("iframe");
