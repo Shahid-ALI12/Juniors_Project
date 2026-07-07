@@ -9,9 +9,9 @@
 --                sales/purchases rows that reference it (via the
 --                product_id FK) keep working and the name still
 --                shows on old receipts.
---   2. Drops the `products_name_key` UNIQUE CONSTRAINT (not just
---      the index) and replaces it with a partial unique index that
---      only applies to NON-deleted rows. This lets the same name be
+--   2. Drops the existing `products_name_key` unique constraint
+--      and replaces it with a partial unique index that only
+--      applies to NON-deleted rows. This lets the same name be
 --      reused in the future if needed while preventing duplicate
 --      active products.
 --
@@ -25,44 +25,25 @@
 --     we cascade). Tombstone pattern (deleted_at) is the cleanest
 --     solution.
 --
--- NOTE on products_name_key:
---   In the original schema.sql this was created with
---     `create unique index if not exists products_name_key on products (lower(name))`
---   Postgres automatically promotes a unique INDEX into a unique
---   CONSTRAINT when it backs a UNIQUE column rule, so we must drop
---   it as a CONSTRAINT (DROP CONSTRAINT) rather than as an index
---   (DROP INDEX) — otherwise Postgres raises:
---     "cannot drop index products_name_key because constraint
---      products_name_key on table products requires it"
---   We use DO $$ blocks so the script is idempotent and safe to
---   re-run on databases where the constraint may or may not exist.
---
--- SAFE TO RE-RUN.
--- Run in Supabase SQL Editor (Dashboard → SQL Editor → New query).
+-- SAFE TO RE-RUN. Run in Supabase SQL Editor.
 -- ============================================================
 
 -- 1. Add deleted_at column
 ALTER TABLE products
   ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
 
--- 2a. Drop the products_name_key CONSTRAINT if it exists.
---     (Some databases may only have the index, others have the
---     constraint — we try both, ignore errors if either is missing.)
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM pg_constraint
-    WHERE conname = 'products_name_key'
-      AND conrelid = 'products'::regclass
-  ) THEN
-    ALTER TABLE products DROP CONSTRAINT products_name_key;
-  END IF;
-EXCEPTION WHEN OTHERS THEN
-  RAISE NOTICE 'Could not drop constraint products_name_key: %', SQLERRM;
-END $$;
+-- 2. Drop the products_name_key constraint if it exists.
+--    Use ALTER TABLE ... DROP CONSTRAINT IF EXISTS — this is the
+--    proper idempotent way to drop a unique constraint. Works whether
+--    the original `CREATE UNIQUE INDEX products_name_key` was
+--    promoted to a constraint or not.
+ALTER TABLE products
+  DROP CONSTRAINT IF EXISTS products_name_key;
 
--- 2b. Drop the products_name_key INDEX if it still exists (in case
---     it was created as a plain index without a backing constraint).
+-- 3. Also drop the underlying index if it still lingers (in case the
+--    object was created as a plain UNIQUE INDEX without a backing
+--    constraint). Wrap in DO $$ so the script doesn't fail if the
+--    index is already gone.
 DO $$
 BEGIN
   IF EXISTS (
@@ -72,21 +53,21 @@ BEGIN
       AND c.relkind = 'i'
       AND n.nspname = current_schema()
   ) THEN
-    EXECUTE 'DROP INDEX ' || quote_ident(current_schema()) || '.products_name_key';
+    EXECUTE format('DROP INDEX %I.products_name_key', current_schema());
   END IF;
 EXCEPTION WHEN OTHERS THEN
-  RAISE NOTICE 'Could not drop index products_name_key: %', SQLERRM;
+  RAISE NOTICE 'Index products_name_key already gone or could not be dropped: %', SQLERRM;
 END $$;
 
--- 2c. Recreate as a partial unique index — only enforces uniqueness
---     for non-deleted rows. Deleted (tombstoned) products are
---     excluded, so the same name can be reused for a fresh product
---     in the future if desired.
+-- 4. Recreate as a partial unique index — only enforces uniqueness
+--    for non-deleted rows. Deleted (tombstoned) products are
+--    excluded, so the same name can be reused for a fresh product
+--    in the future if desired.
 CREATE UNIQUE INDEX IF NOT EXISTS products_name_key
   ON products (lower(name))
   WHERE deleted_at IS NULL;
 
--- 3. Reload PostgREST schema cache so the new column is visible
+-- 5. Reload PostgREST schema cache so the new column is visible
 NOTIFY pgrst, 'reload schema';
 
 -- ============================================================
