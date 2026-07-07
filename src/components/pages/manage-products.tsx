@@ -27,6 +27,7 @@ import {
   Trash2,
   RotateCcw,
   Ban,
+  Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import { fetchCached, invalidateCache, apiError } from "@/store";
@@ -254,6 +255,53 @@ export default function ManageProducts() {
     }
   }, []);
 
+  // ─── Download JSON helper ───
+  // Builds a JSON file from a list of products with stock info merged in,
+  // then triggers a browser download. Filename includes a date stamp so
+  // repeated exports don't overwrite each other.
+  const downloadProductsJson = useCallback(
+    (list: Product[], kind: "active" | "inactive") => {
+      if (list.length === 0) {
+        toast.error(`No ${kind} products to download.`);
+        return;
+      }
+      const enriched = list.map((p) => {
+        const stockEntry = stockData.find((s) => s.product_id === p.id);
+        return {
+          id: p.id,
+          name: p.name,
+          default_rate: p.default_rate,
+          rate_per_bag_rs: p.default_rate,
+          stock_bags: stockEntry?.stock_quantity ?? 0,
+          is_active: p.is_active,
+          created_at: p.created_at,
+        };
+      });
+      const payload = {
+        exported_at: new Date().toISOString(),
+        kind,
+        count: enriched.length,
+        products: enriched,
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const dateStamp = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+      link.href = url;
+      link.download = `${kind}-products-${dateStamp}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast.success(`${kind === "active" ? "Active" : "Inactive"} products downloaded`, {
+        description: `${enriched.length} product(s) exported as JSON.`,
+      });
+    },
+    [stockData]
+  );
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -308,6 +356,16 @@ export default function ManageProducts() {
               {activeProducts.length}
             </span>
           </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => downloadProductsJson(activeProducts, "active")}
+            disabled={activeProducts.length === 0}
+            className="gap-1.5 text-xs font-semibold text-slate-700 border-slate-300 hover:bg-slate-50 hover:text-slate-900 self-start sm:self-auto"
+            title="Download active products as JSON"
+          >
+            <Download className="size-3.5" /> Download JSON
+          </Button>
         </div>
 
         <div className="mx-4 sm:mx-6 mb-4 flex items-start gap-2 rounded-xl bg-amber-50 border border-amber-200/60 px-4 py-3 text-sm text-amber-800">
@@ -406,6 +464,15 @@ export default function ManageProducts() {
                 {inactiveProducts.length}
               </span>
             </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => downloadProductsJson(inactiveProducts, "inactive")}
+              className="gap-1.5 text-xs font-semibold text-slate-700 border-slate-300 hover:bg-slate-50 hover:text-slate-900 self-start sm:self-auto"
+              title="Download inactive products as JSON"
+            >
+              <Download className="size-3.5" /> Download JSON
+            </Button>
           </div>
 
           <div className="mx-4 sm:mx-6 mb-4 flex items-start gap-2 rounded-xl bg-blue-50 border border-blue-200/60 px-4 py-3 text-sm text-blue-800">
