@@ -146,11 +146,15 @@ END $$;
 --   6. record_purchase
 --   7. transfer_cash
 --   8. verify_customer_login
+--
+-- IMPORTANT: REVOKE requires the FULL function signature (with arg types),
+-- not just the name. We dynamically fetch the signature from pg_proc and
+-- build the REVOKE statement using pg_get_function_identity_arguments().
 -- ════════════════════════════════════════════════════════════════════════
 
 DO $$
 DECLARE
-  fn TEXT;
+  fn_name TEXT;
   security_definer_functions TEXT[] := ARRAY[
     'correct_cash_balance',
     'create_mix_order',
@@ -161,24 +165,34 @@ DECLARE
     'transfer_cash',
     'verify_customer_login'
   ];
-  fn_exists BOOLEAN;
+  fn_rec RECORD;
+  revoke_sql TEXT;
 BEGIN
-  FOREACH fn IN ARRAY security_definer_functions LOOP
-    -- Check if function exists in public schema
-    SELECT EXISTS (
-      SELECT 1 FROM pg_proc p
+  FOREACH fn_name IN ARRAY security_definer_functions LOOP
+    -- Iterate over ALL overloads of this function name in public schema.
+    -- (pg_get_function_identity_arguments returns arg types only, no defaults,
+    -- which is what REVOKE needs for unambiguous function identification.)
+    FOR fn_rec IN
+      SELECT
+        p.oid,
+        p.proname,
+        pg_get_function_identity_arguments(p.oid) AS arg_types
+      FROM pg_proc p
       JOIN pg_namespace n ON p.pronamespace = n.oid
-      WHERE n.nspname = 'public' AND p.proname = fn
-    ) INTO fn_exists;
-
-    IF fn_exists THEN
-      -- Revoke EXECUTE from anon and authenticated
-      EXECUTE format('REVOKE EXECUTE ON FUNCTION public.%I FROM anon;', fn);
-      EXECUTE format('REVOKE EXECUTE ON FUNCTION public.%I FROM authenticated;', fn);
-      RAISE NOTICE '✅ Revoked EXECUTE on public.% from anon + authenticated', fn;
-    ELSE
-      RAISE NOTICE '⚠️ Function not found, skipped: public.%', fn;
-    END IF;
+      WHERE n.nspname = 'public'
+        AND p.proname = fn_name
+    LOOP
+      -- Build the REVOKE statement with the FULL function signature.
+      -- Example: REVOKE EXECUTE ON FUNCTION public.correct_cash_balance(bigint, numeric, date, text) FROM anon;
+      revoke_sql := format(
+        'REVOKE EXECUTE ON FUNCTION public.%I(%s) FROM anon, authenticated;',
+        fn_rec.proname,
+        fn_rec.arg_types
+      );
+      EXECUTE revoke_sql;
+      RAISE NOTICE '✅ Revoked EXECUTE on public.%(%) from anon + authenticated',
+        fn_rec.proname, fn_rec.arg_types;
+    END LOOP;
   END LOOP;
 END $$;
 
@@ -254,24 +268,31 @@ ORDER BY tablename;
 -- Expected: 0 rows returned (all permissive policies dropped)
 
 -- 5.3 Verify EXECUTE revoked on SECURITY DEFINER functions
+-- (Use has_function_privilege with the full signature from pg_proc)
 SELECT
   'function permissions' AS check,
-  routine_name AS function_name,
+  p.proname AS function_name,
+  pg_get_function_identity_arguments(p.oid) AS args,
   CASE
-    WHEN has_schema_privilege('anon', 'public', 'USAGE')
-      AND has_function_privilege('anon', 'public.' || routine_name || '()', 'EXECUTE')
+    WHEN has_function_privilege('anon', p.oid, 'EXECUTE')
     THEN '❌ anon can still execute'
     ELSE '✅ anon cannot execute'
-  END AS anon_status
-FROM information_schema.routines
-WHERE routine_schema = 'public'
-  AND routine_name IN (
+  END AS anon_status,
+  CASE
+    WHEN has_function_privilege('authenticated', p.oid, 'EXECUTE')
+    THEN '❌ authenticated can still execute'
+    ELSE '✅ authenticated cannot execute'
+  END AS auth_status
+FROM pg_proc p
+JOIN pg_namespace n ON p.pronamespace = n.oid
+WHERE n.nspname = 'public'
+  AND p.proname IN (
     'correct_cash_balance','create_mix_order','create_sale',
     'decrement_stock_fallback','record_expense','record_purchase',
     'transfer_cash','verify_customer_login'
   )
-ORDER BY routine_name;
--- Expected: all rows show '✅ anon cannot execute'
+ORDER BY p.proname;
+-- Expected: all rows show '✅ anon cannot execute' AND '✅ authenticated cannot execute'
 
 -- 5.4 Verify leaked password protection enabled
 SELECT
@@ -315,15 +336,31 @@ WHERE id = '00000000-0000-0000-0000-000000000000';
 -- CREATE POLICY "Allow all on suppliers" ON public.suppliers FOR ALL USING (true) WITH CHECK (true);
 -- CREATE POLICY "Allow all on utility_bills" ON public.utility_bills FOR ALL USING (true) WITH CHECK (true);
 --
--- -- 3. Re-grant EXECUTE on security definer functions
--- GRANT EXECUTE ON FUNCTION public.correct_cash_balance() TO anon, authenticated;
--- GRANT EXECUTE ON FUNCTION public.create_mix_order() TO anon, authenticated;
--- GRANT EXECUTE ON FUNCTION public.create_sale() TO anon, authenticated;
--- GRANT EXECUTE ON FUNCTION public.decrement_stock_fallback() TO anon, authenticated;
--- GRANT EXECUTE ON FUNCTION public.record_expense() TO anon, authenticated;
--- GRANT EXECUTE ON FUNCTION public.record_purchase() TO anon, authenticated;
--- GRANT EXECUTE ON FUNCTION public.transfer_cash() TO anon, authenticated;
--- GRANT EXECUTE ON FUNCTION public.verify_customer_login() TO anon, authenticated;
+-- -- 3. Re-grant EXECUTE on security definer functions (dynamic — handles overloads)
+-- DO $$
+-- DECLARE
+--   fn_name TEXT;
+--   fns TEXT[] := ARRAY[
+--     'correct_cash_balance','create_mix_order','create_sale',
+--     'decrement_stock_fallback','record_expense','record_purchase',
+--     'transfer_cash','verify_customer_login'
+--   ];
+--   fn_rec RECORD;
+-- BEGIN
+--   FOREACH fn_name IN ARRAY fns LOOP
+--     FOR fn_rec IN
+--       SELECT p.oid, pg_get_function_identity_arguments(p.oid) AS args
+--       FROM pg_proc p
+--       JOIN pg_namespace n ON p.pronamespace = n.oid
+--       WHERE n.nspname = 'public' AND p.proname = fn_name
+--     LOOP
+--       EXECUTE format(
+--         'GRANT EXECUTE ON FUNCTION public.%I(%s) TO anon, authenticated;',
+--         fn_name, fn_rec.args
+--       );
+--     END LOOP;
+--   END LOOP;
+-- END $$;
 --
 -- -- 4. Disable leaked password protection
 -- UPDATE auth.config SET leaked_password_protection = false WHERE id = '00000000-0000-0000-0000-000000000000';
