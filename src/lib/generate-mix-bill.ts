@@ -270,10 +270,14 @@ export async function generateMixBillPDF(bill: BillData) {
 
   /* ════════════════════════════════════════════════════════
    *  TOTALS BOX (right-aligned) + Amount in words (left)
+   *  Grand Total = Subtotal + Driver Rent (if any)
    * ════════════════════════════════════════════════════════ */
   const fy = (doc as any).lastAutoTable.finalY + 8;
   const hasDriverRent = bill.driverRent && bill.driverRent > 0;
   const isCash = bill.customerType === "cash" && bill.cashReceived !== undefined;
+  // Grand Total = subtotal + driver rent (this is what customer actually pays)
+  const grandTotal = bill.totalAmount + (hasDriverRent ? bill.driverRent! : 0);
+  const grandTotalStr = `Rs. ${grandTotal.toLocaleString("en-PK")}`;
 
   // Totals box on right side
   const tBoxW = 80;
@@ -315,22 +319,22 @@ export async function generateMixBillPDF(bill: BillData) {
     doc.text(`Rs. ${bill.driverRent!.toLocaleString("en-PK")}`, valX, ty, { align: "right" });
   }
 
-  // Divider line
+  // Gold divider line
   ty += 5;
   doc.setDrawColor(...C_GOLD);
   doc.setLineWidth(0.5);
   doc.line(tBoxX + 4, ty, tBoxX + tBoxW - 4, ty);
   doc.setLineWidth(0.2);
 
-  // Grand Total
+  // Grand Total (= Subtotal + Driver Rent)
   ty += 7;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(13);
   doc.setTextColor(...C_GREEN);
   doc.text("GRAND TOTAL", labelX, ty);
-  doc.text(ta, valX, ty, { align: "right" });
+  doc.text(grandTotalStr, valX, ty, { align: "right" });
 
-  // Cash received + change
+  // Cash received + change (change is calculated from grand total, not subtotal)
   if (isCash) {
     const cash = bill.cashReceived as number;
     ty += 7;
@@ -343,7 +347,7 @@ export async function generateMixBillPDF(bill: BillData) {
     doc.text(`Rs. ${cash.toLocaleString("en-PK")}`, valX, ty, { align: "right" });
 
     ty += 6;
-    const change = cash - bill.totalAmount;
+    const change = cash - grandTotal;
     doc.setFont("helvetica", "normal");
     doc.setTextColor(...C_GRAY);
     doc.text("Change:", labelX, ty);
@@ -352,7 +356,7 @@ export async function generateMixBillPDF(bill: BillData) {
     doc.text(`Rs. ${change.toLocaleString("en-PK")}`, valX, ty, { align: "right" });
   }
 
-  // Amount in words — left side, below table
+  // Amount in words — left side, below table (reflects GRAND TOTAL)
   doc.setFont("helvetica", "italic");
   doc.setFontSize(8.5);
   doc.setTextColor(...C_GRAY);
@@ -360,36 +364,46 @@ export async function generateMixBillPDF(bill: BillData) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
   doc.setTextColor(...C_DARK);
-  const wordsText = numberToRupeeWords(bill.totalAmount);
+  const wordsText = numberToRupeeWords(grandTotal);
   // Wrap if too long
   const wordsLines = doc.splitTextToSize(wordsText, tBoxX - m - 6);
   doc.text(wordsLines, m, fy + 12);
 
   /* ════════════════════════════════════════════════════════
-   *  TERMS & CONDITIONS
+   *  TERMS & CONDITIONS — boxed badge
    * ════════════════════════════════════════════════════════ */
   const tcY = Math.max(fy + tBoxH + 8, fy + 22);
-  doc.setDrawColor(...C_GRAY_LIGHT);
-  doc.setLineWidth(0.3);
-  doc.line(m, tcY, pw - m, tcY);
+  const tcBoxH = 22;
+
+  // Box background (light cream)
+  doc.setFillColor(...C_GOLD_LIGHT);
+  doc.setDrawColor(...C_GREEN);
+  doc.setLineWidth(0.4);
+  doc.roundedRect(m, tcY, pw - m * 2, tcBoxH, 1.5, 1.5, "FD");
   doc.setLineWidth(0.2);
 
+  // Left accent bar
+  doc.setFillColor(...C_GREEN);
+  doc.rect(m, tcY, 1.5, tcBoxH, "F");
+
+  // Title badge
   doc.setFont("helvetica", "bold");
   doc.setFontSize(7.5);
   doc.setTextColor(...C_GREEN);
-  doc.text("TERMS & CONDITIONS", m, tcY + 4);
+  doc.text("TERMS & CONDITIONS", m + 5, tcY + 5);
 
+  // Terms list
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7);
-  doc.setTextColor(...C_GRAY);
-  doc.text("1. Goods once sold will not be returned or exchanged.", m, tcY + 8);
-  doc.text("2. All disputes are subject to Kasur jurisdiction.", m, tcY + 11.5);
-  doc.text("3. Please verify bill details at the time of delivery.", m, tcY + 15);
+  doc.setTextColor(80, 90, 100);
+  doc.text("1. Goods once sold will not be returned or exchanged.", m + 5, tcY + 10);
+  doc.text("2. All disputes are subject to Kasur jurisdiction.", m + 5, tcY + 14);
+  doc.text("3. Please verify bill details at the time of delivery.", m + 5, tcY + 18);
 
   /* ════════════════════════════════════════════════════════
    *  SIGNATURE SECTION
    * ════════════════════════════════════════════════════════ */
-  let sigY = tcY + 22;
+  let sigY = tcY + tcBoxH + 14;
   if (sigY > ph - 30) sigY = ph - 30;
 
   // Signature line on right

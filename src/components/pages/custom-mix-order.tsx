@@ -75,6 +75,8 @@ function printMixBill(order: { id: string | number; customer: string; date: stri
   const bagHead = hasBagInfo ? `<th style="text-align:right">Bags</th><th style="text-align:right">Rate/Bag</th><th style="text-align:right">Bag Amt</th>` : "";
   const bagFoot = hasBagInfo ? `<td style="text-align:right">${totalBagAmount > 0 ? totalBagAmount.toLocaleString("en-PK") : ""}</td><td></td><td></td>` : "";
 
+  const grandTotal = totalAmount + (order.driverRent && order.driverRent > 0 ? order.driverRent : 0);
+
   const html = `<!DOCTYPE html><html><head><style>
     @page{size:auto;margin:5mm}
     *{margin:0;padding:0;box-sizing:border-box}
@@ -102,7 +104,10 @@ function printMixBill(order: { id: string | number; customer: string; date: stri
     .totals-box .trow span:first-child{color:#666}
     .totals-box .trow.grand span:first-child{color:#fff}
     .words{font-size:7.5px;font-style:italic;color:#666;padding:2px 6px;text-align:left}
-    .tc{margin-top:8px;border-top:1px dashed #aaa;padding-top:3px;font-size:6.5px;color:#888;line-height:1.3}
+    .tc-box{margin-top:8px;border:1px solid #085039;border-radius:2px;background:#fcf7e8;padding:4px;position:relative}
+    .tc-box::before{content:'';position:absolute;left:0;top:0;bottom:0;width:2px;background:#085039;border-radius:2px 0 0 2px}
+    .tc-title{font-size:7.5px;font-weight:bold;color:#085039;letter-spacing:0.5px;margin-bottom:2px;padding-left:4px}
+    .tc-list{font-size:6.5px;color:#666;line-height:1.4;padding-left:4px}
     .sig{margin-top:12px;display:flex;justify-content:space-between;align-items:flex-end}
     .sig-line{border-top:1px solid #444;width:55%;text-align:center;padding-top:2px;font-size:8px;color:#444}
     .stamp{width:40px;height:40px;border:1.5px solid #085039;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:6px;font-weight:bold;color:#085039;text-align:center;line-height:1.2;position:relative}
@@ -141,11 +146,16 @@ function printMixBill(order: { id: string | number; customer: string; date: stri
     <div class="totals-box">
       <div class="trow"><span>Subtotal:</span><strong>Rs. ${fmtRs(totalAmount)}</strong></div>
       ${order.driverRent && order.driverRent > 0 ? `<div class="trow"><span>Driver Rent:</span><strong>Rs. ${fmtRs(order.driverRent)}</strong></div>` : ""}
-      <div class="trow grand"><span>GRAND TOTAL:</span><span>Rs. ${fmtRs(totalAmount)}</span></div>
-      <div class="words">In words: ${numberToRupeeWords(totalAmount)}</div>
+      <div class="trow grand"><span>GRAND TOTAL:</span><span>Rs. ${fmtRs(grandTotal)}</span></div>
+      <div class="words">In words: ${numberToRupeeWords(grandTotal)}</div>
     </div>
-    <div class="tc">
-      Terms: Goods once sold will not be returned. • All disputes subject to Kasur jurisdiction. • Please verify at delivery.
+    <div class="tc-box">
+      <div class="tc-title">TERMS &amp; CONDITIONS</div>
+      <div class="tc-list">
+        1. Goods once sold will not be returned or exchanged.<br/>
+        2. All disputes subject to Kasur jurisdiction.<br/>
+        3. Please verify bill details at the time of delivery.
+      </div>
     </div>
     <div class="sig">
       <div class="stamp"><span>DANISH</span><span>FARMHOUSE</span><span>★ KASUR ★</span></div>
