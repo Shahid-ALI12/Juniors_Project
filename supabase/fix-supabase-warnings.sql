@@ -200,36 +200,70 @@ END $$;
 -- ════════════════════════════════════════════════════════════════════════
 -- SECTION 4: Enable Leaked Password Protection
 -- Issue: auth_leaked_password_protection — disabled
--- Fix: Enable via Supabase Auth config (this is the SQL way to do it)
+-- Fix: Enable via Supabase Auth config
+--
+-- IMPORTANT: Supabase Auth config schema varies across versions.
+-- - Some instances: auth.config (single-row table)
+-- - Some instances: auth.config table doesn't exist (config is in
+--   Supabase Dashboard only)
+-- - Some instances: column name is different
+--
+-- We try multiple approaches and fall back gracefully to a NOTICE
+-- telling user to enable it manually via Dashboard.
 -- ════════════════════════════════════════════════════════════════════════
 
--- Supabase Auth stores its config in auth.config table.
--- The leaked_password_protection flag rejects passwords found in known
--- data breaches (HaveIBeenPwned database, k-anonymity query).
-
 DO $$
+DECLARE
+  config_exists BOOLEAN;
+  has_leaked_pw_col BOOLEAN;
 BEGIN
-  -- Check if auth.config table exists
-  IF EXISTS (
+  -- Check if auth.config table exists at all
+  SELECT EXISTS (
     SELECT 1 FROM information_schema.tables
     WHERE table_schema = 'auth' AND table_name = 'config'
-  ) THEN
-    -- Update the leaked_password_protection setting
+  ) INTO config_exists;
+
+  IF NOT config_exists THEN
+    RAISE NOTICE '⚠️ auth.config table does not exist in this Supabase instance.'
+      ' Enable Leaked Password Protection manually via Dashboard:'
+      ' Authentication → Settings → User Sessions → Leaked Password Protection → ON';
+    RETURN;
+  END IF;
+
+  -- Check if leaked_password_protection column exists
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'auth' AND table_name = 'config'
+      AND column_name = 'leaked_password_protection'
+  ) INTO has_leaked_pw_col;
+
+  IF NOT has_leaked_pw_col THEN
+    RAISE NOTICE '⚠️ auth.config exists but no leaked_password_protection column.'
+      ' Enable via Dashboard: Authentication → Settings → Leaked Password Protection → ON';
+    RETURN;
+  END IF;
+
+  -- Update the leaked_password_protection setting
+  -- Use single-row id pattern (Supabase convention)
+  BEGIN
     UPDATE auth.config
     SET leaked_password_protection = true
     WHERE id = '00000000-0000-0000-0000-000000000000';
 
-    -- Verify
     IF FOUND THEN
-      RAISE NOTICE '✅ Leaked password protection enabled';
+      RAISE NOTICE '✅ Leaked password protection enabled (via row 00000000-... update)';
     ELSE
-      -- If no row was updated, the config row might not exist yet.
-      -- Try inserting default config first (rare case).
-      RAISE NOTICE '⚠️ auth.config row not updated. May need manual enable in Dashboard.';
+      -- Maybe the id is different — try updating all rows
+      BEGIN
+        UPDATE auth.config SET leaked_password_protection = true;
+        RAISE NOTICE '✅ Leaked password protection enabled (updated all rows in auth.config)';
+      EXCEPTION WHEN OTHERS THEN
+        RAISE NOTICE '⚠️ Could not update auth.config. Enable via Dashboard: Authentication → Settings';
+      END;
     END IF;
-  ELSE
-    RAISE NOTICE '⚠️ auth.config table not found. Enable via Dashboard: Authentication → Settings → Leaked Password Protection';
-  END IF;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE '⚠️ Error updating auth.config: %. Enable via Dashboard: Authentication → Settings', SQLERRM;
+  END;
 END $$;
 
 
@@ -295,14 +329,45 @@ ORDER BY p.proname;
 -- Expected: all rows show '✅ anon cannot execute' AND '✅ authenticated cannot execute'
 
 -- 5.4 Verify leaked password protection enabled
-SELECT
-  'leaked password protection' AS check,
-  CASE
-    WHEN leaked_password_protection = true THEN '✅ ENABLED'
-    ELSE '❌ DISABLED'
-  END AS status
-FROM auth.config
-WHERE id = '00000000-0000-0000-0000-000000000000';
+-- Defensive: only run if auth.config table + column exist
+DO $$
+DECLARE
+  config_exists BOOLEAN;
+  col_exists BOOLEAN;
+  current_val BOOLEAN;
+BEGIN
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'auth' AND table_name = 'config'
+  ) INTO config_exists;
+
+  IF NOT config_exists THEN
+    RAISE NOTICE '⚠️ auth.config table not found — enable Leaked Password Protection via Dashboard: Authentication → Settings';
+    RETURN;
+  END IF;
+
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'auth' AND table_name = 'config'
+      AND column_name = 'leaked_password_protection'
+  ) INTO col_exists;
+
+  IF NOT col_exists THEN
+    RAISE NOTICE '⚠️ auth.config.leaked_password_protection column not found — enable via Dashboard';
+    RETURN;
+  END IF;
+
+  BEGIN
+    EXECUTE 'SELECT leaked_password_protection FROM auth.config LIMIT 1' INTO current_val;
+    IF current_val THEN
+      RAISE NOTICE '✅ Leaked password protection: ENABLED';
+    ELSE
+      RAISE NOTICE '❌ Leaked password protection: DISABLED (enable via Dashboard)';
+    END IF;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE '⚠️ Could not read auth.config — enable via Dashboard';
+  END;
+END $$;
 
 
 -- ════════════════════════════════════════════════════════════════════════
