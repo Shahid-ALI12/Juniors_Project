@@ -27,13 +27,19 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { product_id, location_id, stock_quantity, last_bag_weight_kg } = body;
 
-    if (!product_id || !location_id) {
-      return NextResponse.json({ error: "product_id and location_id are required" }, { status: 400 });
+    if (!product_id) {
+      return NextResponse.json({ error: "product_id is required" }, { status: 400 });
     }
 
+    // location_id may be null (default warehouse row); only validate when provided
+    const locId =
+      location_id === null || location_id === undefined || location_id === ""
+        ? null
+        : Number(location_id);
+
     const stock = await upsertStock({
-      product_id,
-      location_id,
+      product_id: Number(product_id),
+      location_id: locId,
       stock_quantity: Number(stock_quantity) || 0,
       last_bag_weight_kg: last_bag_weight_kg ? Number(last_bag_weight_kg) : null,
     });
