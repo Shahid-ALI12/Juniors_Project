@@ -174,7 +174,7 @@ export function buildRestoreScript(
   sections.push(``);
 
   for (const { table, kind } of RESTORE_ORDER) {
-    const rows = (backup.data[table] as Record<string, unknown>[]) || [];
+    const rows = (backup.data[table] as unknown as Record<string, unknown>[]) || [];
     counts[table] = rows.length;
     totalRows += rows.length;
 
