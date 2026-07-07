@@ -7,6 +7,10 @@ export interface CustomerRow {
   phone: string | null;
   is_active: boolean;
   created_at: string;
+  // One-time previous balance entered manually by the shopkeeper.
+  // Added to total bill on every statement so the customer's true
+  // outstanding = opening_balance + total_sales - cash_paid - goods.
+  opening_balance: number;
 }
 
 export async function getAllCustomers(activeOnly = false): Promise<CustomerRow[]> {

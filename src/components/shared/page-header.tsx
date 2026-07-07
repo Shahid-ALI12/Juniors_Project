@@ -28,7 +28,7 @@ export function MetricCard({
   label?: string;
   title?: string;
   value: string | number;
-  color?: "blue" | "purple" | "green" | "orange" | string;
+  color?: "blue" | "purple" | "green" | "orange" | "amber" | string;
   prefix?: string;
   suffix?: string;
   icon?: LucideIcon;
@@ -41,6 +41,7 @@ export function MetricCard({
     purple: "border-t-purple-600 text-purple-600",
     green: "border-t-green-600 text-green-600",
     orange: "border-t-orange-600 text-orange-600",
+    amber: "border-t-amber-600 text-amber-600",
   };
 
   const colorClasses = colorMap[color] || `border-t-slate-400 text-slate-600`;

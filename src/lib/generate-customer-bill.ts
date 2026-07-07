@@ -3,6 +3,7 @@ import type { Sale, Customer } from "@/types";
 interface CustomerBillData {
   customer: Pick<Customer, "id" | "name" | "type" | "phone">;
   sales: Sale[];
+  openingBalance: number;
   totalBill: number;
   totalCashPaid: number;
   balanceDue: number;
@@ -144,15 +145,15 @@ export async function generateCustomerBillPDF(bill: CustomerBillData) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7);
   doc.setTextColor(...C_GRAY);
-  doc.text("Total Sales", rightX + 5, y + 11);
-  doc.text("Total Bill", rightX + 5, y + 17);
+  doc.text("Opening Bal.", rightX + 5, y + 11);
+  doc.text("Total Sales", rightX + 5, y + 17);
   doc.text("Cash Paid", rightX + 5, y + 23);
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9.5);
   doc.setTextColor(...C_DARK);
-  doc.text(String(bill.sales.length), rightX + 32, y + 11);
   doc.setFontSize(8.5);
+  doc.text(`Rs. ${bill.openingBalance.toLocaleString("en-PK")}`, rightX + 32, y + 11);
   doc.text(`Rs. ${bill.totalBill.toLocaleString("en-PK")}`, rightX + 32, y + 17);
   doc.text(`Rs. ${bill.totalCashPaid.toLocaleString("en-PK")}`, rightX + 32, y + 23);
 
@@ -160,21 +161,58 @@ export async function generateCustomerBillPDF(bill: CustomerBillData) {
 
   /* ════════════════════════════════════════════════════════
    *  TRANSACTION TABLE
+   *  Row 1 (if opening balance > 0): highlighted "Opening Balance" row
+   *  Then sales rows indexed 1..N
    * ════════════════════════════════════════════════════════ */
-  const tData = bill.sales.map((sale, i) => {
+  type TableRow = { data: string[]; opening?: boolean };
+
+  const rows: TableRow[] = [];
+
+  // Opening Balance row — only when there is a previous balance
+  if (bill.openingBalance > 0) {
+    rows.push({
+      opening: true,
+      data: [
+        "—",
+        bill.customer.name ? "" : "", // (no date for opening balance)
+        "Opening Balance (purana balance)",
+        "—",
+        "—",
+        "—",
+        `Rs. ${bill.openingBalance.toLocaleString("en-PK")}`,
+        "—",
+      ],
+    });
+  }
+
+  bill.sales.forEach((sale, i) => {
     const unitLabel = sale.unit_type === "kg" ? "kg" : "bags";
     const billAmount = sale.quantity * sale.rate_per_bag + sale.rickshaw_fare;
-    return [
-      String(i + 1),
-      sale.sale_date || "",
-      sale.products?.name || `Product #${sale.product_id}`,
-      `${sale.quantity.toLocaleString("en-PK")} ${unitLabel}`,
-      `Rs. ${sale.rate_per_bag.toLocaleString("en-PK")}`,
-      sale.rickshaw_fare > 0 ? `Rs. ${sale.rickshaw_fare.toLocaleString("en-PK")}` : "—",
-      `Rs. ${billAmount.toLocaleString("en-PK")}`,
-      sale.cash_received > 0 ? `Rs. ${sale.cash_received.toLocaleString("en-PK")}` : "—",
-    ];
+    rows.push({
+      data: [
+        String(i + 1),
+        sale.sale_date || "",
+        sale.products?.name || `Product #${sale.product_id}`,
+        `${sale.quantity.toLocaleString("en-PK")} ${unitLabel}`,
+        `Rs. ${sale.rate_per_bag.toLocaleString("en-PK")}`,
+        sale.rickshaw_fare > 0 ? `Rs. ${sale.rickshaw_fare.toLocaleString("en-PK")}` : "—",
+        `Rs. ${billAmount.toLocaleString("en-PK")}`,
+        sale.cash_received > 0 ? `Rs. ${sale.cash_received.toLocaleString("en-PK")}` : "—",
+      ],
+    });
   });
+
+  // The opening-balance row spans the date column visually using empty string,
+  // we leave the date column empty for it.
+  // (autoTable doesn't natively support rowSpan; using a "—" marker is fine.)
+  if (bill.openingBalance > 0 && rows[0].opening) {
+    rows[0].data[1] = "Prev. Bal.";
+  }
+
+  const tData = rows.map((r) => r.data);
+  const openingRowIndices = rows
+    .map((r, i) => (r.opening ? i : -1))
+    .filter((i) => i >= 0);
 
   const totalBillStr = `Rs. ${bill.totalBill.toLocaleString("en-PK")}`;
   const totalCashStr = `Rs. ${bill.totalCashPaid.toLocaleString("en-PK")}`;
@@ -209,6 +247,17 @@ export async function generateCustomerBillPDF(bill: CustomerBillData) {
       lineColor: C_GRAY_LIGHT,
       cellPadding: 2.5,
     },
+    // Highlight the opening-balance row(s) in amber
+    didParseCell: (hookData) => {
+      if (
+        hookData.section === "body" &&
+        openingRowIndices.includes(hookData.row.index)
+      ) {
+        hookData.cell.styles.fillColor = C_GOLD_LIGHT;
+        hookData.cell.styles.textColor = C_GREEN;
+        hookData.cell.styles.fontStyle = "bold";
+      }
+    },
     alternateRowStyles: { fillColor: [249, 251, 249] },
     columnStyles: {
       0: { cellWidth: 10, halign: "center" },
@@ -229,7 +278,9 @@ export async function generateCustomerBillPDF(bill: CustomerBillData) {
   const fy = (doc as any).lastAutoTable.finalY + 8;
   const tBoxW = 80;
   const tBoxX = pw - m - tBoxW;
-  const tBoxH = 8 + 3 * 7 + 10; // 3 rows: total bill, cash paid, balance
+  // 4 rows when opening balance > 0, else 3 rows
+  const hasOpening = bill.openingBalance > 0;
+  const tBoxH = 8 + (hasOpening ? 4 : 3) * 7 + 10;
 
   doc.setFillColor(...C_WHITE);
   doc.setDrawColor(...C_GREEN);
@@ -240,6 +291,18 @@ export async function generateCustomerBillPDF(bill: CustomerBillData) {
   let ty = fy + 7;
   const labelX = tBoxX + 6;
   const valX = tBoxX + tBoxW - 6;
+
+  // Opening Balance (only when > 0)
+  if (hasOpening) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(...C_GRAY);
+    doc.text("Opening Bal:", labelX, ty);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(...C_DARK);
+    doc.text(`Rs. ${bill.openingBalance.toLocaleString("en-PK")}`, valX, ty, { align: "right" });
+    ty += 7;
+  }
 
   // Total Bill
   doc.setFont("helvetica", "normal");

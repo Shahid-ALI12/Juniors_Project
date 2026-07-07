@@ -64,6 +64,10 @@ export interface Customer {
   phone: string | null;
   is_active: boolean;
   created_at: string;
+  // One-time previous balance the user enters manually (instead of
+  // re-entering all historical sales). Added to total bill on every
+  // statement so balance_due = opening_balance + total_bill - cash_paid - goods.
+  opening_balance: number;
 }
 
 export interface Sale {
@@ -155,6 +159,7 @@ export interface Purchase {
 // ─── Computed / UI Types ───
 
 export interface CustomerBalance {
+  opening_balance: number;
   total_bill: number;
   total_cash_paid: number;
   total_goods_value: number;

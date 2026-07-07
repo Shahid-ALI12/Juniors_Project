@@ -35,6 +35,7 @@ function AmountWithWords({ amount, className }: { amount: number; className?: st
 }
 
 interface BalanceRow {
+  opening_balance: number;
   total_bill: number;
   total_cash_paid: number;
   total_goods_value: number;
@@ -98,7 +99,7 @@ export default function CustomerKhataPage() {
   const allCustomerBalances = useMemo<CustomerWithBalance[]>(() => {
     return customers
       .map((c) => {
-        const b = balances[c.id] ?? { total_bill: 0, total_cash_paid: 0, total_goods_value: 0, balance_due: 0 };
+        const b = balances[c.id] ?? { opening_balance: c.opening_balance ?? 0, total_bill: 0, total_cash_paid: 0, total_goods_value: 0, balance_due: c.opening_balance ?? 0 };
         return { ...c, ...b };
       })
       .sort((a, b) => b.balance_due - a.balance_due);
@@ -148,10 +149,11 @@ export default function CustomerKhataPage() {
     setDownloading(true);
     try {
       const { generateCustomerBillPDF } = await import("@/lib/generate-customer-bill");
-      const bal = selectedBalance ?? { total_bill: 0, total_cash_paid: 0, total_goods_value: 0, balance_due: 0 };
+      const bal = selectedBalance ?? { opening_balance: selectedCustomer?.opening_balance ?? 0, total_bill: 0, total_cash_paid: 0, total_goods_value: 0, balance_due: selectedCustomer?.opening_balance ?? 0 };
       await generateCustomerBillPDF({
         customer: selectedCustomer,
         sales: selectedSales,
+        openingBalance: bal.opening_balance,
         totalBill: bal.total_bill,
         totalCashPaid: bal.total_cash_paid,
         balanceDue: bal.balance_due,
@@ -203,6 +205,9 @@ export default function CustomerKhataPage() {
                   Type
                 </th>
                 <th className="text-right text-xs uppercase text-slate-500 font-semibold px-4 py-3">
+                  Opening Balance
+                </th>
+                <th className="text-right text-xs uppercase text-slate-500 font-semibold px-4 py-3">
                   Total Billed
                 </th>
                 <th className="text-right text-xs uppercase text-slate-500 font-semibold px-4 py-3">
@@ -219,7 +224,7 @@ export default function CustomerKhataPage() {
             <tbody>
               {allCustomerBalances.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-slate-400">
+                  <td colSpan={7} className="px-4 py-10 text-center text-slate-400">
                     No customers found.
                   </td>
                 </tr>
@@ -244,6 +249,16 @@ export default function CustomerKhataPage() {
                         >
                           {c.type}
                         </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {c.opening_balance > 0 ? (
+                          <span className="inline-flex flex-col items-end">
+                            <span className="tabular-nums font-medium text-amber-700">Rs. {fmt(c.opening_balance)}</span>
+                            <span className="text-[0.6rem] text-slate-400 capitalize">{numberToWords(c.opening_balance)}</span>
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <AmountWithWords amount={c.total_bill} className="items-end" />
@@ -373,6 +388,28 @@ export default function CustomerKhataPage() {
                     </tr>
                   </thead>
                   <tbody>
+                    {/* Opening Balance — first row, highlighted in amber */}
+                    {selectedBalance && selectedBalance.opening_balance > 0 && (
+                      <tr className="bg-amber-50/70 border-b border-amber-200">
+                        <td className="px-3 py-2.5 font-bold text-amber-800 align-top">—</td>
+                        <td className="px-3 py-2.5 text-amber-700 align-top italic text-xs">
+                          {selectedCustomer?.created_at?.slice(0, 10) ?? "—"}
+                        </td>
+                        <td className="px-3 py-2.5 text-amber-900 font-semibold italic">
+                          Opening Balance (purana balance)
+                        </td>
+                        <td className="px-3 py-2.5 text-right tabular-nums text-amber-700">—</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums text-amber-700">—</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums text-amber-700">—</td>
+                        <td className="px-3 py-2.5 text-right">
+                          <span className="inline-flex flex-col items-end">
+                            <span className="tabular-nums font-bold text-amber-800">Rs. {fmt(selectedBalance.opening_balance)}</span>
+                            <span className="text-[0.6rem] text-amber-600 capitalize">{numberToWords(selectedBalance.opening_balance)}</span>
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-right text-amber-700">—</td>
+                      </tr>
+                    )}
                     {groupedSales.sortedGroups.map((group) =>
                       group.sales.map((sale, idx) => {
                         const billAmount = sale.quantity * sale.rate_per_bag + sale.rickshaw_fare;
@@ -432,7 +469,9 @@ export default function CustomerKhataPage() {
                 </table>
                 {selectedSales.length === 0 && (
                   <div className="p-8 text-center text-slate-400 text-sm">
-                    No sales recorded for this customer.
+                    {selectedBalance && selectedBalance.opening_balance > 0
+                      ? "No sales recorded yet — only opening balance is on this customer's tab."
+                      : "No sales recorded for this customer."}
                   </div>
                 )}
               </div>
@@ -457,7 +496,8 @@ export default function CustomerKhataPage() {
 
             {/* Metric Cards */}
             {selectedBalance && (
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+                <MetricCard label="Opening Balance" value={fmt(selectedBalance.opening_balance)} color="amber" prefix="Rs. " words={numberToWords(selectedBalance.opening_balance)} />
                 <MetricCard label="Total Billed" value={fmt(selectedBalance.total_bill)} color="blue" prefix="Rs. " words={numberToWords(selectedBalance.total_bill)} />
                 <MetricCard label="Cash Paid" value={fmt(selectedBalance.total_cash_paid)} color="green" prefix="Rs. " words={numberToWords(selectedBalance.total_cash_paid)} />
                 <MetricCard label="Paid in Goods" value={fmt(selectedBalance.total_goods_value)} color="purple" prefix="Rs. " words={numberToWords(selectedBalance.total_goods_value)} />

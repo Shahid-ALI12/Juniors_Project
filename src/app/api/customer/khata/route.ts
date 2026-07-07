@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
         },
         linked_customer_id: null,
         sales: [],
-        balance: { total_bill: 0, total_cash_paid: 0, total_goods_value: 0, balance_due: 0 },
+        balance: { opening_balance: 0, total_bill: 0, total_cash_paid: 0, total_goods_value: 0, balance_due: 0 },
       });
     }
 
@@ -72,7 +72,16 @@ export async function GET(request: NextRequest) {
       totalBill += qty * rate + fare;
       totalCashPaid += Number(row.cash_received) || 0;
     }
-    const balanceDue = totalBill - totalCashPaid;
+
+    // Fetch opening_balance for the linked business customer
+    const { data: linkedCus } = await admin
+      .from("customers")
+      .select("opening_balance")
+      .eq("id", linkedCustomerId)
+      .maybeSingle();
+    const openingBalance = Number((linkedCus as any)?.opening_balance) || 0;
+
+    const balanceDue = openingBalance + totalBill - totalCashPaid;
 
     return NextResponse.json({
       customer: {
@@ -87,6 +96,7 @@ export async function GET(request: NextRequest) {
       linked_customer_id: linkedCustomerId,
       sales,
       balance: {
+        opening_balance: openingBalance,
         total_bill: totalBill,
         total_cash_paid: totalCashPaid,
         total_goods_value: 0,

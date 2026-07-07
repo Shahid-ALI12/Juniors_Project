@@ -27,14 +27,19 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { name, type, phone } = body;
+    const { name, type, phone, opening_balance } = body;
     if (!name?.trim()) return NextResponse.json({ error: "Name is required" }, { status: 400 });
+
+    // opening_balance is optional — defaults to 0 if not provided
+    const obRaw = typeof opening_balance === "string" ? parseFloat(opening_balance) : opening_balance;
+    const ob = Number.isFinite(obRaw) && obRaw! > 0 ? obRaw! : 0;
 
     const customer = await createBizCustomer({
       name: name.trim(),
       type: type || "credit",
       phone: phone?.trim() || null,
       is_active: true,
+      opening_balance: ob,
     });
     return NextResponse.json({ customer }, { status: 201 });
   } catch (err) {
@@ -49,8 +54,15 @@ export async function PUT(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { id, ...updates } = body;
+    const { id, opening_balance, ...restUpdates } = body;
     if (!id) return NextResponse.json({ error: "ID is required" }, { status: 400 });
+
+    // Normalize opening_balance if provided (string from form input → number)
+    const updates: Record<string, unknown> = { ...restUpdates };
+    if (opening_balance !== undefined) {
+      const obRaw = typeof opening_balance === "string" ? parseFloat(opening_balance) : opening_balance;
+      updates.opening_balance = Number.isFinite(obRaw) && obRaw > 0 ? obRaw : 0;
+    }
 
     const customer = await updateBizCustomer(id, updates);
     return NextResponse.json({ customer });

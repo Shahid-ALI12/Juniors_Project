@@ -76,6 +76,12 @@ export default function DailyEntryPage() {
   const [rickshawFare, setRickshawFare] = useState<string>("0");
   const [rickshawDriver, setRickshawDriver] = useState("");
   const [cashReceived, setCashReceived] = useState<string>("0");
+  // Opening balance — one-time previous balance the user enters manually
+  // for the selected customer (instead of re-entering all historical sales).
+  // Auto-fills with the customer's existing opening_balance when a known
+  // customer is selected; editable so the user can update it on the fly.
+  // Saved back to the customer record when the sale is completed.
+  const [openingBalance, setOpeningBalance] = useState<string>("0");
   const [expenseDesc, setExpenseDesc] = useState("");
   const [expenseAmount, setExpenseAmount] = useState<string>("");
 
@@ -163,6 +169,9 @@ export default function DailyEntryPage() {
     if (c) {
       setCustomerName(c.name);
       setCustomerType(c.type as "credit" | "cash");
+      // Auto-fill opening balance from the customer's existing record
+      // (defaults to 0 if they don't have one set yet).
+      setOpeningBalance(String(c.opening_balance ?? 0));
     }
   };
 
@@ -211,6 +220,9 @@ export default function DailyEntryPage() {
 
     setSavingSale(true);
     try {
+      // Parse opening balance — defaults to 0 if blank/invalid
+      const obNum = Math.max(0, parseFloat(openingBalance) || 0);
+
       // Find or create customer
       let customerId: number;
       const existing = customers.find(
@@ -218,11 +230,38 @@ export default function DailyEntryPage() {
       );
       if (existing) {
         customerId = existing.id;
+        // Persist opening balance update (PUT is cheap — even if the value
+        // is unchanged we still send it; the API normalises to a number).
+        // We do this BEFORE creating the sale so the balance_due calc on the
+        // next reload reflects the latest opening balance.
+        try {
+          const upRes = await fetch("/api/customers", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: customerId, opening_balance: obNum }),
+          });
+          if (upRes.ok) {
+            // Update local state so the customer dropdown reflects the new OB
+            const upData = await upRes.json();
+            if (upData?.customer) {
+              setCustomers((prev) =>
+                prev.map((c) => (c.id === customerId ? { ...c, opening_balance: obNum } : c))
+              );
+            }
+          }
+        } catch {
+          // Non-fatal — sale should still go through even if OB update fails
+          console.warn("Failed to update opening balance for customer", customerId);
+        }
       } else {
         const res = await fetch("/api/customers", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: customerName.trim(), type: customerType }),
+          body: JSON.stringify({
+            name: customerName.trim(),
+            type: customerType,
+            opening_balance: obNum,
+          }),
         });
         if (!res.ok) throw new Error(await apiError(res, "Failed to create customer"));
         const data = await res.json();
@@ -259,6 +298,7 @@ export default function DailyEntryPage() {
       setRickshawFare("0");
       setRickshawDriver("");
       setCashReceived("0");
+      setOpeningBalance("0");
       setCustomerName("");
       setSelectedCustomerId("");
       toast.success(`Sale completed for ${customerName} — Rs. ${fmt(grandTotal)} total bill.`);
@@ -649,6 +689,41 @@ export default function DailyEntryPage() {
               <div className="space-y-2">
                 <Label className="text-xs uppercase text-slate-500 font-semibold">Cash Received Now (Rs.)</Label>
                 <Input type="number" min="0" step="100" value={cashReceived} onChange={(e) => setCashReceived(e.target.value)} />
+              </div>
+            </div>
+
+            {/* Opening Balance — one-time previous balance the user can enter */}
+            <div className="rounded-lg border border-amber-200 bg-amber-50/60 px-4 py-3 space-y-2">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex-1 min-w-[200px] space-y-1.5">
+                  <Label className="text-xs uppercase text-amber-700 font-semibold flex items-center gap-1.5">
+                    Opening Balance (Rs.) — purana balance
+                  </Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="100"
+                    placeholder="0"
+                    value={openingBalance}
+                    onChange={(e) => setOpeningBalance(e.target.value)}
+                    className="bg-white"
+                  />
+                  <p className="text-[11px] text-amber-800/80 leading-tight">
+                    Agar customer ka koi purana balance hai jo aap ko pata hai (system se pehle ke sales),
+                    wo yahan likh dein. Ye customer ki Khata me <strong>opening balance</strong> ke roop me
+                    save ho jayega aur har bill me total ke saath add hoga. Existing customer select karne par
+                    purani value auto-fill ho jati hai.
+                  </p>
+                </div>
+                <div className="flex flex-col items-end shrink-0">
+                  <span className="text-[10px] uppercase tracking-wider text-amber-700/80 font-semibold">Total Receivable</span>
+                  <span className="text-lg font-extrabold text-amber-900 tabular-nums">
+                    Rs. {fmt((parseFloat(openingBalance) || 0) + grandTotal)}
+                  </span>
+                  <span className="text-[10px] text-amber-700/70">
+                    (Opening + Grand Total)
+                  </span>
+                </div>
               </div>
             </div>
 
