@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { useCartStore, fetchCached, invalidateCache, apiError } from "@/store";
 import { PageHeader } from "@/components/shared/page-header";
-import type { CartItem, Sale, Expense, Product, Customer, ProductStock } from "@/types";
+import type { CartItem, Sale, Expense, Product, Customer, ProductStock, Location } from "@/types";
 import { LocationSelect } from "@/components/shared/location-select";
 
 import { Button } from "@/components/ui/button";
@@ -52,6 +52,8 @@ import {
   Loader2,
   Beaker,
   Truck,
+  RefreshCw,
+  Warehouse,
 } from "lucide-react";
 import { toast } from "sonner";
 import ConfirmAction from "@/components/shared/confirm-action";
@@ -93,6 +95,14 @@ export default function DailyEntryPage() {
   const [stockData, setStockData] = useState<ProductStock[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  // Locations for the Available Stock panel (Farmhouse + Shop).
+  // Loaded once on mount, then used to build dynamic columns.
+  const [locations, setLocations] = useState<Location[]>([]);
+  // Tracks the last time stock was refreshed (auto or manual).
+  // Displayed under the Available Stock card so the user knows how fresh
+  // the values are.
+  const [lastStockUpdate, setLastStockUpdate] = useState<Date | null>(null);
+  const [refreshingStock, setRefreshingStock] = useState(false);
   const [loading, setLoading] = useState(true);
   const [savingSale, setSavingSale] = useState(false);
   const [savingExpense, setSavingExpense] = useState(false);
@@ -111,9 +121,35 @@ export default function DailyEntryPage() {
     catch (e: any) { errors.push("Products"); }
     try { setCustomers(await fetchCached<Customer>("customers", "/api/customers?active=true", "customers")); }
     catch (e: any) { errors.push("Customers"); }
-    try { setStockData(await fetchCached<ProductStock>("stock", "/api/stock", "stock")); }
+    try { setStockData(await fetchCached<ProductStock>("stock", "/api/stock", "stock")); setLastStockUpdate(new Date()); }
     catch (e: any) { errors.push("Stock"); }
+    // Fetch locations (not cached — small table, low cost, and we want fresh
+    // data in case the user adds a new location via SQL later)
+    try {
+      const locRes = await fetch("/api/locations", { cache: "no-store" });
+      if (locRes.ok) {
+        const locData = await locRes.json();
+        if (Array.isArray(locData.locations)) setLocations(locData.locations);
+      }
+    } catch (e: any) { /* non-fatal — LocationSelect has its own fetch fallback */ }
     if (errors.length > 0) toast.error(`Failed to load: ${errors.join(", ")}`);
+  }, []);
+
+  // Refetch ONLY stock — used by the manual refresh button on the Available
+  // Stock card. Bypasses the 60s cache so the user always gets fresh values.
+  const refreshStock = useCallback(async () => {
+    setRefreshingStock(true);
+    try {
+      invalidateCache("stock");
+      const fresh = await fetchCached<ProductStock>("stock", "/api/stock", "stock");
+      setStockData(fresh);
+      setLastStockUpdate(new Date());
+      toast.success(`Stock refreshed — ${fresh.length} rows loaded`);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to refresh stock");
+    } finally {
+      setRefreshingStock(false);
+    }
   }, []);
 
   const loadDayData = useCallback(async (d: string) => {
@@ -434,6 +470,62 @@ export default function DailyEntryPage() {
 
   const regularSales = sales.filter((s) => !s.mix_order_id);
   const mixSales = sales.filter((s) => !!s.mix_order_id);
+
+  // ── Available Stock panel data ──
+  // Joins `products` with `stockData` to build a per-product, per-location
+  // matrix. Recomputed automatically whenever stockData changes (e.g. after
+  // a sale is completed and loadMasterData() refreshes stock). This is what
+  // powers the live "Available Stock" card at the bottom of the page.
+  const stockByProduct = useMemo(() => {
+    // Build a lookup: (product_id, location_id) → ProductStock
+    const stockMap = new Map<string, ProductStock>();
+    for (const s of stockData) {
+      const key = `${s.product_id}:${s.location_id ?? "null"}`;
+      stockMap.set(key, s);
+    }
+
+    // Build rows: one per active product, with per-location stock values.
+    // Total = sum across all locations.
+    const rows = products
+      .filter((p) => p.is_active)
+      .map((p) => {
+        const byLocation: Record<number, { bags: number; kg: number; lastBagWeight: number | null }> = {};
+        let totalBags = 0;
+        let totalKg = 0;
+        for (const loc of locations) {
+          const entry = stockMap.get(`${p.id}:${loc.id}`);
+          const bags = entry?.stock_quantity ?? 0;
+          const bw = entry?.last_bag_weight_kg ?? null;
+          const kg = bw != null ? bags * bw : 0;
+          byLocation[loc.id] = { bags, kg, lastBagWeight: bw };
+          totalBags += bags;
+          totalKg += kg;
+        }
+        return {
+          product: p,
+          byLocation,
+          totalBags,
+          totalKg,
+        };
+      })
+      // Sort: highest stock first (so products with stock are at the top,
+      // out-of-stock products sink to the bottom — easier to scan)
+      .sort((a, b) => b.totalBags - a.totalBags);
+
+    return rows;
+  }, [products, stockData, locations]);
+
+  // Summary stats for the Available Stock card header
+  const stockSummary = useMemo(() => {
+    let totalProducts = stockByProduct.length;
+    let outOfStock = 0;
+    let lowStock = 0;
+    for (const row of stockByProduct) {
+      if (row.totalBags === 0) outOfStock++;
+      else if (row.totalBags < 10) lowStock++;
+    }
+    return { totalProducts, outOfStock, lowStock };
+  }, [stockByProduct]);
 
   const mixGroups = useMemo(() => {
     // Group by mix_order_id (DB foreign key — unique per mix order)
@@ -958,6 +1050,181 @@ export default function DailyEntryPage() {
                   </div>
                 )}
               </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── Available Stock panel ──
+            Live list of stock at every location (Farmhouse + Shop).
+            Values update automatically when a sale is completed (because
+            handleCompleteSale → invalidateCache('stock') → loadMasterData()
+            → setStockData → stockByProduct memo recomputes).
+            Manual refresh button bypasses the 60s cache for instant updates.
+        */}
+        <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+          <CardHeader className="pb-2">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div className="space-y-1">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Warehouse className="size-5 text-slate-600" /> Available Stock
+                </CardTitle>
+                <CardDescription className="flex items-center gap-3 flex-wrap">
+                  <span>Live stock across all locations — updates automatically after every sale.</span>
+                  {stockSummary.outOfStock > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-red-100 text-red-700 px-2 py-0.5 text-[11px] font-semibold">
+                      {stockSummary.outOfStock} out of stock
+                    </span>
+                  )}
+                  {stockSummary.lowStock > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 text-[11px] font-semibold">
+                      {stockSummary.lowStock} low (&lt; 10 bags)
+                    </span>
+                  )}
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-[11px] text-slate-400">
+                  {lastStockUpdate ? `Updated ${lastStockUpdate.toLocaleTimeString("en-PK")}` : "Not loaded yet"}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={refreshStock}
+                  disabled={refreshingStock}
+                  className="h-8 gap-1.5"
+                >
+                  {refreshingStock ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="size-3.5" />
+                  )}
+                  Refresh
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {stockByProduct.length === 0 ? (
+              <p className="text-sm text-slate-400 py-4 text-center">
+                No products or stock data available.
+              </p>
+            ) : (
+              <>
+                <div className="max-h-96 overflow-y-auto rounded-lg border border-slate-200/60">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-slate-50">
+                        <TableHead className="text-xs uppercase text-slate-500 font-semibold sticky top-0 bg-slate-50">
+                          Product
+                        </TableHead>
+                        {locations.map((loc) => (
+                          <TableHead
+                            key={loc.id}
+                            className="text-xs uppercase text-slate-500 font-semibold text-right sticky top-0 bg-slate-50"
+                          >
+                            {loc.name} (bags)
+                          </TableHead>
+                        ))}
+                        <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right sticky top-0 bg-slate-50">
+                          Total (bags)
+                        </TableHead>
+                        <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right sticky top-0 bg-slate-50 hidden md:table-cell">
+                          Total (kg)
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {stockByProduct.map((row) => {
+                        const isOut = row.totalBags === 0;
+                        const isLow = row.totalBags > 0 && row.totalBags < 10;
+                        return (
+                          <TableRow
+                            key={row.product.id}
+                            className={cn(
+                              isOut && "bg-red-50/40",
+                              isLow && "bg-amber-50/40"
+                            )}
+                          >
+                            <TableCell className="text-sm font-medium">
+                              {row.product.name}
+                              {isOut && (
+                                <span className="ml-2 inline-flex items-center rounded-full bg-red-100 text-red-700 px-1.5 py-0.5 text-[10px] font-bold uppercase">
+                                  Out
+                                </span>
+                              )}
+                              {isLow && (
+                                <span className="ml-2 inline-flex items-center rounded-full bg-amber-100 text-amber-800 px-1.5 py-0.5 text-[10px] font-bold uppercase">
+                                  Low
+                                </span>
+                              )}
+                            </TableCell>
+                            {locations.map((loc) => {
+                              const cell = row.byLocation[loc.id];
+                              const bags = cell?.bags ?? 0;
+                              const kg = cell?.kg ?? 0;
+                              return (
+                                <TableCell
+                                  key={loc.id}
+                                  className={cn(
+                                    "text-sm text-right tabular-nums",
+                                    bags === 0
+                                      ? "text-red-600 font-semibold"
+                                      : bags < 10
+                                      ? "text-amber-700 font-semibold"
+                                      : "text-slate-700"
+                                  )}
+                                >
+                                  {fmt(bags)}
+                                  {cell?.lastBagWeight != null && bags > 0 && (
+                                    <span className="block text-[10px] text-slate-400 font-normal">
+                                      {fmt(kg)} kg
+                                    </span>
+                                  )}
+                                </TableCell>
+                              );
+                            })}
+                            <TableCell
+                              className={cn(
+                                "text-sm text-right tabular-nums font-bold",
+                                isOut
+                                  ? "text-red-600"
+                                  : isLow
+                                  ? "text-amber-700"
+                                  : "text-slate-900"
+                              )}
+                            >
+                              {fmt(row.totalBags)}
+                            </TableCell>
+                            <TableCell className="text-sm text-right tabular-nums text-slate-500 hidden md:table-cell">
+                              {fmt(row.totalKg)}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-3 pt-2">
+                  <div className="flex-1 min-w-[140px] rounded-lg bg-slate-50 border border-slate-200/60 px-3 py-2 text-center">
+                    <div className="text-xs text-slate-500 font-semibold uppercase">Products Tracked</div>
+                    <div className="text-lg font-extrabold text-slate-900">{fmt(stockSummary.totalProducts)}</div>
+                  </div>
+                  <div className="flex-1 min-w-[140px] rounded-lg bg-red-50 border border-red-200/60 px-3 py-2 text-center">
+                    <div className="text-xs text-red-600 font-semibold uppercase">Out of Stock</div>
+                    <div className="text-lg font-extrabold text-red-600">{fmt(stockSummary.outOfStock)}</div>
+                  </div>
+                  <div className="flex-1 min-w-[140px] rounded-lg bg-amber-50 border border-amber-200/60 px-3 py-2 text-center">
+                    <div className="text-xs text-amber-700 font-semibold uppercase">Low (&lt; 10 bags)</div>
+                    <div className="text-lg font-extrabold text-amber-700">{fmt(stockSummary.lowStock)}</div>
+                  </div>
+                  <div className="flex-1 min-w-[140px] rounded-lg bg-emerald-50 border border-emerald-200/60 px-3 py-2 text-center">
+                    <div className="text-xs text-emerald-700 font-semibold uppercase">Total Bags</div>
+                    <div className="text-lg font-extrabold text-emerald-700">
+                      {fmt(stockByProduct.reduce((sum, r) => sum + r.totalBags, 0))}
+                    </div>
+                  </div>
+                </div>
+              </>
             )}
           </CardContent>
         </Card>
