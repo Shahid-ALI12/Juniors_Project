@@ -3,7 +3,14 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { PageHeader, MetricCard } from "@/components/shared/page-header";
 import { apiError } from "@/store";
-import type { Labour, LabourPayment, LabourPaymentType } from "@/types";
+import type {
+  Labour,
+  LabourPayment,
+  LabourPaymentType,
+  LabourDailyWage,
+  LabourMonthlySummary,
+  LabourPaymentStatus,
+} from "@/types";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +45,10 @@ import {
   Calendar,
   IndianRupee,
   AlertCircle,
+  Save,
+  CalendarDays,
+  CircleCheck,
+  CircleDashed,
 } from "lucide-react";
 import { toast } from "sonner";
 import { pktToday } from "@/lib/pkt-date";
@@ -59,6 +70,12 @@ const fmt = (n: number) => Number(n || 0).toLocaleString("en-PK");
 
 const typeBadge = (t: LabourPaymentType) =>
   PAYMENT_TYPES.find((p) => p.value === t) || PAYMENT_TYPES[0];
+
+/** Build YYYY-MM month string from a YYYY-MM-DD date. */
+const monthOf = (dateStr: string): string => (dateStr || "").slice(0, 7);
+
+/** Current PKT month as YYYY-MM. */
+const currentMonth = (): string => monthOf(pktToday());
 
 // ─── Page ───
 
@@ -88,10 +105,23 @@ export default function LabourKhataPage() {
   const [payments, setPayments] = useState<LabourPayment[]>([]);
   const [loadingPayments, setLoadingPayments] = useState(true);
 
-  // ─── Filter state ───
+  // ─── Filter state (payments history) ───
   const [filterLabourId, setFilterLabourId] = useState<string>("all");
   const [filterFrom, setFilterFrom] = useState<string>("");
   const [filterTo, setFilterTo] = useState<string>("");
+
+  // ─── Daily wage entry state ───
+  const [wageEntryDate, setWageEntryDate] = useState<string>(today);
+  // Per-labour wage amount input (string because user can clear/empty it).
+  // labour_id → { amount: string, notes: string }
+  const [wageEntries, setWageEntries] = useState<Record<number, { amount: string; notes: string }>>({});
+  const [loadingWagesForDate, setLoadingWagesForDate] = useState(false);
+  const [savingWages, setSavingWages] = useState(false);
+
+  // ─── Monthly summary state ───
+  const [summaryMonth, setSummaryMonth] = useState<string>(currentMonth());
+  const [monthlySummaries, setMonthlySummaries] = useState<Array<LabourMonthlySummary & { labour: Labour }>>([]);
+  const [loadingSummary, setLoadingSummary] = useState(true);
 
   // ─── Data loaders ───
 
@@ -137,6 +167,67 @@ export default function LabourKhataPage() {
     }
   }, [filterLabourId, filterFrom, filterTo]);
 
+  /**
+   * Load any existing daily-wage entries for the selected wage entry date.
+   * Pre-fills the input fields so the user can review/edit rather than
+   * accidentally create duplicates. For labours with no entry on that
+   * date, fall back to their default `daily_wage` (so the user can just
+   * click "Save All" without re-typing everyday).
+   */
+  const loadWagesForDate = useCallback(async (date: string, fallbackLabours: Labour[]) => {
+    if (!date) return;
+    setLoadingWagesForDate(true);
+    try {
+      const res = await fetch(`/api/labour-daily-wages?wage_date=${date}&include_labour=true`);
+      if (!res.ok) {
+        const detail = await apiError(res, "Failed to load existing wages");
+        throw new Error(detail);
+      }
+      const data = await res.json();
+      const existing: LabourDailyWage[] = data.wages || [];
+      const map: Record<number, { amount: string; notes: string }> = {};
+      // Start with default daily_wage for ALL labours (so empty dates don't
+      // show blank inputs — user can save defaults directly or override).
+      fallbackLabours.forEach((l) => {
+        map[l.id] = {
+          amount: l.daily_wage > 0 ? String(l.daily_wage) : "",
+          notes: "",
+        };
+      });
+      // Then overwrite with any existing entries for this date
+      existing.forEach((w) => {
+        map[w.labour_id] = {
+          amount: String(w.amount ?? ""),
+          notes: w.notes || "",
+        };
+      });
+      setWageEntries(map);
+    } catch (e: any) {
+      // Non-fatal — user can still type fresh values
+      console.error(e);
+    } finally {
+      setLoadingWagesForDate(false);
+    }
+  }, []);
+
+  const loadMonthlySummary = useCallback(async (month: string) => {
+    if (!month) return;
+    setLoadingSummary(true);
+    try {
+      const res = await fetch(`/api/labour-monthly-summary?month=${month}`);
+      if (!res.ok) {
+        const detail = await apiError(res, "Failed to load monthly summary");
+        throw new Error(detail);
+      }
+      const data = await res.json();
+      setMonthlySummaries(data.summaries || []);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to load monthly summary");
+    } finally {
+      setLoadingSummary(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadLabours();
   }, [loadLabours]);
@@ -144,6 +235,17 @@ export default function LabourKhataPage() {
   useEffect(() => {
     loadPayments();
   }, [loadPayments]);
+
+  // When wageEntryDate OR labours list changes, reload wage entries for that
+  // date. On a fresh date with no existing entries, labours' default
+  // daily_wage is used as the pre-fill (handled inside loadWagesForDate).
+  useEffect(() => {
+    loadWagesForDate(wageEntryDate, labours);
+  }, [wageEntryDate, labours, loadWagesForDate]);
+
+  useEffect(() => {
+    loadMonthlySummary(summaryMonth);
+  }, [summaryMonth, loadMonthlySummary]);
 
   // ─── Derived ───
 
@@ -158,10 +260,9 @@ export default function LabourKhataPage() {
     return m;
   }, [labours]);
 
-  // Total paid per labour (from full payments list, ignoring filters)
+  // Total paid per labour (from filtered payments — same as before)
   const totalPaidByLabour = useMemo(() => {
     const m = new Map<number, number>();
-    // Note: when filtered, this is the filtered total — that's fine for display
     payments.forEach((p) => {
       m.set(p.labour_id, (m.get(p.labour_id) || 0) + Number(p.amount));
     });
@@ -179,6 +280,20 @@ export default function LabourKhataPage() {
         .filter((p) => p.payment_date === today)
         .reduce((sum, p) => sum + Number(p.amount), 0),
     [payments, today]
+  );
+
+  // Monthly summary aggregates (for the metrics row)
+  const monthEarnedTotal = useMemo(
+    () => monthlySummaries.reduce((s, x) => s + x.total_earned, 0),
+    [monthlySummaries]
+  );
+  const monthPaidTotal = useMemo(
+    () => monthlySummaries.reduce((s, x) => s + x.total_paid, 0),
+    [monthlySummaries]
+  );
+  const monthBalanceTotal = useMemo(
+    () => monthlySummaries.reduce((s, x) => s + x.balance_due, 0),
+    [monthlySummaries]
   );
 
   // ─── Handlers ───
@@ -215,6 +330,7 @@ export default function LabourKhataPage() {
       setNewRole("");
       setNewWage("");
       await loadLabours();
+      await loadMonthlySummary(summaryMonth);
     } catch (e: any) {
       toast.error(e.message || "Failed to register labour");
     } finally {
@@ -279,8 +395,9 @@ export default function LabourKhataPage() {
       );
       setPayAmount("");
       setPayDesc("");
-      // Reset selection if labour was just paid
       await loadPayments();
+      // Refresh monthly summary too — paid amount changed
+      await loadMonthlySummary(summaryMonth);
     } catch (e: any) {
       toast.error(e.message || "Failed to add payment");
     } finally {
@@ -300,8 +417,96 @@ export default function LabourKhataPage() {
       }
       toast.success("Payment deleted");
       await loadPayments();
+      await loadMonthlySummary(summaryMonth);
     } catch (e: any) {
       toast.error(e.message || "Failed to delete payment");
+    }
+  };
+
+  /**
+   * Save all daily-wage entries for the selected date in one go.
+   * Uses upsert=true so re-submitting a date updates existing rows
+   * instead of erroring on the unique (labour_id, wage_date) constraint.
+   *
+   * Labours with empty/zero amount are SKIPPED (no row created).
+   */
+  const handleSaveAllWages = async () => {
+    if (!wageEntryDate) {
+      toast.error("Pick a date first");
+      return;
+    }
+    if (activeLabours.length === 0) {
+      toast.error("No active labours to record wages for");
+      return;
+    }
+
+    // Build the list of entries to save (skip empty/zero)
+    const toSave: Array<{ labour_id: number; amount: number; notes: string; labour_name: string }> = [];
+    for (const l of activeLabours) {
+      const entry = wageEntries[l.id];
+      if (!entry) continue;
+      const amt = Number(entry.amount);
+      if (!entry.amount || !Number.isFinite(amt) || amt <= 0) continue;
+      toSave.push({
+        labour_id: l.id,
+        amount: amt,
+        notes: entry.notes?.trim() || "",
+        labour_name: l.name,
+      });
+    }
+
+    if (toSave.length === 0) {
+      toast.error("Enter at least one wage amount to save");
+      return;
+    }
+
+    setSavingWages(true);
+    try {
+      // Fire all upserts in parallel
+      const results = await Promise.allSettled(
+        toSave.map((entry) =>
+          fetch("/api/labour-daily-wages", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              labour_id: entry.labour_id,
+              wage_date: wageEntryDate,
+              amount: entry.amount,
+              notes: entry.notes || null,
+              upsert: true,
+            }),
+          }).then(async (res) => {
+            if (!res.ok) {
+              const detail = await apiError(res, "Failed to save wage");
+              throw new Error(detail);
+            }
+            return res.json();
+          })
+        )
+      );
+
+      const ok = results.filter((r) => r.status === "fulfilled").length;
+      const fail = results.filter((r) => r.status === "rejected").length;
+
+      if (fail === 0) {
+        toast.success(`Saved ${ok} wage entr${ok === 1 ? "y" : "ies"} for ${wageEntryDate}`);
+      } else if (ok === 0) {
+        toast.error(`Failed to save all ${fail} entries`);
+      } else {
+        toast.warning(`Saved ${ok}, failed ${fail}. Check console for details.`);
+        results.forEach((r, i) => {
+          if (r.status === "rejected") {
+            console.error(`Failed for ${toSave[i].labour_name}:`, r.reason);
+          }
+        });
+      }
+
+      // Refresh monthly summary (earned amounts changed)
+      await loadMonthlySummary(summaryMonth);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to save wages");
+    } finally {
+      setSavingWages(false);
     }
   };
 
@@ -311,7 +516,7 @@ export default function LabourKhataPage() {
     <div className="space-y-6">
       <PageHeader
         title="Labours Khata"
-        subtitle="Register labours · Track daily payments, advances & expenses"
+        subtitle="Daily wage entry · Monthly summary · Salary / advance / expense tracking"
       />
 
       {/* ─── Metrics row ─── */}
@@ -331,18 +536,18 @@ export default function LabourKhataPage() {
           iconColor="bg-emerald-100"
         />
         <MetricCard
-          label="Today's Payments"
-          value={`Rs. ${fmt(todaysTotal)}`}
+          label={`Earned (${summaryMonth})`}
+          value={`Rs. ${fmt(monthEarnedTotal)}`}
+          color="purple"
+          icon={CalendarDays}
+          iconColor="bg-purple-100"
+        />
+        <MetricCard
+          label={`Balance Due (${summaryMonth})`}
+          value={`Rs. ${fmt(monthBalanceTotal)}`}
           color="orange"
           icon={Wallet}
           iconColor="bg-amber-100"
-        />
-        <MetricCard
-          label="Filtered Total"
-          value={`Rs. ${fmt(grandTotal)}`}
-          color="purple"
-          icon={TrendingDown}
-          iconColor="bg-purple-100"
         />
       </div>
 
@@ -353,7 +558,7 @@ export default function LabourKhataPage() {
             <UserPlus className="size-5 text-emerald-600" /> Register New Labour
           </CardTitle>
           <CardDescription>
-            Add a new labour to your khata. You can record payments for them afterwards.
+            Add a new labour to your khata. Once registered, you can record daily wages and payments for them.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -439,21 +644,211 @@ export default function LabourKhataPage() {
         </CardContent>
       </Card>
 
-      {/* ─── Section 2: All labours ─── */}
+      {/* ─── Section 2: Daily Wage Entry (NEW) ─── */}
       <Card className="rounded-2xl border-slate-200/60 shadow-sm">
         <CardHeader className="pb-2">
           <CardTitle className="text-lg flex items-center gap-2">
-            <HardHat className="size-5 text-slate-600" /> All Labours
-            <Badge variant="outline" className="ml-1">
-              {labours.length}
-            </Badge>
+            <CalendarDays className="size-5 text-blue-600" /> Daily Wage Entry
           </CardTitle>
           <CardDescription>
-            All registered labours with their total paid amount (based on current filter).
+            Har labour ka din ka wage likhein. Yeh amount pooray month ke liye
+            add hota jaata hai (kharcha side nahi — sirf kamai). Agar kisi labour
+            ne kaam nahi kiya, us ka amount khaali chhor dein.
           </CardDescription>
         </CardHeader>
+        <CardContent className="space-y-4">
+          {activeLabours.length === 0 ? (
+            <Alert className="border-amber-300 bg-amber-50 text-amber-800">
+              <AlertCircle className="size-4 text-amber-600" />
+              <AlertDescription>
+                No active labours. Register a labour above first.
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <>
+              {/* Date picker */}
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="space-y-1.5 flex-1 min-w-[200px]">
+                  <Label className="text-xs uppercase text-slate-500 font-semibold">
+                    Wage Date <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    type="date"
+                    value={wageEntryDate}
+                    onChange={(e) => setWageEntryDate(e.target.value)}
+                    max={today}
+                  />
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setWageEntryDate(today)}
+                  className="h-9"
+                >
+                  Today
+                </Button>
+                {loadingWagesForDate && (
+                  <span className="text-xs text-slate-500 inline-flex items-center gap-1.5">
+                    <Loader2 className="size-3 animate-spin" /> Loading existing…
+                  </span>
+                )}
+              </div>
+
+              {/* Bulk entry table */}
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50/80 border-b border-slate-200">
+                    <tr className="text-left text-xs uppercase text-slate-500 font-semibold">
+                      <th className="px-3 py-2.5">Labour</th>
+                      <th className="px-3 py-2.5">Role</th>
+                      <th className="px-3 py-2.5 text-right">Default Wage</th>
+                      <th className="px-3 py-2.5 text-right">Today&apos;s Wage (Rs.)</th>
+                      <th className="px-3 py-2.5">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {activeLabours.map((l) => {
+                      const entry = wageEntries[l.id] || { amount: "", notes: "" };
+                      const isOverridden =
+                        entry.amount !== "" &&
+                        l.daily_wage > 0 &&
+                        Number(entry.amount) !== l.daily_wage;
+                      return (
+                        <tr key={l.id} className="hover:bg-slate-50/50">
+                          <td className="px-3 py-2 font-medium text-slate-800">
+                            {l.name}
+                          </td>
+                          <td className="px-3 py-2 text-slate-600 text-xs">
+                            {l.role || <span className="text-slate-400">—</span>}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono text-slate-500 text-xs">
+                            Rs. {fmt(l.daily_wage)}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <Input
+                              type="number"
+                              min="0"
+                              step="10"
+                              placeholder="0"
+                              value={entry.amount}
+                              onChange={(e) =>
+                                setWageEntries((prev) => ({
+                                  ...prev,
+                                  [l.id]: { ...entry, amount: e.target.value },
+                                }))
+                              }
+                              className={cn(
+                                "h-8 text-right font-mono w-28 ml-auto",
+                                isOverridden && "border-amber-400 bg-amber-50"
+                              )}
+                            />
+                            {isOverridden && (
+                              <div className="text-[10px] text-amber-600 mt-0.5 text-right">
+                                overridden
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            <Input
+                              placeholder="optional"
+                              value={entry.notes}
+                              onChange={(e) =>
+                                setWageEntries((prev) => ({
+                                  ...prev,
+                                  [l.id]: { ...entry, notes: e.target.value },
+                                }))
+                              }
+                              className="h-8 text-xs"
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Save all + helper summary */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs text-slate-500">
+                  {(() => {
+                    const filled = activeLabours.filter((l) => {
+                      const e = wageEntries[l.id];
+                      return e && e.amount && Number(e.amount) > 0;
+                    }).length;
+                    const total = activeLabours.reduce((s, l) => {
+                      const e = wageEntries[l.id];
+                      return s + (e && e.amount ? Number(e.amount) : 0);
+                    }, 0);
+                    return (
+                      <>
+                        <span className="font-semibold text-slate-700">{filled}</span>
+                        {" / "}
+                        {activeLabours.length} labours ·{" "}
+                        <span className="font-semibold text-slate-700">
+                          Rs. {fmt(total)}
+                        </span>{" "}
+                        total for {wageEntryDate}
+                      </>
+                    );
+                  })()}
+                </div>
+                <Button
+                  onClick={handleSaveAllWages}
+                  disabled={savingWages}
+                  className="gap-2 bg-blue-600 hover:bg-blue-700"
+                >
+                  {savingWages ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" /> Saving…
+                    </>
+                  ) : (
+                    <>
+                      <Save className="size-4" /> Save All Wages
+                    </>
+                  )}
+                </Button>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ─── Section 3: All Labours — Monthly Summary (MODIFIED) ─── */}
+      <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+        <CardHeader className="pb-2">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <HardHat className="size-5 text-slate-600" /> All Labours
+                <Badge variant="outline" className="ml-1">
+                  {labours.length}
+                </Badge>
+              </CardTitle>
+              <CardDescription className="mt-1">
+                Har labour ka mahine ka kamai, adaaigi aur baqi. Status:
+                <span className="font-medium text-slate-600"> Not Paid</span> agar
+                kuch bhi nahi diya, warna
+                <span className="font-medium text-emerald-700"> Paid</span> + amount
+                + baki.
+              </CardDescription>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase text-slate-500 font-semibold">
+                Month
+              </Label>
+              <Input
+                type="month"
+                value={summaryMonth}
+                onChange={(e) => setSummaryMonth(e.target.value)}
+                max={currentMonth()}
+                className="w-[160px]"
+              />
+            </div>
+          </div>
+        </CardHeader>
         <CardContent className="p-0">
-          {loadingLabours ? (
+          {loadingLabours || loadingSummary ? (
             <div className="flex items-center justify-center py-10">
               <Loader2 className="size-6 animate-spin text-slate-400" />
             </div>
@@ -467,55 +862,102 @@ export default function LabourKhataPage() {
                 <thead className="bg-slate-50/80 border-y border-slate-100">
                   <tr className="text-left text-xs uppercase text-slate-500 font-semibold">
                     <th className="px-4 py-3">Name</th>
-                    <th className="px-4 py-3">Phone</th>
-                    <th className="px-4 py-3">Role</th>
                     <th className="px-4 py-3 text-right">Daily Wage</th>
-                    <th className="px-4 py-3 text-right">Total Paid</th>
+                    <th className="px-4 py-3 text-right">Earned ({summaryMonth})</th>
+                    <th className="px-4 py-3 text-right">Paid ({summaryMonth})</th>
                     <th className="px-4 py-3 text-center">Status</th>
+                    <th className="px-4 py-3 text-right">Balance Due</th>
                     <th className="px-4 py-3 text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {labours.map((l) => {
-                    const total = totalPaidByLabour.get(l.id) || 0;
+                    // Find the matching summary entry
+                    const summary = monthlySummaries.find((s) => s.labour_id === l.id);
+                    const earned = summary?.total_earned ?? 0;
+                    const paid = summary?.total_paid ?? 0;
+                    const balance = summary?.balance_due ?? 0;
+                    const status: LabourPaymentStatus = summary?.status ?? "not_paid";
+                    const isActive = l.is_active;
                     return (
-                      <tr key={l.id} className={cn("hover:bg-slate-50/50", !l.is_active && "opacity-50")}>
-                        <td className="px-4 py-3 font-medium text-slate-800">{l.name}</td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {l.phone ? (
-                            <span className="inline-flex items-center gap-1">
-                              <Phone className="size-3 text-slate-400" /> {l.phone}
-                            </span>
-                          ) : (
-                            <span className="text-slate-400">—</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {l.role ? (
-                            <span className="inline-flex items-center gap-1">
-                              <Briefcase className="size-3 text-slate-400" /> {l.role}
-                            </span>
-                          ) : (
-                            <span className="text-slate-400">—</span>
+                      <tr
+                        key={l.id}
+                        className={cn(
+                          "hover:bg-slate-50/50",
+                          !isActive && "opacity-50"
+                        )}
+                      >
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-slate-800">{l.name}</div>
+                          {l.role && (
+                            <div className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                              <Briefcase className="size-3" /> {l.role}
+                              {l.phone && (
+                                <>
+                                  <span className="mx-1 text-slate-300">·</span>
+                                  <Phone className="size-3" /> {l.phone}
+                                </>
+                              )}
+                            </div>
                           )}
                         </td>
                         <td className="px-4 py-3 text-right font-mono text-slate-700">
                           Rs. {fmt(l.daily_wage)}
                         </td>
-                        <td className="px-4 py-3 text-right font-mono font-semibold text-slate-900">
-                          Rs. {fmt(total)}
+                        <td className="px-4 py-3 text-right font-mono text-slate-700">
+                          Rs. {fmt(earned)}
+                          {summary && summary.wage_count > 0 && (
+                            <div className="text-[10px] text-slate-400">
+                              {summary.wage_count} {summary.wage_count === 1 ? "day" : "days"}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono text-slate-700">
+                          Rs. {fmt(paid)}
+                          {summary && summary.payment_count > 0 && (
+                            <div className="text-[10px] text-slate-400">
+                              {summary.payment_count} {summary.payment_count === 1 ? "pmt" : "pmts"}
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-center">
-                          <Badge
+                          {status === "paid" ? (
+                            <Badge className="border bg-emerald-50 text-emerald-700 border-emerald-200 inline-flex items-center gap-1">
+                              <CircleCheck className="size-3" /> Paid
+                            </Badge>
+                          ) : (
+                            <Badge className="border bg-slate-100 text-slate-600 border-slate-200 inline-flex items-center gap-1">
+                              <CircleDashed className="size-3" /> Not Paid
+                            </Badge>
+                          )}
+                          <div
                             className={cn(
-                              "border",
-                              l.is_active
-                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                : "bg-slate-100 text-slate-500 border-slate-200"
+                              "text-[10px] mt-0.5",
+                              isActive ? "text-emerald-600" : "text-slate-400"
                             )}
                           >
-                            {l.is_active ? "Active" : "Inactive"}
-                          </Badge>
+                            {isActive ? "labour active" : "inactive"}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono">
+                          <span
+                            className={cn(
+                              "font-semibold",
+                              balance > 0
+                                ? "text-red-600"
+                                : balance < 0
+                                ? "text-emerald-600"
+                                : "text-slate-700"
+                            )}
+                          >
+                            Rs. {fmt(balance)}
+                          </span>
+                          {balance > 0 && (
+                            <div className="text-[10px] text-slate-400">baaqi</div>
+                          )}
+                          {balance < 0 && (
+                            <div className="text-[10px] text-emerald-500">extra diya</div>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-center">
                           <Button
@@ -524,28 +966,48 @@ export default function LabourKhataPage() {
                             className="h-7 text-xs"
                             onClick={() => handleToggleActive(l)}
                           >
-                            {l.is_active ? "Deactivate" : "Re-activate"}
+                            {isActive ? "Deactivate" : "Re-activate"}
                           </Button>
                         </td>
                       </tr>
                     );
                   })}
                 </tbody>
+                <tfoot className="bg-slate-50/80 border-t-2 border-slate-200">
+                  <tr>
+                    <td colSpan={2} className="px-4 py-3 text-right text-xs uppercase text-slate-500 font-semibold">
+                      Total ({summaryMonth})
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono font-extrabold text-slate-900">
+                      Rs. {fmt(monthEarnedTotal)}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono font-extrabold text-slate-900">
+                      Rs. {fmt(monthPaidTotal)}
+                    </td>
+                    <td />
+                    <td className="px-4 py-3 text-right font-mono font-extrabold text-slate-900">
+                      Rs. {fmt(monthBalanceTotal)}
+                    </td>
+                    <td />
+                  </tr>
+                </tfoot>
               </table>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* ─── Section 3: Add payment ─── */}
+      {/* ─── Section 4: Add payment ─── */}
       <Card className="rounded-2xl border-slate-200/60 shadow-sm">
         <CardHeader className="pb-2">
           <CardTitle className="text-lg flex items-center gap-2">
             <Wallet className="size-5 text-amber-600" /> Add Payment / Salary / Advance
           </CardTitle>
           <CardDescription>
-            Record a payment to a labour. Use type to categorise: Salary (regular pay),
-            Advance (pre-paid), or Expense (reimbursement/other).
+            Labour ko paisa diya (salary, advance, ya expense). Yeh
+            <span className="font-medium"> &quot;Paid&quot;</span> amount mein
+            add hota hai. Mahine ke baad total earned se total paid minus karke
+            baqi nikalta hai.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -653,7 +1115,7 @@ export default function LabourKhataPage() {
         </CardContent>
       </Card>
 
-      {/* ─── Section 4: Filter + History ─── */}
+      {/* ─── Section 5: Filter + History ─── */}
       <Card className="rounded-2xl border-slate-200/60 shadow-sm">
         <CardHeader className="pb-2">
           <CardTitle className="text-lg flex items-center gap-2">

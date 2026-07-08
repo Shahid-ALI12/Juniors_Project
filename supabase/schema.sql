@@ -185,9 +185,47 @@ create table if not exists cash_transfers (
   created_at      timestamptz not null default now()
 );
 
+-- ─── Labours Khata (master + payments + daily wages) ───
+create table if not exists labours (
+  id           bigint generated always as identity primary key,
+  name         text not null,
+  phone        text,
+  role         text,
+  daily_wage   numeric(14,2) not null default 0 check (daily_wage >= 0),
+  is_active    boolean not null default true,
+  created_at   timestamptz not null default now()
+);
+
+create table if not exists labour_payments (
+  id            bigint generated always as identity primary key,
+  labour_id     bigint not null references labours(id) on delete restrict,
+  payment_date  date not null default current_date,
+  amount        numeric(14,2) not null check (amount >= 0),
+  payment_type  text not null default 'salary'
+                check (payment_type in ('salary','advance','expense')),
+  description   text,
+  entered_by    text,
+  created_at    timestamptz not null default now()
+);
+
+-- Per-day wage earning entries (income/credit side, separate from payments
+-- which are the outflow side). Used to compute monthly balance due per labour:
+--   balance_due = sum(daily_wages) − sum(payments)
+create table if not exists labour_daily_wages (
+  id           bigint generated always as identity primary key,
+  labour_id    bigint not null references labours(id) on delete restrict,
+  wage_date    date not null default current_date,
+  amount       numeric(14,2) not null check (amount >= 0),
+  notes        text,
+  entered_by   text,
+  created_at   timestamptz not null default now()
+);
+
 -- ============================================================
 -- INDEXES
 -- ============================================================
+create unique index if not exists uq_labour_daily_wages_labour_date
+  on labour_daily_wages (labour_id, wage_date);
 create index if not exists idx_sales_sale_date    on sales (sale_date);
 create index if not exists idx_sales_customer_id  on sales (customer_id);
 create index if not exists idx_sales_mix_order_id on sales (mix_order_id);
@@ -222,6 +260,9 @@ alter table purchases      enable row level security;
 alter table cash_accounts  enable row level security;
 alter table cash_ledger    enable row level security;
 alter table cash_transfers enable row level security;
+alter table labours            enable row level security;
+alter table labour_payments    enable row level security;
+alter table labour_daily_wages enable row level security;
 
 -- No SELECT/INSERT/UPDATE/DELETE policies for anon/authd on business tables
 -- → only the service role (used by server API routes) can touch them.

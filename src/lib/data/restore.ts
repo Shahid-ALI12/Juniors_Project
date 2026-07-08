@@ -29,12 +29,15 @@ const RESTORE_ORDER: { table: keyof DatabaseBackup["data"]; kind: "master" | "tr
   { table: "suppliers",     kind: "master" },
   { table: "cash_accounts", kind: "master" },
   { table: "product_stock", kind: "master" },
+  { table: "labours",       kind: "master" },
   { table: "sales",          kind: "transactional" },
   { table: "mix_orders",    kind: "transactional" },
   { table: "purchases",     kind: "transactional" },
   { table: "expenses",      kind: "transactional" },
   { table: "cash_ledger",   kind: "transactional" },
   { table: "cash_transfers", kind: "transactional" },
+  { table: "labour_payments",    kind: "transactional" },
+  { table: "labour_daily_wages", kind: "transactional" },
 ];
 
 /** Escape a single SQL literal value. */

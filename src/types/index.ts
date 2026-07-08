@@ -138,6 +138,52 @@ export interface LabourPayment {
   labours?: Labour;
 }
 
+/**
+ * Per-day wage earning entry (income/credit side).
+ * Stored in `labour_daily_wages` table — separate from `labour_payments`
+ * (which is the outflow side: salary, advance, expense).
+ *
+ * Balance due per labour per month =
+ *   sum(labour_daily_wages.amount) − sum(labour_payments.amount)
+ */
+export interface LabourDailyWage {
+  id: number;
+  labour_id: number;
+  wage_date: string;        // YYYY-MM-DD
+  amount: number;
+  notes: string | null;
+  entered_by: string | null;
+  created_at: string;
+  // Joined (optional — only present when API includes it)
+  labours?: Labour;
+}
+
+/**
+ * Monthly summary for a single labour.
+ *
+ *   total_earned = sum of all labour_daily_wages.amount in the month
+ *   total_paid   = sum of all labour_payments.amount in the month
+ *   balance_due  = total_earned − total_paid  (can be negative if overpaid)
+ *   status       = "not_paid"  if total_paid === 0
+ *                  "paid"      if total_paid > 0 (covers partial + full)
+ *
+ * The UI shows:
+ *   • status "Not Paid" badge when status === "not_paid"
+ *   • status "Paid" badge + paid amount + remaining when status === "paid"
+ */
+export type LabourPaymentStatus = "not_paid" | "paid";
+
+export interface LabourMonthlySummary {
+  labour_id: number;
+  month: string;            // YYYY-MM
+  total_earned: number;
+  total_paid: number;
+  balance_due: number;
+  status: LabourPaymentStatus;
+  wage_count: number;       // how many daily-wage entries this month
+  payment_count: number;    // how many payment entries this month
+}
+
 export interface Supplier {
   id: number;
   name: string;
@@ -298,6 +344,9 @@ export interface DatabaseBackup {
     suppliers: Supplier[];
     cash_accounts: CashAccount[];
     product_stock: ProductStock[];
+    // Labours master (always included so labour_payments + labour_daily_wages
+    // FK refs survive restore).
+    labours: Labour[];
     // Transactional data (date-filtered)
     sales: Sale[];
     mix_orders: MixOrderRow[];
@@ -305,6 +354,9 @@ export interface DatabaseBackup {
     expenses: Expense[];
     cash_ledger: CashLedger[];
     cash_transfers: CashTransfer[];
+    // Labour transactions (date-filtered)
+    labour_payments: LabourPayment[];
+    labour_daily_wages: LabourDailyWage[];
   };
   // NOTE: app_customers (login + password hashes) is intentionally EXCLUDED
   // for security. Supabase Auth handles admin accounts separately.

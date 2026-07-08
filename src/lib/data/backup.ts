@@ -86,6 +86,8 @@ export async function buildDatabaseBackup(
 
   // ─── Master data (always full) ───
   // Locations are now re-included (Farmhouse / Shop) to support per-location stock.
+  // Labours master is also always full (labour_payments + labour_daily_wages
+  // FK-reference it, so a backup without the master would dangle on restore).
   const [
     products,
     locations,
@@ -93,6 +95,7 @@ export async function buildDatabaseBackup(
     suppliers,
     cash_accounts,
     product_stock,
+    labours,
   ] = await Promise.all([
     fetchAll<any>("products"),
     fetchAll<any>("locations"),
@@ -100,6 +103,7 @@ export async function buildDatabaseBackup(
     fetchAll<any>("suppliers"),
     fetchAll<any>("cash_accounts"),
     fetchAll<any>("product_stock"),
+    fetchAll<any>("labours"),
   ]);
 
   // ─── Transactional data (date-filtered) ───
@@ -110,6 +114,8 @@ export async function buildDatabaseBackup(
     expenses,
     cash_ledger,
     cash_transfers,
+    labour_payments,
+    labour_daily_wages,
   ] = await Promise.all([
     fetchByDate<any>("sales", "sale_date", from, to),
     fetchByDate<any>("mix_orders", "order_date", from, to),
@@ -117,6 +123,8 @@ export async function buildDatabaseBackup(
     fetchByDate<any>("expenses", "expense_date", from, to),
     fetchByDate<any>("cash_ledger", "entry_date", from, to),
     fetchByDate<any>("cash_transfers", "transfer_date", from, to),
+    fetchByDate<any>("labour_payments", "payment_date", from, to),
+    fetchByDate<any>("labour_daily_wages", "wage_date", from, to),
   ]);
 
   return {
@@ -136,12 +144,15 @@ export async function buildDatabaseBackup(
       suppliers,
       cash_accounts,
       product_stock,
+      labours,
       sales,
       mix_orders,
       purchases,
       expenses,
       cash_ledger,
       cash_transfers,
+      labour_payments,
+      labour_daily_wages,
     },
   };
 }
