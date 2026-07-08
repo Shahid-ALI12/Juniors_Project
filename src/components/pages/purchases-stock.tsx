@@ -18,6 +18,7 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -721,8 +722,55 @@ export default function PurchasesStockPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="size-8 animate-spin text-slate-400" />
+      <div className="min-h-screen bg-slate-50">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 space-y-8">
+          {/* PageHeader skeleton */}
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-48" />
+            <Skeleton className="h-4 w-72" />
+          </div>
+          {/* Current Stock Levels card skeleton */}
+          <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm">
+            <div className="p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="space-y-2">
+                  <Skeleton className="h-5 w-48" />
+                  <Skeleton className="h-4 w-72" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Skeleton className="h-3 w-16" />
+                  <Skeleton className="h-9 w-[180px]" />
+                </div>
+              </div>
+              {/* Stock rows skeleton */}
+              <div className="space-y-2">
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <div key={i} className="flex items-center gap-3 p-3 rounded-lg border border-slate-100">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-4 w-16" />
+                    <Skeleton className="h-9 w-24" />
+                    <Skeleton className="h-4 w-20" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          {/* Add Purchase card skeleton */}
+          <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm">
+            <div className="p-6 space-y-4">
+              <Skeleton className="h-5 w-40" />
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="space-y-2">
+                    <Skeleton className="h-3 w-16" />
+                    <Skeleton className="h-9 w-full" />
+                  </div>
+                ))}
+              </div>
+              <Skeleton className="h-10 w-40" />
+            </div>
+          </div>
+        </div>
       </div>
     );
   }

@@ -22,6 +22,7 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -849,8 +850,18 @@ export default function LabourKhataPage() {
         </CardHeader>
         <CardContent className="p-0">
           {loadingLabours || loadingSummary ? (
-            <div className="flex items-center justify-center py-10">
-              <Loader2 className="size-6 animate-spin text-slate-400" />
+            <div className="p-4 space-y-3">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <div key={i} className="flex items-center justify-between gap-4 p-3 rounded-lg border border-slate-100">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-4 w-16" />
+                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-6 w-16" />
+                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-8 w-16" />
+                </div>
+              ))}
             </div>
           ) : labours.length === 0 ? (
             <div className="p-8 text-center text-slate-500 text-sm">
@@ -1174,8 +1185,17 @@ export default function LabourKhataPage() {
 
           {/* Payments table */}
           {loadingPayments ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="size-6 animate-spin text-slate-400" />
+            <div className="p-4 space-y-3">
+              {[0, 1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="flex items-center justify-between gap-4 p-3 rounded-lg border border-slate-100">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-6 w-16" />
+                  <Skeleton className="h-4 w-40" />
+                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-8 w-12" />
+                </div>
+              ))}
             </div>
           ) : payments.length === 0 ? (
             <div className="p-8 text-center text-slate-500 text-sm">

@@ -39,6 +39,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   ShoppingCart,
   Plus,
@@ -475,8 +476,53 @@ export default function DailyEntryPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="size-8 animate-spin text-slate-400" />
+      <div className="min-h-screen bg-slate-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+          {/* PageHeader skeleton */}
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-40" />
+            <Skeleton className="h-4 w-80" />
+          </div>
+          {/* Filter card skeleton */}
+          <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-4 flex flex-wrap items-end gap-4">
+            <div className="space-y-1.5">
+              <Skeleton className="h-3 w-10" />
+              <Skeleton className="h-9 w-[200px]" />
+            </div>
+            <div className="space-y-1.5">
+              <Skeleton className="h-3 w-16" />
+              <Skeleton className="h-9 w-[200px]" />
+            </div>
+          </div>
+          {/* Available stock panel skeleton */}
+          <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-4 space-y-3">
+            <Skeleton className="h-5 w-40" />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="p-3 rounded-lg border border-slate-100">
+                  <Skeleton className="h-3 w-20 mb-2" />
+                  <Skeleton className="h-6 w-24" />
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Add a Sale card skeleton */}
+          <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm">
+            <div className="p-6 space-y-4">
+              <Skeleton className="h-5 w-32" />
+              <Skeleton className="h-4 w-96" />
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="space-y-2">
+                    <Skeleton className="h-3 w-16" />
+                    <Skeleton className="h-9 w-full" />
+                  </div>
+                ))}
+              </div>
+              <Skeleton className="h-10 w-40" />
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
