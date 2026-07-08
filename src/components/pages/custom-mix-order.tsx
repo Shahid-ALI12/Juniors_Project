@@ -13,6 +13,9 @@ import {
   Receipt,
   Loader2,
   Printer,
+  ChevronLeft,
+  ChevronRight,
+  FileJson,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMixStore, fetchCached, invalidateCache, apiError } from "@/store";
@@ -45,6 +48,10 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { pktToday } from "@/lib/pkt-date";
+import { useMixOrdersPaginated, useInvalidateAfterMutation } from "@/hooks/queries";
+import { downloadJson, downloadAllJson } from "@/lib/download-json";
+
+const PAST_PAGE_SIZE = 10;
 
 /* ─── Helpers ─── */
 function fmtRs(n: number) {
@@ -233,42 +240,68 @@ export default function CustomMixOrder() {
     })();
   }, []);
 
-  /* ── Past orders ── */
-  const [pastSearch, setPastSearch] = useState("");
-  const [pastOrders, setPastOrders] = useState<any[]>([]);
+  /* ── Past orders (paginated + server-side search) ── */
+  const [pastSearchInput, setPastSearchInput] = useState("");
+  const [pastSearchDebounced, setPastSearchDebounced] = useState("");
+  const [pastPage, setPastPage] = useState(1);
   const [selectedPastId, setSelectedPastId] = useState<string | null>(null);
+
+  // Debounce past-order search (350ms) + reset to page 1 on new search
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setPastSearchDebounced(pastSearchInput);
+      setPastPage(1);
+      setSelectedPastId(null);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [pastSearchInput]);
+
+  const pastQ = useMixOrdersPaginated(
+    { search: pastSearchDebounced },
+    pastPage,
+    PAST_PAGE_SIZE,
+  );
+  const invalidate = useInvalidateAfterMutation();
+
+  // Flatten paginated orders + attach sales lines from salesByMix
+  const pastOrders: any[] = useMemo(() => {
+    const orders = pastQ.data?.orders ?? [];
+    const salesByMix: Record<number, any[]> = pastQ.data?.salesByMix ?? {};
+    return orders.map((o: any) => ({
+      ...o,
+      customer: o.customers?.name ?? "",
+      date: o.order_date ?? "",
+      driverName: o.driver_name ?? "",
+      driverRent: o.driver_rent ?? 0,
+      sales: salesByMix[o.id] ?? [],
+    }));
+  }, [pastQ.data]);
+
   const selectedPast = pastOrders.find((o) => o.id === selectedPastId) ?? null;
 
-  const reloadPastOrders = useCallback(async () => {
+  // Refresh past orders after a new mix-order is saved
+  const reloadPastOrders = useCallback(() => {
+    invalidate.invalidateMixOrders();
+  }, [invalidate]);
+
+  // ── Download ALL past mix-orders as JSON ──
+  const [downloadingJson, setDownloadingJson] = useState(false);
+  const handleDownloadPastJson = async () => {
+    setDownloadingJson(true);
     try {
-      const resRaw = await fetch("/api/mix-orders");
-      if (!resRaw.ok) { toast.error("Failed to load past orders"); return; }
-      const res = await resRaw.json();
-      const salesByMix: Record<number, any[]> = res.salesByMix ?? {};
-      // Flatten joined fields + attach sales lines to each order
-      const orders = (res.orders ?? []).map((o: any) => ({
-        ...o,
-        customer: o.customers?.name ?? "",
-        date: o.order_date ?? "",
-        driverName: o.driver_name ?? "",
-        driverRent: o.driver_rent ?? 0,
-        sales: salesByMix[o.id] ?? [],
-      }));
-      setPastOrders(orders);
-    } catch {
-      // silent
+      await downloadAllJson(
+        "/api/mix-orders",
+        {},
+        "all-mix-orders.json",
+        "orders",
+      );
+      toast.success("Mix orders JSON downloaded");
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to download JSON");
+    } finally {
+      setDownloadingJson(false);
     }
-  }, []);
-
-  useEffect(() => {
-    reloadPastOrders();
-  }, [reloadPastOrders]);
-
-  const filteredPastOrders = useMemo(() => {
-    if (!pastSearch.trim()) return pastOrders;
-    const q = pastSearch.toLowerCase();
-    return pastOrders.filter((o) => (o.customer ?? "").toLowerCase().includes(q));
-  }, [pastOrders, pastSearch]);
+  };
 
   const usedWeight = store.getUsedWeight();
   const totalAmount = store.getTotalAmount();
@@ -610,12 +643,23 @@ export default function CustomMixOrder() {
 
           {/* ── Past Mix Orders ── */}
           <PastMixOrdersSection
-            pastSearch={pastSearch}
-            setPastSearch={setPastSearch}
-            pastOrders={filteredPastOrders}
+            pastSearchInput={pastSearchInput}
+            setPastSearchInput={setPastSearchInput}
+            pastOrders={pastOrders}
             selectedPastId={selectedPastId}
             setSelectedPastId={setSelectedPastId}
             selectedPast={selectedPast}
+            page={pastQ.data?.page ?? 1}
+            totalPages={pastQ.data?.totalPages ?? 1}
+            total={pastQ.data?.total ?? 0}
+            isFetching={pastQ.isFetching}
+            isLoading={pastQ.isLoading && !pastQ.data}
+            onPrev={() => setPastPage((p) => Math.max(1, p - 1))}
+            onNext={() => setPastPage((p) => p + 1)}
+            onDownloadJson={handleDownloadPastJson}
+            downloadingJson={downloadingJson}
+            isSearchActive={pastSearchDebounced.trim().length > 0}
+            searchQuery={pastSearchDebounced}
           />
         </div>
       </div>
@@ -847,12 +891,23 @@ export default function CustomMixOrder() {
 
         {/* ── Past Mix Orders ── */}
         <PastMixOrdersSection
-          pastSearch={pastSearch}
-          setPastSearch={setPastSearch}
-          pastOrders={filteredPastOrders}
+          pastSearchInput={pastSearchInput}
+          setPastSearchInput={setPastSearchInput}
+          pastOrders={pastOrders}
           selectedPastId={selectedPastId}
           setSelectedPastId={setSelectedPastId}
           selectedPast={selectedPast}
+          page={pastQ.data?.page ?? 1}
+          totalPages={pastQ.data?.totalPages ?? 1}
+          total={pastQ.data?.total ?? 0}
+          isFetching={pastQ.isFetching}
+          isLoading={pastQ.isLoading && !pastQ.data}
+          onPrev={() => setPastPage((p) => Math.max(1, p - 1))}
+          onNext={() => setPastPage((p) => p + 1)}
+          onDownloadJson={handleDownloadPastJson}
+          downloadingJson={downloadingJson}
+          isSearchActive={pastSearchDebounced.trim().length > 0}
+          searchQuery={pastSearchDebounced}
         />
       </div>
     </div>
@@ -861,41 +916,100 @@ export default function CustomMixOrder() {
 
 /* ─── Past Mix Orders Sub-Section ─── */
 function PastMixOrdersSection({
-  pastSearch,
-  setPastSearch,
+  pastSearchInput,
+  setPastSearchInput,
   pastOrders,
   selectedPastId,
   setSelectedPastId,
   selectedPast,
+  page,
+  totalPages,
+  total,
+  isFetching,
+  isLoading,
+  onPrev,
+  onNext,
+  onDownloadJson,
+  downloadingJson,
+  isSearchActive,
+  searchQuery,
 }: {
-  pastSearch: string;
-  setPastSearch: (v: string) => void;
+  pastSearchInput: string;
+  setPastSearchInput: (v: string) => void;
   pastOrders: any[];
   selectedPastId: string | null;
   setSelectedPastId: (v: string | null) => void;
   selectedPast: any | null;
+  page: number;
+  totalPages: number;
+  total: number;
+  isFetching: boolean;
+  isLoading: boolean;
+  onPrev: () => void;
+  onNext: () => void;
+  onDownloadJson: () => void;
+  downloadingJson: boolean;
+  isSearchActive: boolean;
+  searchQuery: string;
 }) {
   return (
     <section className="space-y-4">
       <Separator />
-      <h2 className="text-lg font-bold text-slate-800">Past Mix Orders</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-bold text-slate-800">Past Mix Orders</h2>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onDownloadJson}
+          disabled={downloadingJson}
+          className="border-slate-300 hover:bg-slate-100"
+        >
+          {downloadingJson ? (
+            <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+          ) : (
+            <FileJson className="w-3.5 h-3.5 mr-1" />
+          )}
+          {downloadingJson ? "Downloading..." : "Download JSON (All)"}
+        </Button>
+      </div>
 
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
         <Input
-          placeholder="Search by customer name…"
-          value={pastSearch}
+          placeholder="Search by customer name… (server-side)"
+          value={pastSearchInput}
           onChange={(e) => {
-            setPastSearch(e.target.value);
-            setSelectedPastId(null);
+            setPastSearchInput(e.target.value);
           }}
           className="pl-9"
         />
+        {pastSearchInput && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="absolute right-1 top-1/2 -translate-y-1/2 h-7 px-2 text-slate-400"
+            onClick={() => setPastSearchInput("")}
+          >
+            Clear
+          </Button>
+        )}
       </div>
 
-      {pastOrders.length === 0 ? (
+      {isLoading ? (
         <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-8 text-center text-slate-400 text-sm">
-          {pastSearch.trim() ? "No mix orders found for that customer." : "No past mix orders recorded yet."}
+          <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
+          Loading past orders...
+        </div>
+      ) : pastOrders.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-8 text-center text-slate-500 text-sm">
+          {isSearchActive ? (
+            <>
+              <Search className="size-8 mx-auto mb-2 opacity-30" />
+              No record for the customer &quot;{searchQuery}&quot;.
+            </>
+          ) : (
+            "No past mix orders recorded yet."
+          )}
         </div>
       ) : (
         <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
@@ -926,6 +1040,36 @@ function PastMixOrdersSection({
                 ))}
               </TableBody>
             </Table>
+          </div>
+
+          {/* Pagination footer */}
+          <div className="border-t border-slate-100 bg-slate-50/50 p-3 flex items-center justify-end gap-3">
+            <span className="text-xs text-slate-500">
+              Page {page} of {totalPages}
+              {" · "}
+              {total} orders
+              {isFetching ? " · loading…" : ""}
+            </span>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page <= 1 || isFetching}
+                onClick={onPrev}
+              >
+                <ChevronLeft className="size-4" />
+                Prev
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page >= totalPages || isFetching}
+                onClick={onNext}
+              >
+                Next
+                <ChevronRight className="size-4" />
+              </Button>
+            </div>
           </div>
 
           {selectedPast && (() => {

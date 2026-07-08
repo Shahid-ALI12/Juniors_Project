@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
-import { getMixOrders, createMixOrderRPC, deleteMixOrder } from "@/lib/data/mix-orders";
+import { getMixOrders, getMixOrdersPaginated, createMixOrderRPC, deleteMixOrder } from "@/lib/data/mix-orders";
 import { deleteSalesByMixOrder } from "@/lib/data/sales";
 import { admin } from "@/lib/supabase/server-admin";
 import { getErrorDetail } from "@/lib/api-error";
@@ -13,11 +13,62 @@ export const dynamic = "force-dynamic";
 // Mix orders list — short TTL (creates/deletes happen frequently)
 const MIX_ORDERS_TTL = 10_000;
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   try {
+    const url = new URL(request.url);
+    const search = url.searchParams.get("search") || "";
+    const locationIdParam = url.searchParams.get("location_id");
+    const locationId = locationIdParam ? Number(locationIdParam) : undefined;
+    const pageParam = url.searchParams.get("page");
+    const pageSizeParam = url.searchParams.get("pageSize");
+    const wantsPagination = pageParam !== null || pageSizeParam !== null;
+
+    // ── Pagination (optional, backward-compat) ──
+    if (wantsPagination) {
+      const page = pageParam ? Math.max(1, parseInt(pageParam, 10) || 1) : 1;
+      const pageSize = pageSizeParam ? Math.max(1, parseInt(pageSizeParam, 10) || 50) : 50;
+
+      const cacheSuffix = `s=${search.trim()}:loc=${locationId ?? "all"}:p${page}:ps${pageSize}`;
+      const result = await cachedGet(
+        userKey(auth.user.id, "mix-orders", cacheSuffix),
+        [userTag(auth.user.id, "mix-orders")],
+        MIX_ORDERS_TTL,
+        async () => {
+          const result = await getMixOrdersPaginated({ search, location_id: locationId, page, pageSize });
+          // Fetch sales for the current page's mix-orders only
+          const orderIds = result.rows.map(o => o.id);
+          const salesByMix: Record<number, any[]> = {};
+          if (orderIds.length > 0) {
+            const { data: allMixSales, error } = await admin
+              .from("sales")
+              .select("*, products(id,name), customers(id,name)")
+              .in("mix_order_id", orderIds);
+            if (!error && allMixSales) {
+              for (const s of allMixSales) {
+                if (s.mix_order_id) {
+                  if (!salesByMix[s.mix_order_id]) salesByMix[s.mix_order_id] = [];
+                  salesByMix[s.mix_order_id].push(s);
+                }
+              }
+            }
+          }
+          return { ...result, salesByMix };
+        },
+      );
+      return NextResponse.json({
+        orders: result.rows,
+        salesByMix: result.salesByMix,
+        total: result.total,
+        page: result.page,
+        pageSize: result.pageSize,
+        totalPages: result.totalPages,
+      });
+    }
+
+    // ── Original (non-paginated) path — preserved for existing callers ──
     const { orders, salesByMix } = await cachedGet(
       userKey(auth.user.id, "mix-orders"),
       [userTag(auth.user.id, "mix-orders")],

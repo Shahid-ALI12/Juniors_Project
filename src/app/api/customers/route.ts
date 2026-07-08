@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
 import {
   getAllCustomers,
+  getCustomersPaginated,
   createCustomer as createBizCustomer,
   updateCustomer as updateBizCustomer,
   deactivateCustomer,
@@ -25,8 +26,40 @@ export async function GET(request: NextRequest) {
   try {
     const url = new URL(request.url);
     const activeOnly = url.searchParams.get("active") === "true";
-    const suffix = activeOnly ? "active" : "all";
+    const inactiveOnly = url.searchParams.get("inactive") === "true";
+    const search = url.searchParams.get("search") || "";
+    const pageParam = url.searchParams.get("page");
+    const pageSizeParam = url.searchParams.get("pageSize");
 
+    // ── Pagination (optional, backward-compat) ──
+    // If `page` or `pageSize` query params are present, return paginated response:
+    //   { customers, total, page, pageSize, totalPages }
+    // Otherwise, return the original shape: { customers } (all rows)
+    const wantsPagination = pageParam !== null || pageSizeParam !== null;
+
+    if (wantsPagination) {
+      const page = pageParam ? Math.max(1, parseInt(pageParam, 10) || 1) : 1;
+      const pageSize = pageSizeParam ? Math.max(1, parseInt(pageSizeParam, 10) || 50) : 50;
+
+      const statusKey = activeOnly ? "active" : inactiveOnly ? "inactive" : "all";
+      const cacheSuffix = `${statusKey}:s=${search.trim()}:p${page}:ps${pageSize}`;
+      const result = await cachedGet(
+        userKey(auth.user.id, "customers", cacheSuffix),
+        [userTag(auth.user.id, "customers"), userTag(auth.user.id, "customer-balance")],
+        CUSTOMERS_TTL,
+        () => getCustomersPaginated({ activeOnly, inactiveOnly, search, page, pageSize }),
+      );
+      return NextResponse.json({
+        customers: result.rows,
+        total: result.total,
+        page: result.page,
+        pageSize: result.pageSize,
+        totalPages: result.totalPages,
+      });
+    }
+
+    // ── Original (non-paginated) path — preserved for existing callers ──
+    const suffix = activeOnly ? "active" : "all";
     const customers = await cachedGet(
       userKey(auth.user.id, "customers", suffix),
       [userTag(auth.user.id, "customers"), userTag(auth.user.id, "customer-balance")],

@@ -5,7 +5,18 @@ import { cn } from "@/lib/utils";
 import { PageHeader, MetricCard } from "@/components/shared/page-header";
 import { CREDIT_LIMIT } from "@/types";
 import type { Customer, Sale } from "@/types";
-import { AlertTriangle, Download, BookOpen, Users, Loader2, ChevronDown } from "lucide-react";
+import {
+  AlertTriangle,
+  Download,
+  BookOpen,
+  Users,
+  Loader2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Search,
+  FileJson,
+} from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -14,12 +25,21 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { numberToWords } from "@/lib/number-to-words";
+import {
+  useCustomers,
+  useCustomersPaginated,
+  useCustomerBalance,
+  useSalesPaginated,
+} from "@/hooks/queries";
+import { downloadJson, downloadAllJson } from "@/lib/download-json";
 
 const fmt = (n: number) => n.toLocaleString("en-PK");
+const PAGE_SIZE = 10;
 
 /** Small helper: renders Rs. value + English words below */
 function AmountWithWords({ amount, className }: { amount: number; className?: string }) {
@@ -46,13 +66,53 @@ interface CustomerWithBalance extends Customer, BalanceRow {}
 
 export default function CustomerKhataPage() {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [balances, setBalances] = useState<Record<number, BalanceRow>>({});
-  const [selectedSales, setSelectedSales] = useState<Sale[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingDetail, setLoadingDetail] = useState(false);
-  const [downloading, setDownloading] = useState(false);
   const [expandedMixOrders, setExpandedMixOrders] = useState<Set<string>>(new Set());
+
+  // ── Section 1: All Customers list (paginated + server-side search) ──
+  const [searchInput, setSearchInput] = useState("");
+  const [searchDebounced, setSearchDebounced] = useState("");
+  const [customerPage, setCustomerPage] = useState(1);
+
+  // Debounce search input by 350ms so we don't hammer the API on every keystroke
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearchDebounced(searchInput);
+      setCustomerPage(1); // reset to page 1 on new search
+    }, 350);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  // Paginated + searchable customers list for Section 1 table
+  const customersQ = useCustomersPaginated(
+    { activeOnly: false, search: searchDebounced },
+    customerPage,
+    PAGE_SIZE,
+  );
+
+  // All active customers — used for the Section 2 dropdown (small, OK to fetch all)
+  const allActiveQ = useCustomers(true);
+
+  // Customer balances map (customerId → BalanceRow) — fetched once
+  const balancesQ = useCustomerBalance();
+  const balances: Record<number, BalanceRow> = useMemo(() => {
+    const d = balancesQ.data;
+    if (!d) return {};
+    return typeof d === "object" && !Array.isArray(d) ? (d as Record<number, BalanceRow>) : {};
+  }, [balancesQ.data]);
+
+  // ── Section 2: Per-customer sales history (paginated) ──
+  const [salesPage, setSalesPage] = useState(1);
+  useEffect(() => { setSalesPage(1); }, [selectedCustomerId]);
+
+  const salesQ = useSalesPaginated(
+    selectedCustomerId ? { customer_id: Number(selectedCustomerId) } : {},
+    salesPage,
+    PAGE_SIZE,
+  );
+
+  const [downloadingBill, setDownloadingBill] = useState(false);
+  const [downloadingCustomers, setDownloadingCustomers] = useState(false);
+  const [downloadingSales, setDownloadingSales] = useState(false);
 
   // Toggle expand/collapse for a mix order group
   const toggleMixOrder = (mixOrderId: string) => {
@@ -64,78 +124,53 @@ export default function CustomerKhataPage() {
     });
   };
 
-  // Load all customers + their balances
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const cusRaw = await fetch("/api/customers");
-        if (!cusRaw.ok) { toast.error("Failed to load customers"); return; }
-        const cusRes = await cusRaw.json();
-        setCustomers(cusRes.customers ?? []);
-        const balRaw = await fetch("/api/reports/customer-balance");
-        if (!balRaw.ok) { toast.error("Failed to load balances"); return; }
-        const bal = await balRaw.json();
-        setBalances(typeof bal === "object" && !Array.isArray(bal) ? bal : {});
-      } catch {
-        toast.error("Failed to load customer data");
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+  // ── Section 1: paginated customers merged with balances ──
+  const pagedCustomers: CustomerWithBalance[] = useMemo(() => {
+    const list = customersQ.data?.customers ?? [];
+    return list.map((c: any) => {
+      const b = balances[c.id] ?? {
+        opening_balance: c.opening_balance ?? 0,
+        total_bill: 0,
+        total_cash_paid: 0,
+        total_goods_value: 0,
+        balance_due: c.opening_balance ?? 0,
+      };
+      return { ...c, ...b } as CustomerWithBalance;
+    })
+    .sort((a, b) => b.balance_due - a.balance_due);
+  }, [customersQ.data, balances]);
 
-  // Load selected customer's sales
-  useEffect(() => {
-    if (!selectedCustomerId) {
-      setSelectedSales([]);
-      return;
-    }
-    (async () => {
-      setLoadingDetail(true);
-      try {
-        const resRaw = await fetch(`/api/sales?customer_id=${selectedCustomerId}`);
-        if (!resRaw.ok) { toast.error("Failed to load sales"); return; }
-        const res = await resRaw.json();
-        setSelectedSales(res.sales ?? []);
-      } catch {
-        toast.error("Failed to load customer history");
-      } finally {
-        setLoadingDetail(false);
-      }
-    })();
-  }, [selectedCustomerId]);
-
-  // ── All customers balance overview ──
-  const allCustomerBalances = useMemo<CustomerWithBalance[]>(() => {
-    return customers
-      .map((c) => {
-        const b = balances[c.id] ?? { opening_balance: c.opening_balance ?? 0, total_bill: 0, total_cash_paid: 0, total_goods_value: 0, balance_due: c.opening_balance ?? 0 };
-        return { ...c, ...b };
-      })
-      .sort((a, b) => b.balance_due - a.balance_due);
-  }, [customers, balances]);
-
+  // Total outstanding across ALL customers (computed from balances map, not paged list)
   const totalOutstanding = useMemo(
-    () => allCustomerBalances.reduce((sum, c) => sum + c.balance_due, 0),
-    [allCustomerBalances]
+    () => Object.values(balances).reduce((sum, b) => sum + (b?.balance_due ?? 0), 0),
+    [balances],
   );
 
-  // ── Selected customer detail ──
+  // ── Section 2: selected customer detail ──
+  const allActiveCustomers: Customer[] = useMemo(
+    () => (allActiveQ.data?.customers ?? []) as Customer[],
+    [allActiveQ.data],
+  );
+
   const selectedCustomer = useMemo(
-    () => customers.find((c) => c.id === Number(selectedCustomerId)),
-    [customers, selectedCustomerId]
+    () => allActiveCustomers.find((c) => c.id === Number(selectedCustomerId)),
+    [allActiveCustomers, selectedCustomerId],
   );
 
   const selectedBalance = useMemo<BalanceRow | null>(
     () => (selectedCustomerId ? balances[Number(selectedCustomerId)] ?? null : null),
-    [selectedCustomerId, balances]
+    [selectedCustomerId, balances],
+  );
+
+  const pagedSales: Sale[] = useMemo(
+    () => (salesQ.data?.sales ?? []) as Sale[],
+    [salesQ.data],
   );
 
   // Group by transaction_group_id for bill numbers
   const groupedSales = useMemo(() => {
     const groupMap = new Map<string, Sale[]>();
-    selectedSales.forEach((s) => {
+    pagedSales.forEach((s) => {
       const key = s.transaction_group_id ?? `solo-${s.id}`;
       if (!groupMap.has(key)) groupMap.set(key, []);
       groupMap.get(key)!.push(s);
@@ -143,27 +178,49 @@ export default function CustomerKhataPage() {
 
     const sortedGroups: { billNumber: number; groupId: string; sales: Sale[] }[] = [];
     let billNum = 1;
-    groupMap.forEach((sales, groupId) => {
+    // Sort groups by earliest sale date in each group (oldest first) for stable bill numbers
+    const groupsArr = Array.from(groupMap.entries());
+    groupsArr.sort((a, b) => {
+      const aDate = a[1][0]?.sale_date ?? "";
+      const bDate = b[1][0]?.sale_date ?? "";
+      return aDate.localeCompare(bDate);
+    });
+    for (const [groupId, sales] of groupsArr) {
       sortedGroups.push({ billNumber: billNum, groupId, sales });
       billNum++;
-    });
+    }
 
     return { sortedGroups };
-  }, [selectedSales]);
+  }, [pagedSales]);
 
-  // ── Download Bill Handler ──
+  // ── Download Bill Handler (single PDF for selected customer) ──
   const handleDownloadBill = async () => {
-    if (!selectedCustomer || selectedSales.length === 0) {
-      toast.error("No sales data to generate bill");
+    if (!selectedCustomer) {
+      toast.error("Select a customer first");
       return;
     }
-    setDownloading(true);
+    setDownloadingBill(true);
     try {
+      // Fetch ALL sales for the bill (not just current page) — bill should be complete
+      const allSalesRes = await fetch(`/api/sales?customer_id=${selectedCustomerId}`);
+      if (!allSalesRes.ok) { toast.error("Failed to fetch sales for bill"); return; }
+      const allSalesJson = await allSalesRes.json();
+      const allSales: Sale[] = allSalesJson.sales ?? [];
+      if (allSales.length === 0) {
+        toast.error("No sales data to generate bill");
+        return;
+      }
       const { generateCustomerBillPDF } = await import("@/lib/generate-customer-bill");
-      const bal = selectedBalance ?? { opening_balance: selectedCustomer?.opening_balance ?? 0, total_bill: 0, total_cash_paid: 0, total_goods_value: 0, balance_due: selectedCustomer?.opening_balance ?? 0 };
+      const bal = selectedBalance ?? {
+        opening_balance: selectedCustomer?.opening_balance ?? 0,
+        total_bill: 0,
+        total_cash_paid: 0,
+        total_goods_value: 0,
+        balance_due: selectedCustomer?.opening_balance ?? 0,
+      };
       await generateCustomerBillPDF({
         customer: selectedCustomer,
-        sales: selectedSales,
+        sales: allSales,
         openingBalance: bal.opening_balance,
         totalBill: bal.total_bill,
         totalCashPaid: bal.total_cash_paid,
@@ -175,17 +232,77 @@ export default function CustomerKhataPage() {
       console.error("Bill download error:", err);
       toast.error("Failed to generate bill. Try again.");
     } finally {
-      setDownloading(false);
+      setDownloadingBill(false);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="size-8 animate-spin text-slate-400" />
-      </div>
-    );
-  }
+  // ── Download ALL customers + balances as JSON ──
+  const handleDownloadAllCustomersJson = async () => {
+    setDownloadingCustomers(true);
+    try {
+      // Walk all pages of /api/customers (no search filter = all records)
+      const allCustomers = await downloadAllJson(
+        "/api/customers",
+        {},
+        "tmp-customers", // placeholder, we'll re-download merged below
+        "customers",
+      );
+      // Merge with balances
+      const merged = allCustomers.map((c: any) => ({
+        ...c,
+        ...(balances[c.id] ?? {
+          opening_balance: c.opening_balance ?? 0,
+          total_bill: 0,
+          total_cash_paid: 0,
+          total_goods_value: 0,
+          balance_due: c.opening_balance ?? 0,
+        }),
+      }));
+      downloadJson(
+        {
+          generatedAt: new Date().toISOString(),
+          totalRecords: merged.length,
+          totalOutstanding,
+          customers: merged,
+        },
+        "all-customers-with-balances.json",
+      );
+      toast.success(`Downloaded ${merged.length} customers`);
+    } catch (err: any) {
+      console.error("Download error:", err);
+      toast.error(err?.message || "Failed to download customers");
+    } finally {
+      setDownloadingCustomers(false);
+    }
+  };
+
+  // ── Download ALL sales for selected customer as JSON ──
+  const handleDownloadSalesJson = async () => {
+    if (!selectedCustomerId) {
+      toast.error("Select a customer first");
+      return;
+    }
+    setDownloadingSales(true);
+    try {
+      await downloadAllJson(
+        "/api/sales",
+        { customer_id: selectedCustomerId },
+        `customer-${selectedCustomerId}-sales.json`,
+        "sales",
+      );
+      toast.success("Sales JSON downloaded");
+    } catch (err: any) {
+      console.error("Download error:", err);
+      toast.error(err?.message || "Failed to download sales");
+    } finally {
+      setDownloadingSales(false);
+    }
+  };
+
+  const loadingCustomers = customersQ.isLoading && !customersQ.data;
+  const loadingSales = salesQ.isLoading && !salesQ.data;
+  const isSearchActive = searchDebounced.trim().length > 0;
+  const noCustomersMatch = isSearchActive && (customersQ.data?.customers?.length ?? 0) === 0;
 
   return (
     <div className="space-y-6">
@@ -197,11 +314,38 @@ export default function CustomerKhataPage() {
       {/* ─── Section 1: All Customers Balance Overview ─── */}
       <section className="bg-white rounded-2xl border border-slate-200/60 shadow-sm">
         <div className="p-4 sm:p-6 border-b border-slate-100">
-          <div className="flex items-center gap-2">
-            <Users className="size-5 text-slate-500" />
-            <h2 className="text-lg font-bold text-slate-900">
-              All Customers — Balance Overview
-            </h2>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Users className="size-5 text-slate-500" />
+              <h2 className="text-lg font-bold text-slate-900">
+                All Customers — Balance Overview
+              </h2>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+                <Input
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  placeholder="Search by customer name or phone..."
+                  className="pl-8 w-full sm:w-72 h-9"
+                />
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDownloadAllCustomersJson}
+                disabled={downloadingCustomers}
+                className="shrink-0"
+              >
+                {downloadingCustomers ? (
+                  <Loader2 className="size-4 mr-1.5 animate-spin" />
+                ) : (
+                  <FileJson className="size-4 mr-1.5" />
+                )}
+                {downloadingCustomers ? "Downloading..." : "Download JSON"}
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -209,55 +353,50 @@ export default function CustomerKhataPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100">
-                <th className="text-left text-xs uppercase text-slate-500 font-semibold px-4 py-3">
-                  Customer
-                </th>
-                <th className="text-left text-xs uppercase text-slate-500 font-semibold px-4 py-3">
-                  Type
-                </th>
-                <th className="text-right text-xs uppercase text-slate-500 font-semibold px-4 py-3">
-                  Opening Balance
-                </th>
-                <th className="text-right text-xs uppercase text-slate-500 font-semibold px-4 py-3">
-                  Total Billed
-                </th>
-                <th className="text-right text-xs uppercase text-slate-500 font-semibold px-4 py-3">
-                  Cash Paid
-                </th>
-                <th className="text-right text-xs uppercase text-slate-500 font-semibold px-4 py-3">
-                  Paid in Goods
-                </th>
-                <th className="text-right text-xs uppercase text-slate-500 font-semibold px-4 py-3">
-                  Balance Due
-                </th>
+                <th className="text-left text-xs uppercase text-slate-500 font-semibold px-4 py-3">Customer</th>
+                <th className="text-left text-xs uppercase text-slate-500 font-semibold px-4 py-3">Type</th>
+                <th className="text-right text-xs uppercase text-slate-500 font-semibold px-4 py-3">Opening Balance</th>
+                <th className="text-right text-xs uppercase text-slate-500 font-semibold px-4 py-3">Total Billed</th>
+                <th className="text-right text-xs uppercase text-slate-500 font-semibold px-4 py-3">Cash Paid</th>
+                <th className="text-right text-xs uppercase text-slate-500 font-semibold px-4 py-3">Paid in Goods</th>
+                <th className="text-right text-xs uppercase text-slate-500 font-semibold px-4 py-3">Balance Due</th>
               </tr>
             </thead>
             <tbody>
-              {allCustomerBalances.length === 0 ? (
+              {loadingCustomers ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-10 text-center">
+                    <Loader2 className="size-5 animate-spin text-slate-400 inline-block mr-2" />
+                    <span className="text-slate-400">Loading customers...</span>
+                  </td>
+                </tr>
+              ) : noCustomersMatch ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-10 text-center text-slate-500">
+                    <Search className="size-8 mx-auto mb-2 opacity-30" />
+                    No record for the customer &quot;{searchDebounced}&quot;.
+                  </td>
+                </tr>
+              ) : pagedCustomers.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-10 text-center text-slate-400">
                     No customers found.
                   </td>
                 </tr>
               ) : (
-                allCustomerBalances.map((c) => {
+                pagedCustomers.map((c) => {
                   const isOverLimit = c.balance_due >= CREDIT_LIMIT;
                   return (
                     <tr
                       key={c.id}
                       className={cn(
                         "border-b border-slate-50 last:border-b-0 transition-colors",
-                        isOverLimit
-                          ? "bg-red-50 text-red-700"
-                          : "hover:bg-slate-50/80"
+                        isOverLimit ? "bg-red-50 text-red-700" : "hover:bg-slate-50/80",
                       )}
                     >
                       <td className="px-4 py-3 font-medium">{c.name}</td>
                       <td className="px-4 py-3">
-                        <Badge
-                          variant={c.type === "credit" ? "default" : "secondary"}
-                          className="text-xs"
-                        >
+                        <Badge variant={c.type === "credit" ? "default" : "secondary"} className="text-xs">
                           {c.type}
                         </Badge>
                       </td>
@@ -291,21 +430,58 @@ export default function CustomerKhataPage() {
           </table>
         </div>
 
-        <div className="p-4 sm:p-6 border-t border-slate-100 bg-slate-50/50 rounded-b-2xl">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <span className="text-sm font-semibold text-slate-500">
-              Total Outstanding Across All Customers
-            </span>
-            <div className="flex flex-col items-end">
-              <span className="text-xl font-extrabold text-slate-900">
-                Rs. {fmt(totalOutstanding)}
-              </span>
-              <span className="text-[0.65rem] text-slate-400 capitalize">
-                {numberToWords(totalOutstanding)}
-              </span>
+        {/* Pagination footer */}
+        {!noCustomersMatch && (customersQ.data?.total ?? 0) > 0 && (
+          <div className="p-4 sm:p-6 border-t border-slate-100 bg-slate-50/50 rounded-b-2xl">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="flex flex-col gap-1">
+                <span className="text-sm font-semibold text-slate-500">
+                  Total Outstanding Across All Customers
+                </span>
+                <div className="flex flex-col">
+                  <span className="text-xl font-extrabold text-slate-900">
+                    Rs. {fmt(totalOutstanding)}
+                  </span>
+                  <span className="text-[0.65rem] text-slate-400 capitalize">
+                    {numberToWords(totalOutstanding)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-slate-500">
+                  Page {customersQ.data?.page ?? 1} of {customersQ.data?.totalPages ?? 1}
+                  {" · "}
+                  {customersQ.data?.total ?? 0} customers
+                  {isSearchActive ? ` matching "${searchDebounced}"` : ""}
+                </span>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={(customersQ.data?.page ?? 1) <= 1 || customersQ.isFetching}
+                    onClick={() => setCustomerPage((p) => Math.max(1, p - 1))}
+                  >
+                    <ChevronLeft className="size-4" />
+                    Prev
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={
+                      (customersQ.data?.page ?? 1) >= (customersQ.data?.totalPages ?? 1) ||
+                      customersQ.isFetching
+                    }
+                    onClick={() => setCustomerPage((p) => p + 1)}
+                  >
+                    Next
+                    <ChevronRight className="size-4" />
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </section>
 
       {/* ─── Section 2: Individual Customer History ─── */}
@@ -318,16 +494,13 @@ export default function CustomerKhataPage() {
                 Customer History
               </h2>
             </div>
-            <div className="flex items-center gap-3">
-              <Select
-                value={selectedCustomerId}
-                onValueChange={setSelectedCustomerId}
-              >
+            <div className="flex items-center gap-2 flex-wrap">
+              <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId}>
                 <SelectTrigger className="w-full sm:w-64">
                   <SelectValue placeholder="Select a customer..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {customers
+                  {allActiveCustomers
                     .filter((c) => c.is_active)
                     .map((c) => (
                       <SelectItem key={c.id} value={String(c.id)}>
@@ -338,20 +511,36 @@ export default function CustomerKhataPage() {
                 </SelectContent>
               </Select>
               {selectedCustomerId && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0"
-                  onClick={handleDownloadBill}
-                  disabled={downloading || selectedSales.length === 0}
-                >
-                  {downloading ? (
-                    <Loader2 className="size-4 mr-2 animate-spin" />
-                  ) : (
-                    <Download className="size-4 mr-2" />
-                  )}
-                  {downloading ? "Generating..." : "Download Bill"}
-                </Button>
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={handleDownloadSalesJson}
+                    disabled={downloadingSales}
+                  >
+                    {downloadingSales ? (
+                      <Loader2 className="size-4 mr-1.5 animate-spin" />
+                    ) : (
+                      <FileJson className="size-4 mr-1.5" />
+                    )}
+                    {downloadingSales ? "Downloading..." : "Download JSON"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={handleDownloadBill}
+                    disabled={downloadingBill}
+                  >
+                    {downloadingBill ? (
+                      <Loader2 className="size-4 mr-1.5 animate-spin" />
+                    ) : (
+                      <Download className="size-4 mr-1.5" />
+                    )}
+                    {downloadingBill ? "Generating..." : "Download Bill"}
+                  </Button>
+                </>
               )}
             </div>
           </div>
@@ -362,7 +551,7 @@ export default function CustomerKhataPage() {
             <BookOpen className="size-12 mx-auto mb-3 opacity-30" />
             <p className="text-sm">Select a customer to view their ledger.</p>
           </div>
-        ) : loadingDetail ? (
+        ) : loadingSales ? (
           <div className="p-12 flex items-center justify-center">
             <Loader2 className="size-6 animate-spin text-slate-400" />
           </div>
@@ -400,7 +589,7 @@ export default function CustomerKhataPage() {
                   </thead>
                   <tbody>
                     {/* Opening Balance — first row, highlighted in amber */}
-                    {selectedBalance && selectedBalance.opening_balance > 0 && (
+                    {selectedBalance && selectedBalance.opening_balance > 0 && salesPage === 1 && (
                       <tr className="bg-amber-50/70 border-b border-amber-200">
                         <td className="px-3 py-2.5 font-bold text-amber-800 align-top">—</td>
                         <td className="px-3 py-2.5 text-amber-700 align-top italic text-xs">
@@ -433,16 +622,15 @@ export default function CustomerKhataPage() {
                         const totalRickshaw = group.sales.reduce((sum, s) => sum + s.rickshaw_fare, 0);
                         const totalBillAmount = group.sales.reduce(
                           (sum, s) => sum + (s.quantity * s.rate_per_bag + s.rickshaw_fare),
-                          0
+                          0,
                         );
                         const totalCashReceived = group.sales.reduce((sum, s) => sum + s.cash_received, 0);
                         return (
                           <Fragment key={group.groupId}>
-                            {/* Main summary row — clickable to expand/collapse */}
                             <tr
                               className={cn(
                                 "border-b border-slate-50 cursor-pointer hover:bg-slate-50/80 transition-colors",
-                                !isLastGroup && "border-b-slate-200"
+                                !isLastGroup && "border-b-slate-200",
                               )}
                               onClick={() => toggleMixOrder(mixOrderId)}
                             >
@@ -453,7 +641,7 @@ export default function CustomerKhataPage() {
                                   <ChevronDown
                                     className={cn(
                                       "size-4 text-slate-400 transition-transform",
-                                      isExpanded && "rotate-180"
+                                      isExpanded && "rotate-180",
                                     )}
                                   />
                                   <span className="font-semibold">Mix Order</span>
@@ -478,16 +666,12 @@ export default function CustomerKhataPage() {
                                 )}
                               </td>
                             </tr>
-                            {/* Sub-product rows — only visible when expanded */}
                             {isExpanded &&
                               group.sales.map((sale) => {
                                 const billAmount = sale.quantity * sale.rate_per_bag + sale.rickshaw_fare;
                                 const unitLabel = sale.unit_type === "kg" ? "kg" : "bags";
                                 return (
-                                  <tr
-                                    key={sale.id}
-                                    className="border-b border-slate-50 bg-slate-50/40"
-                                  >
+                                  <tr key={sale.id} className="border-b border-slate-50 bg-slate-50/40">
                                     <td className="px-3 py-2"></td>
                                     <td className="px-3 py-2"></td>
                                     <td className="px-3 py-2 text-slate-600">
@@ -525,7 +709,7 @@ export default function CustomerKhataPage() {
                           key={sale.id}
                           className={cn(
                             "border-b border-slate-50 last:border-b-0",
-                            !isLastGroup && "border-b-slate-200"
+                            !isLastGroup && "border-b-slate-200",
                           )}
                         >
                           <td className="px-3 py-2.5 font-bold text-slate-700 align-top">#{group.billNumber}</td>
@@ -557,7 +741,7 @@ export default function CustomerKhataPage() {
                     })}
                   </tbody>
                 </table>
-                {selectedSales.length === 0 && (
+                {pagedSales.length === 0 && (
                   <div className="p-8 text-center text-slate-400 text-sm">
                     {selectedBalance && selectedBalance.opening_balance > 0
                       ? "No sales recorded yet — only opening balance is on this customer's tab."
@@ -565,6 +749,40 @@ export default function CustomerKhataPage() {
                   </div>
                 )}
               </div>
+
+              {/* Pagination controls for sales history */}
+              {(salesQ.data?.total ?? 0) > 0 && (
+                <div className="mt-3 flex items-center justify-end gap-3">
+                  <span className="text-xs text-slate-500">
+                    Page {salesQ.data?.page ?? 1} of {salesQ.data?.totalPages ?? 1}
+                    {" · "}
+                    {salesQ.data?.total ?? 0} sales total
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={(salesQ.data?.page ?? 1) <= 1 || salesQ.isFetching}
+                      onClick={() => setSalesPage((p) => Math.max(1, p - 1))}
+                    >
+                      <ChevronLeft className="size-4" />
+                      Prev
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={
+                        (salesQ.data?.page ?? 1) >= (salesQ.data?.totalPages ?? 1) ||
+                        salesQ.isFetching
+                      }
+                      onClick={() => setSalesPage((p) => p + 1)}
+                    >
+                      Next
+                      <ChevronRight className="size-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Paid in Goods */}

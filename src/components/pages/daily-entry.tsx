@@ -53,11 +53,15 @@ import {
   Loader2,
   Beaker,
   Truck,
+  ChevronLeft,
+  ChevronRight,
+  FileJson,
 } from "lucide-react";
 import { toast } from "sonner";
 import ConfirmAction from "@/components/shared/confirm-action";
 import { AvailableStock } from "@/components/shared/available-stock";
 import { pktToday } from "@/lib/pkt-date";
+import { downloadAllJson } from "@/lib/download-json";
 
 const fmt = (n: number) => n.toLocaleString("en-PK");
 
@@ -95,6 +99,24 @@ export default function DailyEntryPage() {
   const [stockData, setStockData] = useState<ProductStock[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+
+  // ── Today's Sales: server-side customer-name search + pagination ──
+  const [salesSearchInput, setSalesSearchInput] = useState("");
+  const [salesSearchDebounced, setSalesSearchDebounced] = useState("");
+  const [salesPage, setSalesPage] = useState(1);
+  const [salesTotal, setSalesTotal] = useState(0);
+  const [salesTotalPages, setSalesTotalPages] = useState(1);
+  const [downloadingSalesJson, setDownloadingSalesJson] = useState(false);
+
+  // Debounce search input by 350ms + reset to page 1 on new search
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSalesSearchDebounced(salesSearchInput);
+      setSalesPage(1);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [salesSearchInput]);
+
   // Bumped after every successful sale / mix-order / expense delete so the
   // <AvailableStock> panel knows to refetch stock automatically.
   const [stockRefreshTrigger, setStockRefreshTrigger] = useState(0);
@@ -121,11 +143,20 @@ export default function DailyEntryPage() {
     if (errors.length > 0) toast.error(`Failed to load: ${errors.join(", ")}`);
   }, []);
 
-  const loadDayData = useCallback(async (d: string) => {
+  const loadDayData = useCallback(async (d: string, customerName = "", page = 1) => {
     const bust = `_t=${Date.now()}`;
     try {
-      const sRes = await fetch(`/api/sales?sale_date=${d}&${bust}`);
-      if (sRes.ok) { const sData = await sRes.json(); setSales(sData.sales ?? []); }
+      const params = new URLSearchParams({ sale_date: d, _t: bust });
+      if (customerName.trim()) params.set("customer_name", customerName.trim());
+      params.set("page", String(page));
+      params.set("pageSize", "10");
+      const sRes = await fetch(`/api/sales?${params.toString()}`);
+      if (sRes.ok) {
+        const sData = await sRes.json();
+        setSales(sData.sales ?? []);
+        setSalesTotal(sData.total ?? 0);
+        setSalesTotalPages(sData.totalPages ?? 1);
+      }
       else toast.error("Failed to load sales");
     } catch { toast.error("Failed to load sales"); }
     try {
@@ -143,9 +174,31 @@ export default function DailyEntryPage() {
     })();
   }, []);
 
+  // Refetch sales when date, search, or page changes
   useEffect(() => {
-    loadDayData(date);
-  }, [date, loadDayData]);
+    loadDayData(date, salesSearchDebounced, salesPage);
+  }, [date, salesSearchDebounced, salesPage, loadDayData]);
+
+  // ── Download ALL sales for the current date as JSON ──
+  // Walks pages server-side so we get every sale record for the date,
+  // regardless of the current search filter (search filter is for finding
+  // records, not for limiting the export).
+  const handleDownloadSalesJson = async () => {
+    setDownloadingSalesJson(true);
+    try {
+      await downloadAllJson(
+        "/api/sales",
+        { sale_date: date },
+        `sales-${date}.json`,
+        "sales",
+      );
+      toast.success("Sales JSON downloaded");
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to download JSON");
+    } finally {
+      setDownloadingSalesJson(false);
+    }
+  };
 
   const selectedProduct = products.find((p) => String(p.id) === productId);
 
@@ -860,13 +913,54 @@ export default function DailyEntryPage() {
 
         <Card className="rounded-2xl border-slate-200/60 shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Receipt className="size-5 text-slate-600" /> Today&apos;s Sales
-            </CardTitle>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Receipt className="size-5 text-slate-600" /> Today&apos;s Sales
+              </CardTitle>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+                  <Input
+                    value={salesSearchInput}
+                    onChange={(e) => setSalesSearchInput(e.target.value)}
+                    placeholder="Search by customer name..."
+                    className="pl-8 w-full sm:w-64 h-9"
+                  />
+                  {salesSearchInput && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 h-7 px-2 text-slate-400"
+                      onClick={() => setSalesSearchInput("")}
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDownloadSalesJson}
+                  disabled={downloadingSalesJson}
+                  className="shrink-0"
+                >
+                  {downloadingSalesJson ? (
+                    <Loader2 className="size-4 mr-1.5 animate-spin" />
+                  ) : (
+                    <FileJson className="size-4 mr-1.5" />
+                  )}
+                  {downloadingSalesJson ? "Downloading..." : "Download JSON"}
+                </Button>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             {sales.length === 0 ? (
-              <p className="text-sm text-slate-400 py-4 text-center">No sales entered yet for this date.</p>
+              <p className="text-sm text-slate-400 py-4 text-center">
+                {salesSearchDebounced.trim()
+                  ? `No record for the customer "${salesSearchDebounced}".`
+                  : "No sales entered yet for this date."}
+              </p>
             ) : (
               <div className="space-y-6">
                 {regularSales.length > 0 && (
@@ -1009,16 +1103,52 @@ export default function DailyEntryPage() {
                 {sales.length > 0 && (
                   <div className="flex flex-wrap gap-3 pt-2">
                     <div className="flex-1 min-w-[140px] rounded-lg bg-slate-50 border border-slate-200/60 px-3 py-2 text-center">
-                      <div className="text-xs text-slate-500 font-semibold uppercase">Total Items Sold</div>
+                      <div className="text-xs text-slate-500 font-semibold uppercase">Items On Page</div>
                       <div className="text-lg font-extrabold text-slate-900">{fmt(sales.length)}</div>
                     </div>
                     <div className="flex-1 min-w-[140px] rounded-lg bg-slate-50 border border-slate-200/60 px-3 py-2 text-center">
-                      <div className="text-xs text-slate-500 font-semibold uppercase">Total Billed</div>
+                      <div className="text-xs text-slate-500 font-semibold uppercase">Total Records</div>
+                      <div className="text-lg font-extrabold text-slate-900">{fmt(salesTotal)}</div>
+                    </div>
+                    <div className="flex-1 min-w-[140px] rounded-lg bg-slate-50 border border-slate-200/60 px-3 py-2 text-center">
+                      <div className="text-xs text-slate-500 font-semibold uppercase">Total Billed (page)</div>
                       <div className="text-lg font-extrabold text-slate-900">Rs. {fmt(sales.reduce((sum, s) => sum + s.quantity * s.rate_per_bag + s.rickshaw_fare, 0))}</div>
                     </div>
                     <div className="flex-1 min-w-[140px] rounded-lg bg-slate-50 border border-slate-200/60 px-3 py-2 text-center">
-                      <div className="text-xs text-slate-500 font-semibold uppercase">Cash Collected</div>
+                      <div className="text-xs text-slate-500 font-semibold uppercase">Cash Collected (page)</div>
                       <div className="text-lg font-extrabold text-green-600">Rs. {fmt(totalCashIn)}</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Pagination controls for Today's Sales */}
+                {salesTotal > 0 && (
+                  <div className="flex items-center justify-end gap-3 pt-2">
+                    <span className="text-xs text-slate-500">
+                      Page {salesPage} of {salesTotalPages}
+                      {" · "}
+                      {salesTotal} records
+                      {salesSearchDebounced.trim() ? ` matching "${salesSearchDebounced}"` : ""}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={salesPage <= 1}
+                        onClick={() => setSalesPage((p) => Math.max(1, p - 1))}
+                      >
+                        <ChevronLeft className="size-4" />
+                        Prev
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={salesPage >= salesTotalPages}
+                        onClick={() => setSalesPage((p) => p + 1)}
+                      >
+                        Next
+                        <ChevronRight className="size-4" />
+                      </Button>
                     </div>
                   </div>
                 )}

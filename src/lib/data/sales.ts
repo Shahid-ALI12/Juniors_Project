@@ -27,10 +27,27 @@ export async function getSales(filters?: {
   sale_date_gte?: string;
   sale_date_lte?: string;
   customer_id?: number;
+  customer_name?: string; // case-insensitive substring match on customers.name
   transaction_group_id?: string;
   mix_order_id?: number;
   location_id?: number;
 }): Promise<SaleRow[]> {
+  // If customer_name search is requested, first resolve matching customer IDs
+  // from the customers table, then filter sales by those IDs (PostgREST
+  // doesn't allow direct ilike on a foreign-table column reliably across
+  // all setups, so we do a 2-step query for safety).
+  let extraCustomerIds: number[] | null = null;
+  if (filters?.customer_name && filters.customer_name.trim()) {
+    const { data: matched, error: matchErr } = await admin
+      .from("customers")
+      .select("id")
+      .ilike("name", `%${filters.customer_name.trim()}%`);
+    if (matchErr) throw matchErr;
+    extraCustomerIds = (matched || []).map((c: any) => c.id);
+    // If no customer matches, return empty array early (caller shows "no records")
+    if (extraCustomerIds.length === 0) return [];
+  }
+
   let q = admin
     .from("sales")
     .select("id, customer_id, product_id, location_id, quantity, rate_per_bag, rickshaw_fare, cash_received, sale_date, unit_type, bag_weight_kg, mix_order_id, transaction_group_id, rickshaw_driver_name, entered_by, created_at, customers(id,name,type), products(id,name)")
@@ -44,6 +61,9 @@ export async function getSales(filters?: {
   if (filters?.mix_order_id) q = q.eq("mix_order_id", filters.mix_order_id);
   if (filters?.location_id !== undefined && filters?.location_id !== null) {
     q = q.eq("location_id", filters.location_id);
+  }
+  if (extraCustomerIds) {
+    q = q.in("customer_id", extraCustomerIds);
   }
 
   const { data, error } = await q;
@@ -63,6 +83,7 @@ export async function getSalesPaginated(filters: {
   sale_date_gte?: string;
   sale_date_lte?: string;
   customer_id?: number;
+  customer_name?: string; // case-insensitive substring match on customers.name
   transaction_group_id?: string;
   mix_order_id?: number;
   location_id?: number;
@@ -81,6 +102,21 @@ export async function getSalesPaginated(filters: {
   const from = (safePage - 1) * safePageSize;
   const to = from + safePageSize - 1;
 
+  // Resolve customer_name → list of customer IDs (2-step query)
+  let extraCustomerIds: number[] | null = null;
+  if (rest.customer_name && rest.customer_name.trim()) {
+    const { data: matched, error: matchErr } = await admin
+      .from("customers")
+      .select("id")
+      .ilike("name", `%${rest.customer_name.trim()}%`);
+    if (matchErr) throw matchErr;
+    extraCustomerIds = (matched || []).map((c: any) => c.id);
+    if (extraCustomerIds.length === 0) {
+      // No matching customer → return empty page (UI shows "no records for the customer")
+      return { rows: [], total: 0, page: safePage, pageSize: safePageSize, totalPages: 1 };
+    }
+  }
+
   let q = admin
     .from("sales")
     .select("id, customer_id, product_id, location_id, quantity, rate_per_bag, rickshaw_fare, cash_received, sale_date, unit_type, bag_weight_kg, mix_order_id, transaction_group_id, rickshaw_driver_name, entered_by, created_at, customers(id,name,type), products(id,name)", { count: "exact" })
@@ -95,6 +131,9 @@ export async function getSalesPaginated(filters: {
   if (rest.mix_order_id) q = q.eq("mix_order_id", rest.mix_order_id);
   if (rest.location_id !== undefined && rest.location_id !== null) {
     q = q.eq("location_id", rest.location_id);
+  }
+  if (extraCustomerIds) {
+    q = q.in("customer_id", extraCustomerIds);
   }
 
   const { data, error, count } = await q;

@@ -27,6 +27,74 @@ export async function getMixOrders(filters?: { location_id?: number }): Promise<
   return (data || []) as unknown as MixOrderRow[];
 }
 
+/**
+ * Paginated variant of getMixOrders — for large mix-order lists.
+ * Returns page metadata alongside the rows.
+ *
+ * Search: case-insensitive substring match on `customers.name` (ilike).
+ * Implemented as a 2-step query (resolve customer IDs first, then filter)
+ * because PostgREST doesn't reliably support ilike on a foreign-table column.
+ *
+ * Backward-compat: getMixOrders() above is untouched.
+ */
+export async function getMixOrdersPaginated(filters: {
+  location_id?: number;
+  search?: string;
+  page: number;       // 1-indexed
+  pageSize: number;   // rows per page
+}): Promise<{
+  rows: MixOrderRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}> {
+  const { location_id, search = "", page, pageSize } = filters;
+  const safePage = Math.max(1, page);
+  const safePageSize = Math.min(Math.max(1, pageSize), 200);
+  const from = (safePage - 1) * safePageSize;
+  const to = from + safePageSize - 1;
+
+  // Resolve customer_name → list of customer IDs (2-step query)
+  let extraCustomerIds: number[] | null = null;
+  const trimmed = search.trim();
+  if (trimmed) {
+    const { data: matched, error: matchErr } = await admin
+      .from("customers")
+      .select("id")
+      .ilike("name", `%${trimmed}%`);
+    if (matchErr) throw matchErr;
+    extraCustomerIds = (matched || []).map((c: any) => c.id);
+    if (extraCustomerIds.length === 0) {
+      return { rows: [], total: 0, page: safePage, pageSize: safePageSize, totalPages: 1 };
+    }
+  }
+
+  let q = admin
+    .from("mix_orders")
+    .select("id, customer_id, location_id, order_date, target_weight_kg, cash_received, entered_by, driver_name, driver_rent, created_at, customers(id,name)", { count: "exact" })
+    .order("created_at", { ascending: false })
+    .range(from, to);
+
+  if (location_id !== undefined && location_id !== null) {
+    q = q.eq("location_id", location_id);
+  }
+  if (extraCustomerIds) {
+    q = q.in("customer_id", extraCustomerIds);
+  }
+
+  const { data, error, count } = await q;
+  if (error) throw error;
+  const total = count ?? 0;
+  return {
+    rows: (data || []) as unknown as MixOrderRow[],
+    total,
+    page: safePage,
+    pageSize: safePageSize,
+    totalPages: Math.max(1, Math.ceil(total / safePageSize)),
+  };
+}
+
 export async function getMixOrderById(id: number): Promise<MixOrderRow | null> {
   const { data, error } = await admin
     .from("mix_orders")

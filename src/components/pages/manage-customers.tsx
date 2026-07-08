@@ -37,9 +37,13 @@ import ConfirmAction from "@/components/shared/confirm-action";
 import {
   UserPlus, Users, Download, Loader2, Pencil, Ban, RotateCcw,
   Trash2, Search, Phone, UserCheck, Phone as PhoneIcon,
+  ChevronLeft, ChevronRight, FileJson,
 } from "lucide-react";
+import { useCustomersPaginated, useCustomerBalance, useInvalidateAfterMutation } from "@/hooks/queries";
+import { downloadJson, downloadAllJson } from "@/lib/download-json";
 
 const fmt = (n: number) => n.toLocaleString("en-PK");
+const PAGE_SIZE = 10;
 
 // ─── Balance row from /api/reports/customer-balance ───
 interface BalanceRow {
@@ -68,10 +72,54 @@ const emptyForm: CustomerForm = {
 };
 
 export default function ManageCustomersPage() {
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [balances, setBalances] = useState<Record<number, BalanceRow>>({});
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
+  // ── Server-side search (debounced) ──
+  const [searchInput, setSearchInput] = useState("");
+  const [searchDebounced, setSearchDebounced] = useState("");
+
+  // ── Separate pages for Active + Inactive lists ──
+  const [activePage, setActivePage] = useState(1);
+  const [inactivePage, setInactivePage] = useState(1);
+
+  // Reset pages on new search
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearchDebounced(searchInput);
+      setActivePage(1);
+      setInactivePage(1);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  // Two paginated queries — one for Active, one for Inactive
+  const activeQ = useCustomersPaginated(
+    { activeOnly: true, search: searchDebounced },
+    activePage,
+    PAGE_SIZE,
+  );
+  const inactiveQ = useCustomersPaginated(
+    { inactiveOnly: true, search: searchDebounced },
+    inactivePage,
+    PAGE_SIZE,
+  );
+
+  // Balances map (keyed by customer ID) — fetched once, shared by both lists
+  const balancesQ = useCustomerBalance();
+  const balances: Record<number, BalanceRow> = useMemo(() => {
+    const d = balancesQ.data;
+    if (!d) return {};
+    return typeof d === "object" && !Array.isArray(d) ? (d as Record<number, BalanceRow>) : {};
+  }, [balancesQ.data]);
+
+  const invalidate = useInvalidateAfterMutation();
+
+  const activeCustomers: Customer[] = useMemo(
+    () => (activeQ.data?.customers ?? []) as Customer[],
+    [activeQ.data],
+  );
+  const inactiveCustomers: Customer[] = useMemo(
+    () => (inactiveQ.data?.customers ?? []) as Customer[],
+    [inactiveQ.data],
+  );
 
   // ─── Add dialog ───
   const [addOpen, setAddOpen] = useState(false);
@@ -91,6 +139,10 @@ export default function ManageCustomersPage() {
   const [confirmLabel, setConfirmLabel] = useState("Confirm");
   const [confirmLoading, setConfirmLoading] = useState(false);
 
+  // ─── JSON download state ───
+  const [downloadingJson, setDownloadingJson] = useState(false);
+  const [downloadingExcel, setDownloadingExcel] = useState(false);
+
   const askConfirm = (
     title: string,
     desc: string,
@@ -105,52 +157,6 @@ export default function ManageCustomersPage() {
     setConfirmLabel(label);
     setConfirmOpen(true);
   };
-
-  // ──────────────────────────────────────────────────────────
-  // Load customers + balances
-  // ──────────────────────────────────────────────────────────
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const cusRes = await fetch("/api/customers");
-      if (!cusRes.ok) { toast.error("Failed to load customers"); return; }
-      const cusData = await cusRes.json();
-      setCustomers(cusData.customers ?? []);
-
-      const balRes = await fetch("/api/reports/customer-balance");
-      if (balRes.ok) {
-        const bal = await balRes.json();
-        setBalances(typeof bal === "object" && !Array.isArray(bal) ? bal : {});
-      }
-    } catch {
-      toast.error("Failed to load customer data");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { loadData(); }, [loadData]);
-
-  // ──────────────────────────────────────────────────────────
-  // Derived lists — split by active/inactive
-  // ──────────────────────────────────────────────────────────
-  const filteredCustomers = useMemo(() => {
-    if (!search.trim()) return customers;
-    const q = search.toLowerCase();
-    return customers.filter((c) =>
-      c.name.toLowerCase().includes(q) ||
-      (c.phone ?? "").toLowerCase().includes(q)
-    );
-  }, [customers, search]);
-
-  const activeCustomers = useMemo(
-    () => filteredCustomers.filter((c) => c.is_active),
-    [filteredCustomers]
-  );
-  const inactiveCustomers = useMemo(
-    () => filteredCustomers.filter((c) => !c.is_active),
-    [filteredCustomers]
-  );
 
   // ──────────────────────────────────────────────────────────
   // Add handler
@@ -175,13 +181,9 @@ export default function ManageCustomersPage() {
       if (!res.ok) {
         throw new Error(await apiError(res, "Failed to add customer"));
       }
-      const data = await res.json();
-      if (data.customer) {
-        setCustomers((prev) => [...prev, data.customer].sort((a, b) =>
-          a.name.localeCompare(b.name)
-        ));
-      }
       invalidateCache("customers");
+      invalidate.invalidateCustomers();
+      invalidate.invalidateCustomerBalance();
       toast.success(`${addForm.name} added successfully`);
       setAddForm(emptyForm);
       setAddOpen(false);
@@ -229,14 +231,9 @@ export default function ManageCustomersPage() {
       if (!res.ok) {
         throw new Error(await apiError(res, "Failed to update customer"));
       }
-      const data = await res.json();
-      if (data.customer) {
-        setCustomers((prev) =>
-          prev.map((c) => (c.id === editCustomer.id ? data.customer : c))
-            .sort((a, b) => a.name.localeCompare(b.name))
-        );
-      }
       invalidateCache("customers");
+      invalidate.invalidateCustomers();
+      invalidate.invalidateCustomerBalance();
       toast.success(`${editForm.name} updated`);
       setEditCustomer(null);
     } catch (e: any) {
@@ -258,18 +255,14 @@ export default function ManageCustomersPage() {
         try {
           const res = await fetch(`/api/customers?id=${c.id}&mode=soft`, { method: "DELETE" });
           if (!res.ok) {
-            // Server may have fallen back to soft-delete already; check note
             const json = await res.json().catch(() => ({}));
-            if (json?.action === "soft_deleted") {
-              // Already soft-deleted — treat as success
-            } else {
+            if (json?.action !== "soft_deleted") {
               throw new Error(await apiError(res, "Failed"));
             }
           }
-          setCustomers((prev) =>
-            prev.map((x) => (x.id === c.id ? { ...x, is_active: false } : x))
-          );
           invalidateCache("customers");
+          invalidate.invalidateCustomers();
+          invalidate.invalidateCustomerBalance();
           toast.success(`${c.name} deactivated`);
         } catch (e: any) {
           toast.error(e.message || "Failed to deactivate");
@@ -295,10 +288,9 @@ export default function ManageCustomersPage() {
         try {
           const res = await fetch(`/api/customers?id=${c.id}&mode=restore`, { method: "DELETE" });
           if (!res.ok) throw new Error(await apiError(res, "Failed"));
-          setCustomers((prev) =>
-            prev.map((x) => (x.id === c.id ? { ...x, is_active: true } : x))
-          );
           invalidateCache("customers");
+          invalidate.invalidateCustomers();
+          invalidate.invalidateCustomerBalance();
           toast.success(`${c.name} restored`);
         } catch (e: any) {
           toast.error(e.message || "Failed to restore");
@@ -324,8 +316,9 @@ export default function ManageCustomersPage() {
         try {
           const res = await fetch(`/api/customers?id=${c.id}&mode=permanent`, { method: "DELETE" });
           if (!res.ok) throw new Error(await apiError(res, "Failed"));
-          setCustomers((prev) => prev.filter((x) => x.id !== c.id));
           invalidateCache("customers");
+          invalidate.invalidateCustomers();
+          invalidate.invalidateCustomerBalance();
           toast.success(`${c.name} permanently deleted`);
         } catch (e: any) {
           toast.error(e.message || "Failed to delete permanently");
@@ -340,18 +333,26 @@ export default function ManageCustomersPage() {
   };
 
   // ──────────────────────────────────────────────────────────
-  // Excel download — fetch all customers (including inactive) + balances
+  // Excel download — fetch ALL customers (active + inactive) + balances
+  // Walks pages server-side so we get every record, not just the visible page.
   // ──────────────────────────────────────────────────────────
   const handleDownloadExcel = async () => {
+    setDownloadingExcel(true);
     try {
       toast.loading("Generating Excel…", { id: "excel-dl" });
       const XLSX = await import("xlsx");
 
-      // Use current in-memory list (already includes inactive since
-      // we fetch without ?active=true). Sort by name for stable output.
-      const rows: any[] = [...customers]
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map((c, idx) => {
+      // Fetch ALL customers (no search filter, no active filter = everything)
+      const allCustomers = await downloadAllJson(
+        "/api/customers",
+        {},
+        "tmp-customers",
+        "customers",
+      );
+
+      const rows: any[] = [...allCustomers]
+        .sort((a: any, b: any) => (a.name || "").localeCompare(b.name || ""))
+        .map((c: any, idx: number) => {
           const b = balances[c.id];
           const due = b?.balance_due ?? c.opening_balance ?? 0;
           const totalBill = b?.total_bill ?? 0;
@@ -372,7 +373,6 @@ export default function ManageCustomersPage() {
           };
         });
 
-      // Totals row
       const totalOb = rows.reduce((s, r) => s + (r["Opening Balance (Rs.)"] || 0), 0);
       const totalBill = rows.reduce((s, r) => s + (r["Total Billed (Rs.)"] || 0), 0);
       const totalCash = rows.reduce((s, r) => s + (r["Cash Paid (Rs.)"] || 0), 0);
@@ -394,17 +394,8 @@ export default function ManageCustomersPage() {
 
       const ws = XLSX.utils.json_to_sheet(rows);
       ws["!cols"] = [
-        { wch: 5 },  // #
-        { wch: 25 }, // Name
-        { wch: 10 }, // Type
-        { wch: 15 }, // Phone
-        { wch: 10 }, // Status
-        { wch: 18 }, // OB
-        { wch: 18 }, // Total Billed
-        { wch: 18 }, // Cash Paid
-        { wch: 18 }, // Paid in Goods
-        { wch: 18 }, // Balance Due
-        { wch: 12 }, // Joined
+        { wch: 5 }, { wch: 25 }, { wch: 10 }, { wch: 15 }, { wch: 10 },
+        { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 12 },
       ];
 
       const wb = XLSX.utils.book_new();
@@ -414,19 +405,52 @@ export default function ManageCustomersPage() {
       toast.success("Excel downloaded!", { id: "excel-dl" });
     } catch (e: any) {
       toast.error(e.message || "Failed to generate Excel", { id: "excel-dl" });
+    } finally {
+      setDownloadingExcel(false);
     }
   };
 
   // ──────────────────────────────────────────────────────────
-  // Loading state
+  // JSON download — fetch ALL customers + balances, single combined file
   // ──────────────────────────────────────────────────────────
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="size-8 animate-spin text-slate-400" />
-      </div>
-    );
-  }
+  const handleDownloadJson = async () => {
+    setDownloadingJson(true);
+    try {
+      const allCustomers = await downloadAllJson(
+        "/api/customers",
+        {},
+        "tmp-customers",
+        "customers",
+      );
+      const merged = allCustomers.map((c: any) => ({
+        ...c,
+        ...(balances[c.id] ?? {
+          opening_balance: c.opening_balance ?? 0,
+          total_bill: 0,
+          total_cash_paid: 0,
+          total_goods_value: 0,
+          balance_due: c.opening_balance ?? 0,
+        }),
+      }));
+      downloadJson(
+        {
+          generatedAt: new Date().toISOString(),
+          totalRecords: merged.length,
+          customers: merged,
+        },
+        "all-customers.json",
+      );
+      toast.success(`Downloaded ${merged.length} customers as JSON`);
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to download JSON");
+    } finally {
+      setDownloadingJson(false);
+    }
+  };
+
+  const isSearchActive = searchDebounced.trim().length > 0;
+  const noActiveMatch = isSearchActive && (activeQ.data?.customers?.length ?? 0) === 0;
+  const noInactiveMatch = isSearchActive && (inactiveQ.data?.customers?.length ?? 0) === 0;
 
   // ──────────────────────────────────────────────────────────
   // Render
@@ -435,33 +459,46 @@ export default function ManageCustomersPage() {
     <div className="space-y-6">
       <PageHeader
         title="Manage Customers"
-        subtitle="Register, edit, deactivate, permanently delete customers — and download Excel"
+        subtitle="Register, edit, deactivate, permanently delete customers — paginated + searchable"
       />
 
       {/* ─── Summary + Action bar ─── */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
           <div className="rounded-xl bg-white border border-slate-200/60 px-4 py-2.5 shadow-sm">
-            <div className="text-[0.65rem] uppercase tracking-wider text-slate-500 font-semibold">Active</div>
-            <div className="text-xl font-extrabold text-emerald-600">{activeCustomers.length}</div>
+            <div className="text-[0.65rem] uppercase tracking-wider text-slate-500 font-semibold">Active Total</div>
+            <div className="text-xl font-extrabold text-emerald-600">{activeQ.data?.total ?? "—"}</div>
           </div>
           <div className="rounded-xl bg-white border border-slate-200/60 px-4 py-2.5 shadow-sm">
-            <div className="text-[0.65rem] uppercase tracking-wider text-slate-500 font-semibold">Inactive</div>
-            <div className="text-xl font-extrabold text-slate-500">{inactiveCustomers.length}</div>
-          </div>
-          <div className="rounded-xl bg-white border border-slate-200/60 px-4 py-2.5 shadow-sm">
-            <div className="text-[0.65rem] uppercase tracking-wider text-slate-500 font-semibold">Total</div>
-            <div className="text-xl font-extrabold text-slate-900">{customers.length}</div>
+            <div className="text-[0.65rem] uppercase tracking-wider text-slate-500 font-semibold">Inactive Total</div>
+            <div className="text-xl font-extrabold text-slate-500">{inactiveQ.data?.total ?? "—"}</div>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
-            onClick={handleDownloadExcel}
-            disabled={customers.length === 0}
+            onClick={handleDownloadJson}
+            disabled={downloadingJson}
             className="cursor-pointer"
           >
-            <Download className="size-4 mr-2" />
+            {downloadingJson ? (
+              <Loader2 className="size-4 mr-2 animate-spin" />
+            ) : (
+              <FileJson className="size-4 mr-2" />
+            )}
+            Download JSON
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleDownloadExcel}
+            disabled={downloadingExcel}
+            className="cursor-pointer"
+          >
+            {downloadingExcel ? (
+              <Loader2 className="size-4 mr-2 animate-spin" />
+            ) : (
+              <Download className="size-4 mr-2" />
+            )}
             Download Excel
           </Button>
           <Button
@@ -474,17 +511,27 @@ export default function ManageCustomersPage() {
         </div>
       </div>
 
-      {/* ─── Search ─── */}
+      {/* ─── Search (server-side, debounced) ─── */}
       <Card className="rounded-2xl border-slate-200/60 shadow-sm">
         <CardContent className="p-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
             <Input
-              placeholder="Search by name or phone..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by customer name or phone... (server-side)"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               className="pl-10"
             />
+            {searchInput && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 px-2 text-slate-400"
+                onClick={() => setSearchInput("")}
+              >
+                Clear
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -495,60 +542,100 @@ export default function ManageCustomersPage() {
           <CardTitle className="text-base font-semibold flex items-center gap-2">
             <UserCheck className="size-5 text-emerald-600" />
             Active Customers
-            <Badge variant="secondary" className="ml-1">{activeCustomers.length}</Badge>
+            <Badge variant="secondary" className="ml-1">{activeQ.data?.total ?? "—"}</Badge>
           </CardTitle>
           <CardDescription>
             Active customers sale/purchase dropdowns me dikhte hain. Edit, Deactivate ya Permanently Delete kar sakte hain.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {activeCustomers.length === 0 ? (
+          {activeQ.isLoading && !activeQ.data ? (
+            <div className="text-center py-10">
+              <Loader2 className="size-6 animate-spin text-slate-400 inline-block mr-2" />
+              <span className="text-slate-400 text-sm">Loading...</span>
+            </div>
+          ) : noActiveMatch ? (
+            <div className="text-center py-10 text-slate-500">
+              <Search className="size-10 mx-auto mb-2 opacity-30" />
+              <p className="text-sm">No record for the customer &quot;{searchDebounced}&quot;.</p>
+            </div>
+          ) : activeCustomers.length === 0 ? (
             <div className="text-center py-10 text-slate-400">
               <Users className="size-10 mx-auto mb-2 opacity-30" />
-              <p className="text-sm">
-                {search ? "No active customers match your search." : "Koi active customer nahi hai. Upse 'Add Customer' button se naya banayein."}
-              </p>
+              <p className="text-sm">Koi active customer nahi hai. Upse &apos;Add Customer&apos; button se naya banayein.</p>
             </div>
           ) : (
-            <CustomerTable
-              customers={activeCustomers}
-              balances={balances}
-              onEdit={openEdit}
-              onSoftDelete={handleSoftDelete}
-              onRestore={handleRestore}
-              onPermanentDelete={handlePermanentDelete}
-              isActiveList
-            />
+            <>
+              <CustomerTable
+                customers={activeCustomers}
+                balances={balances}
+                onEdit={openEdit}
+                onSoftDelete={handleSoftDelete}
+                onRestore={handleRestore}
+                onPermanentDelete={handlePermanentDelete}
+                isActiveList
+              />
+              <PaginationControls
+                page={activeQ.data?.page ?? 1}
+                totalPages={activeQ.data?.totalPages ?? 1}
+                total={activeQ.data?.total ?? 0}
+                isFetching={activeQ.isFetching}
+                onPrev={() => setActivePage((p) => Math.max(1, p - 1))}
+                onNext={() => setActivePage((p) => p + 1)}
+              />
+            </>
           )}
         </CardContent>
       </Card>
 
       {/* ─── Inactive Customers ─── */}
-      {inactiveCustomers.length > 0 && (
+      {(inactiveQ.data?.total ?? 0) > 0 || noInactiveMatch ? (
         <Card className="rounded-2xl border-slate-200/60 shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold flex items-center gap-2">
               <Ban className="size-5 text-slate-500" />
               Inactive Customers
-              <Badge variant="secondary" className="ml-1">{inactiveCustomers.length}</Badge>
+              <Badge variant="secondary" className="ml-1">{inactiveQ.data?.total ?? "—"}</Badge>
             </CardTitle>
             <CardDescription>
               Inactive customers sale/purchase dropdowns se gayab hain. Restore kar sakte hain ya permanently delete kar sakte hain.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <CustomerTable
-              customers={inactiveCustomers}
-              balances={balances}
-              onEdit={openEdit}
-              onSoftDelete={handleSoftDelete}
-              onRestore={handleRestore}
-              onPermanentDelete={handlePermanentDelete}
-              isActiveList={false}
-            />
+            {inactiveQ.isLoading && !inactiveQ.data ? (
+              <div className="text-center py-10">
+                <Loader2 className="size-6 animate-spin text-slate-400 inline-block mr-2" />
+                <span className="text-slate-400 text-sm">Loading...</span>
+              </div>
+            ) : noInactiveMatch ? (
+              <div className="text-center py-10 text-slate-500">
+                <Search className="size-10 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">No inactive customer matches &quot;{searchDebounced}&quot;.</p>
+              </div>
+            ) : (
+              <>
+                <CustomerTable
+                  customers={inactiveCustomers}
+                  balances={balances}
+                  onEdit={openEdit}
+                  onSoftDelete={handleSoftDelete}
+                  onRestore={handleRestore}
+                  onPermanentDelete={handlePermanentDelete}
+                  isActiveList={false}
+                />
+                <PaginationControls
+                  page={inactiveQ.data?.page ?? 1}
+                  totalPages={inactiveQ.data?.totalPages ?? 1}
+                  total={inactiveQ.data?.total ?? 0}
+                  isFetching={inactiveQ.isFetching}
+                  onPrev={() => setInactivePage((p) => Math.max(1, p - 1))}
+                  onNext={() => setInactivePage((p) => p + 1)}
+                />
+              </>
+            )}
           </CardContent>
         </Card>
-      )}
+      ) : null}
 
       {/* ─── Add Dialog ─── */}
       <Dialog open={addOpen} onOpenChange={(o) => { setAddOpen(o); if (!o) setAddForm(emptyForm); }}>
@@ -600,6 +687,56 @@ export default function ManageCustomersPage() {
         onConfirm={confirmAction ?? (() => {})}
         loading={confirmLoading}
       />
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────
+// Sub-component: Pagination controls (Prev / Next + counter)
+// ──────────────────────────────────────────────────────────
+function PaginationControls({
+  page,
+  totalPages,
+  total,
+  isFetching,
+  onPrev,
+  onNext,
+}: {
+  page: number;
+  totalPages: number;
+  total: number;
+  isFetching: boolean;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  return (
+    <div className="mt-3 flex items-center justify-end gap-3">
+      <span className="text-xs text-slate-500">
+        Page {page} of {totalPages}
+        {" · "}
+        {total} records
+        {isFetching ? " · loading…" : ""}
+      </span>
+      <div className="flex items-center gap-1">
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={page <= 1 || isFetching}
+          onClick={onPrev}
+        >
+          <ChevronLeft className="size-4" />
+          Prev
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={page >= totalPages || isFetching}
+          onClick={onNext}
+        >
+          Next
+          <ChevronRight className="size-4" />
+        </Button>
+      </div>
     </div>
   );
 }

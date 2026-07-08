@@ -35,6 +35,62 @@ export async function getAllCustomers(activeOnly = false): Promise<CustomerRow[]
   return (data || []) as CustomerRow[];
 }
 
+/**
+ * Paginated variant of getAllCustomers — for large customer lists.
+ * Returns page metadata alongside the rows.
+ *
+ * Search: case-insensitive substring match on `name` OR `phone` (ilike).
+ * - Empty/whitespace search string = no filter (returns all matching active filter).
+ *
+ * Backward-compat: getAllCustomers() above is untouched.
+ */
+export async function getCustomersPaginated(filters: {
+  activeOnly?: boolean;
+  inactiveOnly?: boolean;
+  search?: string;
+  page: number;       // 1-indexed
+  pageSize: number;   // rows per page
+}): Promise<{
+  rows: CustomerRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}> {
+  const { activeOnly = false, inactiveOnly = false, search = "", page, pageSize } = filters;
+  const safePage = Math.max(1, page);
+  const safePageSize = Math.min(Math.max(1, pageSize), 200); // cap at 200
+  const from = (safePage - 1) * safePageSize;
+  const to = from + safePageSize - 1;
+
+  let q = admin
+    .from("customers")
+    .select("*", { count: "exact" })
+    .is("deleted_at", null)
+    .order("name", { ascending: true })
+    .range(from, to);
+
+  if (activeOnly) q = q.eq("is_active", true);
+  else if (inactiveOnly) q = q.eq("is_active", false);
+
+  const trimmed = search.trim();
+  if (trimmed) {
+    // Match name OR phone (case-insensitive)
+    q = q.or(`name.ilike.%${trimmed}%,phone.ilike.%${trimmed}%`);
+  }
+
+  const { data, error, count } = await q;
+  if (error) throw error;
+  const total = count ?? 0;
+  return {
+    rows: (data || []) as CustomerRow[],
+    total,
+    page: safePage,
+    pageSize: safePageSize,
+    totalPages: Math.max(1, Math.ceil(total / safePageSize)),
+  };
+}
+
 export async function getCustomerById(id: number): Promise<CustomerRow | null> {
   const { data, error } = await admin
     .from("customers")

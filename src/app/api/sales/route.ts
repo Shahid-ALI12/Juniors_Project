@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
     if (url.searchParams.get("sale_date_gte")) filters.sale_date_gte = url.searchParams.get("sale_date_gte")!;
     if (url.searchParams.get("sale_date_lte")) filters.sale_date_lte = url.searchParams.get("sale_date_lte")!;
     if (url.searchParams.get("customer_id")) filters.customer_id = Number(url.searchParams.get("customer_id")!);
+    if (url.searchParams.get("customer_name")) filters.customer_name = url.searchParams.get("customer_name")!;
     if (url.searchParams.get("transaction_group_id")) filters.transaction_group_id = url.searchParams.get("transaction_group_id")!;
     if (url.searchParams.get("location_id")) filters.location_id = Number(url.searchParams.get("location_id")!);
 

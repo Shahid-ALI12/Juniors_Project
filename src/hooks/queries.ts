@@ -50,6 +50,8 @@ export const queryKeys = {
   reconciliation: (from: string, to: string) => ["reconciliation", from, to] as const,
   customerBalance: (customerId?: number) => ["customer-balance", customerId] as const,
   customers: (activeOnly: boolean) => ["customers", activeOnly] as const,
+  customersPaginated: (filters: Record<string, string>, page: number, pageSize: number) =>
+    ["customers", "paged", filters, page, pageSize] as const,
   products: (activeOnly: boolean) => ["products", activeOnly] as const,
   suppliers: (activeOnly: boolean) => ["suppliers", activeOnly] as const,
   stock: ["stock"] as const,
@@ -57,6 +59,8 @@ export const queryKeys = {
   purchases: (filters: Record<string, string | number>) => ["purchases", filters] as const,
   expenses: (filters: Record<string, string>) => ["expenses", filters] as const,
   mixOrders: ["mix-orders"] as const,
+  mixOrdersPaginated: (filters: Record<string, string>, page: number, pageSize: number) =>
+    ["mix-orders", "paged", filters, page, pageSize] as const,
   labours: (activeOnly: boolean) => ["labours", activeOnly] as const,
   labourPayments: (filters: Record<string, unknown>) => ["labour-payments", filters] as const,
 };
@@ -135,6 +139,39 @@ export function useCustomers(activeOnly = false) {
     queryKey: queryKeys.customers(activeOnly),
     queryFn: () => fetcher<{ customers: any[] }>(`/api/customers${activeOnly ? "?active=true" : ""}`),
     staleTime: 30_000,
+  });
+}
+
+/**
+ * Paginated customers hook — for the All-Customers list on customer-khata
+ * and manage-customers pages. Supports server-side search (name OR phone ilike).
+ *
+ * Returns { customers, total, page, pageSize, totalPages }.
+ */
+export function useCustomersPaginated(
+  filters: { activeOnly?: boolean; inactiveOnly?: boolean; search?: string } = {},
+  page: number,
+  pageSize: number,
+) {
+  const params: Record<string, string> = {};
+  if (filters.activeOnly) params.active = "true";
+  if (filters.inactiveOnly) params.inactive = "true";
+  if (filters.search && filters.search.trim()) params.search = filters.search.trim();
+  params.page = String(page);
+  params.pageSize = String(pageSize);
+  const qs = new URLSearchParams(params).toString();
+  return useQuery({
+    queryKey: queryKeys.customersPaginated(params, page, pageSize),
+    queryFn: () =>
+      fetcher<{
+        customers: any[];
+        total: number;
+        page: number;
+        pageSize: number;
+        totalPages: number;
+      }>(`/api/customers?${qs}`),
+    staleTime: 10_000,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -225,6 +262,37 @@ export function useMixOrders() {
   return useQuery({
     queryKey: queryKeys.mixOrders,
     queryFn: () => fetcher<{ orders: any[]; salesByMix: Record<number, any[]> }>("/api/mix-orders"),
+    staleTime: 10_000,
+    placeholderData: keepPreviousData,
+  });
+}
+
+/**
+ * Paginated mix-orders hook — for the "Past Mix Orders" list.
+ * Supports server-side search by customer name (ilike).
+ *
+ * Returns { orders, salesByMix, total, page, pageSize, totalPages }.
+ */
+export function useMixOrdersPaginated(
+  filters: { search?: string; location_id?: number } = {},
+  page: number,
+  pageSize: number,
+) {
+  const params: Record<string, string> = { page: String(page), pageSize: String(pageSize) };
+  if (filters.search && filters.search.trim()) params.search = filters.search.trim();
+  if (filters.location_id != null) params.location_id = String(filters.location_id);
+  const qs = new URLSearchParams(params).toString();
+  return useQuery({
+    queryKey: queryKeys.mixOrdersPaginated(params, page, pageSize),
+    queryFn: () =>
+      fetcher<{
+        orders: any[];
+        salesByMix: Record<number, any[]>;
+        total: number;
+        page: number;
+        pageSize: number;
+        totalPages: number;
+      }>(`/api/mix-orders?${qs}`),
     staleTime: 10_000,
     placeholderData: keepPreviousData,
   });
