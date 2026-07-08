@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
-import { getSales, deleteSale, deleteSalesByGroup, deleteSalesByMixOrder, createSaleRPC } from "@/lib/data/sales";
+import { getSales, getSalesPaginated, deleteSale, deleteSalesByGroup, deleteSalesByMixOrder, createSaleRPC } from "@/lib/data/sales";
 import { getErrorDetail } from "@/lib/api-error";
 import { pktToday } from "@/lib/pkt-date";
 import { cachedGet, invalidateByTag, userKey, userTag } from "@/lib/cache";
@@ -25,7 +25,36 @@ export async function GET(request: NextRequest) {
     if (url.searchParams.get("transaction_group_id")) filters.transaction_group_id = url.searchParams.get("transaction_group_id")!;
     if (url.searchParams.get("location_id")) filters.location_id = Number(url.searchParams.get("location_id")!);
 
-    // Cache key includes filter string for collision-free reads
+    // ── Pagination (optional, backward-compat) ──
+    // If `page` and `pageSize` query params are present, return paginated response:
+    //   { sales, total, page, pageSize, totalPages }
+    // Otherwise, return the original shape: { sales } (all rows)
+    const pageParam = url.searchParams.get("page");
+    const pageSizeParam = url.searchParams.get("pageSize");
+    const wantsPagination = pageParam !== null || pageSizeParam !== null;
+
+    if (wantsPagination) {
+      const page = pageParam ? Math.max(1, parseInt(pageParam, 10) || 1) : 1;
+      const pageSize = pageSizeParam ? Math.max(1, parseInt(pageSizeParam, 10) || 50) : 50;
+
+      // Cache key includes filter + pagination
+      const cacheSuffix = `${new URLSearchParams(filters as Record<string, string>).toString()}:p${page}:ps${pageSize}`;
+      const result = await cachedGet(
+        userKey(auth.user.id, "sales", cacheSuffix),
+        [userTag(auth.user.id, "sales")],
+        SALES_TTL,
+        () => getSalesPaginated({ ...filters, page, pageSize }),
+      );
+      return NextResponse.json({
+        sales: result.rows,
+        total: result.total,
+        page: result.page,
+        pageSize: result.pageSize,
+        totalPages: result.totalPages,
+      });
+    }
+
+    // ── Original (non-paginated) path — preserved for existing callers ──
     const filterSuffix = new URLSearchParams(filters as Record<string, string>).toString();
     const sales = await cachedGet(
       userKey(auth.user.id, "sales", filterSuffix),

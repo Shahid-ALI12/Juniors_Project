@@ -51,6 +51,64 @@ export async function getSales(filters?: {
   return (data || []) as unknown as SaleRow[];
 }
 
+/**
+ * Paginated variant of getSales — for large lists.
+ * Returns page metadata alongside the rows.
+ *
+ * Backward-compat: getSales() above is untouched, so all existing callers
+ * (which expect SaleRow[]) continue to work.
+ */
+export async function getSalesPaginated(filters: {
+  sale_date?: string;
+  sale_date_gte?: string;
+  sale_date_lte?: string;
+  customer_id?: number;
+  transaction_group_id?: string;
+  mix_order_id?: number;
+  location_id?: number;
+  page: number;       // 1-indexed
+  pageSize: number;   // rows per page
+}): Promise<{
+  rows: SaleRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}> {
+  const { page, pageSize, ...rest } = filters;
+  const safePage = Math.max(1, page);
+  const safePageSize = Math.min(Math.max(1, pageSize), 200); // cap at 200
+  const from = (safePage - 1) * safePageSize;
+  const to = from + safePageSize - 1;
+
+  let q = admin
+    .from("sales")
+    .select("id, customer_id, product_id, location_id, quantity, rate_per_bag, rickshaw_fare, cash_received, sale_date, unit_type, bag_weight_kg, mix_order_id, transaction_group_id, rickshaw_driver_name, entered_by, created_at, customers(id,name,type), products(id,name)", { count: "exact" })
+    .order("created_at", { ascending: true })
+    .range(from, to);
+
+  if (rest.sale_date) q = q.eq("sale_date", rest.sale_date);
+  if (rest.sale_date_gte) q = q.gte("sale_date", rest.sale_date_gte);
+  if (rest.sale_date_lte) q = q.lte("sale_date", rest.sale_date_lte);
+  if (rest.customer_id) q = q.eq("customer_id", rest.customer_id);
+  if (rest.transaction_group_id) q = q.eq("transaction_group_id", rest.transaction_group_id);
+  if (rest.mix_order_id) q = q.eq("mix_order_id", rest.mix_order_id);
+  if (rest.location_id !== undefined && rest.location_id !== null) {
+    q = q.eq("location_id", rest.location_id);
+  }
+
+  const { data, error, count } = await q;
+  if (error) throw error;
+  const total = count ?? 0;
+  return {
+    rows: (data || []) as unknown as SaleRow[],
+    total,
+    page: safePage,
+    pageSize: safePageSize,
+    totalPages: Math.max(1, Math.ceil(total / safePageSize)),
+  };
+}
+
 export async function deleteSale(id: number): Promise<void> {
   const { error } = await admin.from("sales").delete().eq("id", id);
   if (error) throw new Error(error.message);

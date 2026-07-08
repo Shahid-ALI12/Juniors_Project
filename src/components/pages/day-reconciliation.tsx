@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -30,6 +31,7 @@ import {
 import { toast } from "sonner";
 import type { Expense } from "@/types";
 import { pktToday } from "@/lib/pkt-date";
+import { useReconciliation } from "@/hooks/queries";
 
 function formatRs(n: number) {
   return n.toLocaleString("en-PK");
@@ -168,8 +170,6 @@ export default function DayReconciliation() {
   const [singleDate, setSingleDate] = useState(today);
   const [rangeFrom, setRangeFrom] = useState(today);
   const [rangeTo, setRangeTo] = useState(today);
-  const [data, setData] = useState<Reconciliation | null>(null);
-  const [loading, setLoading] = useState(true);
 
   // Detail panel state
   const [activeCard, setActiveCard] = useState<ReconcileCardKey | null>(null);
@@ -182,27 +182,8 @@ export default function DayReconciliation() {
     return { from: rangeFrom, to: rangeTo };
   }, [mode, singleDate, rangeFrom, rangeTo]);
 
-  // Load reconciliation summary
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const res = await fetch(
-          `/api/reports/reconciliation?from=${dateRange.from}&to=${dateRange.to}`
-        );
-        if (res.ok) {
-          const d = await res.json();
-          setData(d);
-        } else {
-          setData(null);
-        }
-      } catch {
-        toast.error("Failed to load reconciliation");
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [dateRange]);
+  // React Query hook — replaces useEffect + fetch + setState
+  const { data, isLoading: loading } = useReconciliation(dateRange.from, dateRange.to);
 
   // Fetch detail rows for a card
   const fetchDetails = useCallback(async (cardKey: ReconcileCardKey) => {
@@ -318,8 +299,36 @@ export default function DayReconciliation() {
         </section>
 
         {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="size-8 animate-spin text-slate-400" />
+          <div className="space-y-8">
+            {/* Income skeleton */}
+            <div>
+              <Skeleton className="h-4 w-32 mb-3" />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                    <Skeleton className="h-3 w-20 mb-3" />
+                    <Skeleton className="h-7 w-28" />
+                  </div>
+                ))}
+              </div>
+            </div>
+            {/* Expense skeleton */}
+            <div>
+              <Skeleton className="h-4 w-32 mb-3" />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                    <Skeleton className="h-3 w-20 mb-3" />
+                    <Skeleton className="h-7 w-28" />
+                  </div>
+                ))}
+              </div>
+            </div>
+            {/* Balance skeleton */}
+            <div>
+              <Skeleton className="h-4 w-32 mb-3" />
+              <Skeleton className="h-24 w-full rounded-2xl" />
+            </div>
           </div>
         ) : (
           <>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { PageHeader, MetricCard } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Banknote,
   Lock,
@@ -40,21 +41,31 @@ import {
 import { toast } from "sonner";
 import { pktToday } from "@/lib/pkt-date";
 import type { CashAccount, CashTransfer } from "@/types";
+import {
+  useCashAccounts,
+  useCashBalances,
+  useCashTransfers,
+  useInvalidateAfterMutation,
+} from "@/hooks/queries";
 
 const HAND_ACCOUNT_NAME = "Cash In Hand";
 const LOCKER_ACCOUNT_NAME = "Cash In Locker";
 
 interface RawTransfer extends CashTransfer {
-  from_account?: CashAccount;
-  to_account?: CashAccount;
+  from_account?: CashAccount | null;
+  to_account?: CashAccount | null;
 }
 
 export default function CashManagementPage() {
-  const [accounts, setAccounts] = useState<CashAccount[]>([]);
-  const [balances, setBalances] = useState<Record<string, number>>({});
-  const [transfers, setTransfers] = useState<RawTransfer[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  // ─── React Query hooks (replace manual fetch + state) ───
+  const { data: accountsData, isLoading: accountsLoading } = useCashAccounts();
+  const { data: balancesData, isLoading: balancesLoading } = useCashBalances();
+  const { data: transfersData, isLoading: transfersLoading } = useCashTransfers();
+  const invalidate = useInvalidateAfterMutation();
+
+  const accounts: CashAccount[] = accountsData?.accounts ?? [];
+  const balances: Record<string, number> = balancesData?.balances ?? {};
+  const transfers: RawTransfer[] = transfersData?.transfers ?? [];
 
   // Transfer form state
   const [transferDirection, setTransferDirection] = useState<"locker-to-hand" | "hand-to-locker">("locker-to-hand");
@@ -72,46 +83,8 @@ export default function CashManagementPage() {
   const [correctionTarget, setCorrectionTarget] = useState("");
   const [correctionSuccess, setCorrectionSuccess] = useState(false);
 
-  const reloadData = async () => {
-    const failed: string[] = [];
-    // Fetch all 3 endpoints in parallel — was sequential before (3 round-trips → 1 batch)
-    const [accRes, balRes, trRes] = await Promise.allSettled([
-      fetch("/api/cash/accounts"),
-      fetch("/api/cash/balances"),
-      fetch("/api/cash/transfer"),
-    ]);
-
-    if (accRes.status === "fulfilled" && accRes.value.ok) {
-      const acc = await accRes.value.json();
-      setAccounts(acc.accounts ?? []);
-    } else {
-      failed.push("accounts");
-    }
-
-    if (balRes.status === "fulfilled" && balRes.value.ok) {
-      const bal = await balRes.value.json();
-      setBalances(bal.balances ?? {});
-    } else {
-      failed.push("balances");
-    }
-
-    if (trRes.status === "fulfilled" && trRes.value.ok) {
-      const tr = await trRes.value.json();
-      setTransfers(tr.transfers ?? []);
-    } else {
-      failed.push("transfers");
-    }
-
-    if (failed.length > 0) toast.error(`Failed to load: ${failed.join(", ")}`);
-  };
-
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      await reloadData();
-      setLoading(false);
-    })();
-  }, []);
+  // Saving state for forms (local, since mutations happen here)
+  const [submitting, setSubmitting] = useState(false);
 
   const handBalance = balances[HAND_ACCOUNT_NAME] ?? 0;
   const lockerBalance = balances[LOCKER_ACCOUNT_NAME] ?? 0;
@@ -148,7 +121,7 @@ export default function CashManagementPage() {
       return;
     }
 
-    setSaving(true);
+    setSubmitting(true);
     try {
       const res = await fetch("/api/cash/transfer", {
         method: "POST",
@@ -169,11 +142,13 @@ export default function CashManagementPage() {
       setTransferNotes("");
       setTransferSuccess(true);
       setTimeout(() => setTransferSuccess(false), 3000);
-      await reloadData();
+      // Invalidate React Query cache — server cache is already invalidated by route,
+      // but client needs explicit invalidation for instant UI refresh
+      invalidate.invalidateCash();
     } catch (e: any) {
       toast.error(e.message || "Failed to record transfer");
     } finally {
-      setSaving(false);
+      setSubmitting(false);
     }
   };
 
@@ -190,7 +165,7 @@ export default function CashManagementPage() {
       return;
     }
 
-    setSaving(true);
+    setSubmitting(true);
     try {
       const res = await fetch("/api/cash/correction", {
         method: "POST",
@@ -204,21 +179,61 @@ export default function CashManagementPage() {
       setCorrectionTarget("");
       setCorrectionSuccess(true);
       setTimeout(() => setCorrectionSuccess(false), 3000);
-      await reloadData();
+      invalidate.invalidateCash();
     } catch (e: any) {
       toast.error(e.message || "Failed to apply correction");
     } finally {
-      setSaving(false);
+      setSubmitting(false);
     }
   };
 
   const formatRs = (val: number) => val.toLocaleString("en-PK", { minimumFractionDigits: 0 });
 
-  if (loading) {
+  // ─── Loading state: show skeletons instead of blank spinner ───
+  const initialLoading = accountsLoading && balancesLoading && transfersLoading;
+  if (initialLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="size-8 animate-spin text-slate-400" />
-      </div>
+      <main className="min-h-screen bg-slate-50">
+        <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+          <PageHeader
+            title="Cash Management"
+            subtitle="Track cash in hand vs cash in locker — transfer & correct balances"
+          />
+          {/* Skeleton for balance overview */}
+          <section className="mb-8">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="rounded-2xl border border-slate-200/60 bg-white p-6 shadow-sm">
+                  <Skeleton className="h-3 w-24 mb-3" />
+                  <Skeleton className="h-8 w-32" />
+                </div>
+              ))}
+            </div>
+          </section>
+          {/* Skeleton for transfer form */}
+          <section className="mb-8 rounded-2xl border border-slate-200/60 bg-white p-6 shadow-sm">
+            <Skeleton className="h-6 w-40 mb-4" />
+            <div className="space-y-5">
+              <Skeleton className="h-10 w-full" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+              </div>
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-32" />
+            </div>
+          </section>
+          {/* Skeleton for transfers table */}
+          <section className="mb-8 rounded-2xl border border-slate-200/60 bg-white p-6 shadow-sm">
+            <Skeleton className="h-6 w-40 mb-4" />
+            <div className="space-y-2">
+              {[0, 1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-10 w-full" />
+              ))}
+            </div>
+          </section>
+        </div>
+      </main>
     );
   }
 
@@ -233,9 +248,22 @@ export default function CashManagementPage() {
         {/* ── 1. Balance Overview ── */}
         <section className="mb-8" aria-label="Balance overview">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <MetricCard label="💵 Cash In Hand" value={`Rs. ${formatRs(handBalance)}`} color="green" />
-            <MetricCard label="🔒 Cash In Locker" value={`Rs. ${formatRs(lockerBalance)}`} color="purple" />
-            <MetricCard label="📊 Total Cash" value={`Rs. ${formatRs(totalCash)}`} color="blue" />
+            {balancesLoading ? (
+              <>
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="rounded-2xl border border-slate-200/60 bg-white p-6 shadow-sm">
+                    <Skeleton className="h-3 w-24 mb-3" />
+                    <Skeleton className="h-8 w-32" />
+                  </div>
+                ))}
+              </>
+            ) : (
+              <>
+                <MetricCard label="💵 Cash In Hand" value={`Rs. ${formatRs(handBalance)}`} color="green" />
+                <MetricCard label="🔒 Cash In Locker" value={`Rs. ${formatRs(lockerBalance)}`} color="purple" />
+                <MetricCard label="📊 Total Cash" value={`Rs. ${formatRs(totalCash)}`} color="blue" />
+              </>
+            )}
           </div>
           <p className="mt-2 text-xs text-slate-400 text-center sm:text-left">
             Total Cash is always Hand + Locker.
@@ -306,8 +334,8 @@ export default function CashManagementPage() {
               <Input id="transfer-notes" type="text" placeholder="Reason for transfer…" value={transferNotes} onChange={(e) => setTransferNotes(e.target.value)} className="max-w-md" />
             </div>
 
-            <Button type="submit" className="gap-2" disabled={saving}>
-              {saving ? <Loader2 className="size-4 animate-spin" /> : <ArrowRightLeft className="size-4" />}
+            <Button type="submit" className="gap-2" disabled={submitting}>
+              {submitting ? <Loader2 className="size-4 animate-spin" /> : <ArrowRightLeft className="size-4" />}
               Record Transfer
             </Button>
           </form>
@@ -326,7 +354,13 @@ export default function CashManagementPage() {
             </div>
           </div>
 
-          {filteredTransfers.length === 0 ? (
+          {transfersLoading ? (
+            <div className="space-y-2">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <Skeleton key={i} className="h-10 w-full" />
+              ))}
+            </div>
+          ) : filteredTransfers.length === 0 ? (
             <div className="py-10 text-center text-sm text-slate-400">
               No transfers found for the selected date.
             </div>
@@ -441,8 +475,8 @@ export default function CashManagementPage() {
                     <Input id="correction-target" type="number" min="0" step="1" placeholder="Enter correct balance" value={correctionTarget} onChange={(e) => setCorrectionTarget(e.target.value)} required />
                   </div>
 
-                  <Button type="submit" variant="outline" className="gap-2 border-amber-300 text-amber-700 hover:bg-amber-50 hover:text-amber-800" disabled={saving}>
-                    {saving ? <Loader2 className="size-4 animate-spin" /> : <AlertTriangle className="size-4" />}
+                  <Button type="submit" variant="outline" className="gap-2 border-amber-300 text-amber-700 hover:bg-amber-50 hover:text-amber-800" disabled={submitting}>
+                    {submitting ? <Loader2 className="size-4 animate-spin" /> : <AlertTriangle className="size-4" />}
                     Apply Correction
                   </Button>
                 </form>

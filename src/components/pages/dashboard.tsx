@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useEffect, useState, useCallback } from "react";
+import { useMemo, useState, useCallback } from "react";
 import {
   FileText, FlaskConical, BookOpen, CheckCircle,
   Package, Settings, Loader2, ChevronDown, ChevronUp, X, Download, AlertTriangle,
@@ -10,7 +10,9 @@ import { cn } from "@/lib/utils";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 import { pktToday, pktFormatted } from "@/lib/pkt-date";
+import { useDashboardMetrics } from "@/hooks/queries";
 
 const quickLinks = [
   { label: "Add a Sale / Expense", page: "daily-entry", icon: FileText },
@@ -134,8 +136,8 @@ async function downloadExcel(rows: Record<string, any>[], cols: Col[], fileName:
 
 export default function Dashboard() {
   const setActivePage = useAppStore((s) => s.setActivePage);
-  const [metrics, setMetrics] = useState<Metrics>(defaultMetrics);
-  const [loading, setLoading] = useState(true);
+  // React Query hook — replaces useEffect + fetch + setState
+  const { data: metrics, isLoading: loading } = useDashboardMetrics();
 
   // Detail panel state
   const [activeCard, setActiveCard] = useState<CardKey | null>(null);
@@ -147,22 +149,7 @@ export default function Dashboard() {
   // Use PKT date — matches server-side pktToday()
   const pktDate = useMemo(() => pktToday(), []);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const res = await fetch("/api/reports/dashboard");
-        if (res.ok) {
-          const data = await res.json();
-          setMetrics(data);
-        }
-      } catch {
-        // silently fail — shows zeros
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, []);
+  const metricsData: Metrics = metrics ?? defaultMetrics;
 
   const fetchDetails = useCallback(async (cardKey: CardKey) => {
     // If same card clicked, close panel
@@ -201,20 +188,58 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-100">
-        <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
+      <div className="min-h-screen bg-slate-100">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-8">
+          {/* Header skeleton */}
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-48" />
+            <Skeleton className="h-4 w-72" />
+          </div>
+          {/* Primary metrics skeleton */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="bg-white rounded-2xl p-5 border border-slate-100 border-t-[3px] border-t-slate-200 shadow-sm">
+                <Skeleton className="h-3 w-24 mb-3" />
+                <Skeleton className="h-7 w-32" />
+              </div>
+            ))}
+          </div>
+          {/* Secondary metrics skeleton */}
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="bg-white rounded-2xl p-5 border border-slate-100 border-t-[3px] border-t-slate-200 shadow-sm">
+                <Skeleton className="h-3 w-24 mb-3" />
+                <Skeleton className="h-7 w-32" />
+              </div>
+            ))}
+          </div>
+          {/* Quick links skeleton */}
+          <div>
+            <Skeleton className="h-5 w-32 mb-4" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {[0, 1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="bg-white rounded-xl p-4 border border-slate-200">
+                  <div className="flex items-center gap-4">
+                    <Skeleton className="h-11 w-11 rounded-lg" />
+                    <Skeleton className="h-4 w-32" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
   const cards: { key: CardKey; label: string; value: string; color: string }[] = [
-    { key: "sales-today", label: "Sales Today", value: `${metrics.salesTodayCount} txns`, color: "blue" },
-    { key: "billed-today", label: "Billed Today", value: formatRs(metrics.billedToday), color: "purple" },
-    { key: "cash-collected", label: "Cash Collected", value: formatRs(metrics.cashCollectedToday), color: "green" },
-    { key: "expenses-today", label: "Expenses Today", value: formatRs(metrics.expensesToday), color: "orange" },
-    { key: "customers", label: "Customers", value: `${metrics.totalCustomers}`, color: "blue" },
-    { key: "outstanding", label: "Total Outstanding / Khata", value: formatRs(metrics.totalOutstanding), color: "purple" },
-    { key: "over-credit", label: "Over Credit Limit", value: `${metrics.overCreditLimitCount} cust.`, color: "orange" },
+    { key: "sales-today", label: "Sales Today", value: `${metricsData.salesTodayCount} txns`, color: "blue" },
+    { key: "billed-today", label: "Billed Today", value: formatRs(metricsData.billedToday), color: "purple" },
+    { key: "cash-collected", label: "Cash Collected", value: formatRs(metricsData.cashCollectedToday), color: "green" },
+    { key: "expenses-today", label: "Expenses Today", value: formatRs(metricsData.expensesToday), color: "orange" },
+    { key: "customers", label: "Customers", value: `${metricsData.totalCustomers}`, color: "blue" },
+    { key: "outstanding", label: "Total Outstanding / Khata", value: formatRs(metricsData.totalOutstanding), color: "purple" },
+    { key: "over-credit", label: "Over Credit Limit", value: `${metricsData.overCreditLimitCount} cust.`, color: "orange" },
   ];
 
   const cols = activeCard ? columnsMap[activeCard] : [];
