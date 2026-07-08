@@ -11,7 +11,7 @@ interface CustomerBillData {
 }
 
 /* ─── Farm branding constants ─── */
-const FARM_NAME = "DANISH FARMHOUSE";
+const FARM_NAME = "DANISH CATTLE FEED";
 const FARM_TAGLINE = "Cattle Feed Supplier";
 const FARM_ADDRESS = "Main Road, Tehsil & District Kasur, Punjab";
 const FARM_PHONE = "0300-0000000";
@@ -421,7 +421,7 @@ export async function generateCustomerBillPDF(bill: CustomerBillData) {
   doc.setFontSize(8);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(...C_GRAY);
-  doc.text("For Danish Farmhouse", pw - m - 32.5, sigY + 4, { align: "center" });
+  doc.text("For Danish Cattle Feed", pw - m - 32.5, sigY + 4, { align: "center" });
   doc.setFont("helvetica", "bold");
   doc.setTextColor(...C_DARK);
   doc.text("Authorised Signatory", pw - m - 32.5, sigY + 8, { align: "center" });
@@ -437,7 +437,7 @@ export async function generateCustomerBillPDF(bill: CustomerBillData) {
   doc.setFont("helvetica", "bold");
   doc.setTextColor(...C_GREEN);
   doc.text("DANISH", m + 14, sigY - 5, { align: "center" });
-  doc.text("FARMHOUSE", m + 14, sigY - 1.5, { align: "center" });
+  doc.text("CATTLE FEED", m + 14, sigY - 1.5, { align: "center" });
   doc.setFontSize(4.5);
   doc.setTextColor(...C_GOLD);
   doc.text("★ KASUR ★", m + 14, sigY + 2, { align: "center" });

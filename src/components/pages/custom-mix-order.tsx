@@ -122,7 +122,7 @@ function printMixBill(order: { id: string | number; customer: string; date: stri
   </style></head><body>
     <div class="top-line"></div>
     <div class="farm-banner">
-      <h1>DANISH FARMHOUSE</h1>
+      <h1>DANISH CATTLE FEED</h1>
       <div class="tag">Cattle Feed Supplier</div>
       <div class="addr">Main Road, Kasur, Punjab &nbsp;|&nbsp; 0300-0000000</div>
     </div>
@@ -160,8 +160,8 @@ function printMixBill(order: { id: string | number; customer: string; date: stri
       </div>
     </div>
     <div class="sig">
-      <div class="stamp"><span>DANISH</span><span>FARMHOUSE</span><span>★ KASUR ★</span></div>
-      <div class="sig-line">For Danish Farmhouse<br/>Authorised Signatory</div>
+      <div class="stamp"><span>DANISH</span><span>CATTLE FEED</span><span>★ KASUR ★</span></div>
+      <div class="sig-line">For Danish Cattle Feed<br/>Authorised Signatory</div>
     </div>
     <div class="footer">
       <div class="dev">Software By: Shahid ALI</div>
