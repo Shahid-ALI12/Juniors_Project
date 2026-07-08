@@ -15,7 +15,34 @@ export interface DashboardMetrics {
 const CREDIT_LIMIT = 3_000_000;
 
 export async function getDashboardMetrics(today: string): Promise<DashboardMetrics> {
-  // Run all 4 independent queries in parallel — same result, ~3-4x faster.
+  // Try RPC first (single round-trip, all math done in Postgres).
+  // Falls back to old multi-query logic if RPC is not deployed.
+  try {
+    const { data, error } = await admin.rpc("get_dashboard_metrics", { p_today: today });
+    if (!error && data) {
+      // RPC returns a single row (or array of 1 row depending on supabase-js version)
+      const row: any = Array.isArray(data) ? data[0] : data;
+      if (row) {
+        return {
+          salesTodayCount: Number(row.sales_today_count ?? 0),
+          billedToday: Number(row.billed_today ?? 0),
+          cashCollectedToday: Number(row.cash_collected_today ?? 0),
+          expensesToday: Number(row.expenses_today ?? 0),
+          totalCustomers: Number(row.total_customers ?? 0),
+          totalOutstanding: Number(row.total_outstanding ?? 0),
+          overCreditLimitCount: Number(row.over_credit_limit_count ?? 0),
+        };
+      }
+    }
+  } catch (rpcErr: any) {
+    const msg = rpcErr?.message || "";
+    if (!msg.includes("Could not find the function") && !msg.includes("does not exist")) {
+      console.warn("getDashboardMetrics RPC failed, using fallback:", msg);
+    }
+  }
+
+  // ─── Fallback: original TS logic (4 parallel queries via Promise.all) ───
+  // Run all 4 independent queries in parallel — same result, ~3-4x faster than sequential.
   // Order of destructure matches order of promises.
   const [salesRes, expRes, custRes, allSalesRes] = await Promise.all([
     admin
@@ -66,6 +93,38 @@ export async function getDashboardMetrics(today: string): Promise<DashboardMetri
 // ─── Day Reconciliation (returns snake_case keys to match frontend) ───
 
 export async function getReconciliation(fromDate: string, toDate: string): Promise<Record<string, any>> {
+  // Try RPC first (single round-trip, all math done in Postgres).
+  // Falls back to old multi-query logic if RPC is not deployed.
+  try {
+    const { data, error } = await admin.rpc("get_reconciliation", {
+      p_from: fromDate,
+      p_to: toDate,
+    });
+    if (!error && data) {
+      // RPC returns a single JSON object — already in the right shape.
+      // Normalize numbers (PG numerics arrive as strings sometimes via JSON).
+      const obj = data as any;
+      return {
+        total_bags_sold: Number(obj.total_bags_sold ?? 0),
+        total_billed: Number(obj.total_billed ?? 0),
+        cash_received: Number(obj.cash_received ?? 0),
+        from_credit_customers: Number(obj.from_credit_customers ?? 0),
+        from_cash_customers: Number(obj.from_cash_customers ?? 0),
+        total_expenses: Number(obj.total_expenses ?? 0),
+        total_cash_in: Number(obj.total_cash_in ?? 0),
+        total_cash_out: Number(obj.total_cash_out ?? 0),
+        expected_cash_in_hand: Number(obj.expected_cash_in_hand ?? 0),
+        expenses: Array.isArray(obj.expenses) ? obj.expenses : [],
+      };
+    }
+  } catch (rpcErr: any) {
+    const msg = rpcErr?.message || "";
+    if (!msg.includes("Could not find the function") && !msg.includes("does not exist")) {
+      console.warn("getReconciliation RPC failed, using fallback:", msg);
+    }
+  }
+
+  // ─── Fallback: original TS logic (2 queries + JS reduction) ───
   const { data: sales, error: sErr } = await admin
     .from("sales")
     .select("quantity, rate_per_bag, rickshaw_fare, cash_received, unit_type, customers(type)")
