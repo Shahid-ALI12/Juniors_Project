@@ -56,6 +56,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FileJson,
+  Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import ConfirmAction from "@/components/shared/confirm-action";
@@ -516,6 +517,64 @@ export default function DailyEntryPage() {
 
   const totalCashIn = sales.reduce((sum, s) => sum + s.cash_received, 0);
   const totalExpensesAmt = expenses.reduce((sum, e) => sum + e.amount, 0);
+
+  // ── Today's Expenses: client-side pagination + description search ──
+  // (Expenses for a single date are bounded — client-side is the simplest
+  //  approach with no API changes needed.)
+  const [expenseSearchInput, setExpenseSearchInput] = useState("");
+  const [expenseSearchDebounced, setExpenseSearchDebounced] = useState("");
+  const [expensePage, setExpensePage] = useState(1);
+  const [downloadingExpensesExcel, setDownloadingExpensesExcel] = useState(false);
+  const EXPENSE_PAGE_SIZE = 10;
+
+  // Debounce expense search + reset page on new search
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setExpenseSearchDebounced(expenseSearchInput);
+      setExpensePage(1);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [expenseSearchInput]);
+
+  // Reset page when date changes (expenses array is reloaded)
+  useEffect(() => { setExpensePage(1); setExpenseSearchInput(""); setExpenseSearchDebounced(""); }, [date]);
+
+  const filteredExpenses = useMemo(() => {
+    if (!expenseSearchDebounced.trim()) return expenses;
+    const q = expenseSearchDebounced.trim().toLowerCase();
+    return expenses.filter((e) => (e.description || "").toLowerCase().includes(q));
+  }, [expenses, expenseSearchDebounced]);
+
+  const expenseTotal = filteredExpenses.length;
+  const expenseTotalPages = Math.max(1, Math.ceil(expenseTotal / EXPENSE_PAGE_SIZE));
+  const expensePageSafe = Math.min(expensePage, expenseTotalPages);
+  const pagedExpenses = useMemo(() => {
+    const from = (expensePageSafe - 1) * EXPENSE_PAGE_SIZE;
+    return filteredExpenses.slice(from, from + EXPENSE_PAGE_SIZE);
+  }, [filteredExpenses, expensePageSafe]);
+
+  // Download ALL expenses for the date as Excel (not just visible / filtered)
+  const handleDownloadExpensesExcel = async () => {
+    setDownloadingExpensesExcel(true);
+    try {
+      const { downloadExcel } = await import("@/lib/download-excel");
+      // intentionally use the full `expenses` array — user wants every record
+      // for the date in the workbook, not the current search filter.
+      await downloadExcel(
+        expenses as unknown as Record<string, any>[],
+        [
+          { key: "description", label: "Description" },
+          { key: "amount", label: "Amount (Rs.)", align: "right" },
+        ],
+        `expenses-${date}`,
+      );
+      toast.success("Expenses Excel downloaded");
+    } catch (err: any) {
+      toast.error(err?.message || "Excel download failed");
+    } finally {
+      setDownloadingExpensesExcel(false);
+    }
+  };
 
   const [expandedMix, setExpandedMix] = useState<Set<string>>(new Set());
   const toggleMix = (id: string) => {
@@ -1183,13 +1242,54 @@ export default function DailyEntryPage() {
 
         <Card className="rounded-2xl border-slate-200/60 shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <TrendingDown className="size-5 text-slate-600" /> Today&apos;s Expenses
-            </CardTitle>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <TrendingDown className="size-5 text-slate-600" /> Today&apos;s Expenses
+              </CardTitle>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+                  <Input
+                    value={expenseSearchInput}
+                    onChange={(e) => setExpenseSearchInput(e.target.value)}
+                    placeholder="Search by description..."
+                    className="pl-8 w-full sm:w-56 h-9"
+                  />
+                  {expenseSearchInput && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 h-7 px-2 text-slate-400"
+                      onClick={() => setExpenseSearchInput("")}
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDownloadExpensesExcel}
+                  disabled={downloadingExpensesExcel || expenses.length === 0}
+                  className="shrink-0"
+                >
+                  {downloadingExpensesExcel ? (
+                    <Loader2 className="size-4 mr-1.5 animate-spin" />
+                  ) : (
+                    <Download className="size-4 mr-1.5" />
+                  )}
+                  {downloadingExpensesExcel ? "Downloading..." : "Download Excel (All)"}
+                </Button>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             {expenses.length === 0 ? (
               <p className="text-sm text-slate-400 py-4 text-center">No expenses recorded for this date.</p>
+            ) : filteredExpenses.length === 0 ? (
+              <p className="text-sm text-slate-400 py-4 text-center">
+                No record found for &quot;{expenseSearchDebounced.trim()}&quot;.
+              </p>
             ) : (
               <>
                 <div className="max-h-64 overflow-y-auto rounded-lg border border-slate-200/60">
@@ -1202,7 +1302,7 @@ export default function DailyEntryPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {expenses.map((e) => (
+                      {pagedExpenses.map((e) => (
                         <TableRow key={e.id}>
                           <TableCell className="text-sm">{e.description}</TableCell>
                           <TableCell className="text-sm text-right font-semibold">Rs. {fmt(e.amount)}</TableCell>
@@ -1216,6 +1316,37 @@ export default function DailyEntryPage() {
                     </TableBody>
                   </Table>
                 </div>
+
+                {/* Pagination controls */}
+                <div className="flex items-center justify-end gap-3 pt-2">
+                  <span className="text-xs text-slate-500">
+                    Page {expensePageSafe} of {expenseTotalPages}
+                    {" · "}
+                    {expenseTotal} record{expenseTotal === 1 ? "" : "s"}
+                    {expenseSearchDebounced.trim() ? ` matching "${expenseSearchDebounced.trim()}"` : ""}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={expensePageSafe <= 1}
+                      onClick={() => setExpensePage((p) => Math.max(1, p - 1))}
+                    >
+                      <ChevronLeft className="size-4" />
+                      Prev
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={expensePageSafe >= expenseTotalPages}
+                      onClick={() => setExpensePage((p) => p + 1)}
+                    >
+                      Next
+                      <ChevronRight className="size-4" />
+                    </Button>
+                  </div>
+                </div>
+
                 <div className="mt-3 flex items-center justify-between rounded-lg bg-red-50 border border-red-200 px-4 py-2.5">
                   <span className="text-sm font-semibold text-red-700">Total Expenses Today</span>
                   <span className="text-lg font-extrabold text-red-700">Rs. {fmt(totalExpensesAmt)}</span>

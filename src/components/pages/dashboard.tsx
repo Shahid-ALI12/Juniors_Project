@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import {
   FileText, FlaskConical, BookOpen, CheckCircle,
-  Package, Settings, Loader2, ChevronDown, ChevronUp, X, Download, AlertTriangle,
+  Package, Settings, Loader2, ChevronDown, X, Download, AlertTriangle,
+  Search, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { useAppStore } from "@/store";
 import { cn } from "@/lib/utils";
@@ -11,8 +12,11 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { pktToday, pktFormatted } from "@/lib/pkt-date";
 import { useDashboardMetrics } from "@/hooks/queries";
+import { downloadAllExcelPaged, type Col } from "@/lib/download-excel";
 
 const quickLinks = [
   { label: "Add a Sale / Expense", page: "daily-entry", icon: FileText },
@@ -45,7 +49,6 @@ const defaultMetrics: Metrics = {
 type CardKey = "sales-today" | "billed-today" | "cash-collected" | "expenses-today" | "customers" | "outstanding" | "over-credit";
 
 /* ─── Column definitions for each card type ─── */
-type Col = { key: string; label: string; align?: "left" | "right"; fmt?: (v: any) => string };
 
 const columnsMap: Record<CardKey, Col[]> = {
   "sales-today": [
@@ -120,19 +123,18 @@ const cardLabels: Record<CardKey, string> = {
   "over-credit": "Over Credit Limit",
 };
 
-/* ─── Excel download helper (dynamically imports xlsx only when invoked) ─── */
-async function downloadExcel(rows: Record<string, any>[], cols: Col[], fileName: string) {
-  const XLSX = await import("xlsx");
-  const headers = cols.map(c => c.label);
-  const data = rows.map(row => cols.map(c => {
-    const raw = row[c.key];
-    return c.fmt ? c.fmt(raw) : String(raw ?? "");
-  }));
-  const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Records");
-  XLSX.writeFile(wb, `${fileName.replace(/\s+/g, "_")}.xlsx`);
-}
+/* ─── Which cards search by customer name vs description ─── */
+const cardSearchField: Record<CardKey, "customer_name" | "description" | null> = {
+  "sales-today": "customer_name",
+  "billed-today": "customer_name",
+  "cash-collected": "customer_name",
+  "expenses-today": "description",
+  "customers": "customer_name",
+  "outstanding": "customer_name",
+  "over-credit": "customer_name",
+};
+
+const PAGE_SIZE = 10;
 
 export default function Dashboard() {
   const setActivePage = useAppStore((s) => s.setActivePage);
@@ -146,10 +148,27 @@ export default function Dashboard() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
 
+  // Detail panel — server-side search + pagination
+  const [detailSearchInput, setDetailSearchInput] = useState("");
+  const [detailSearchDebounced, setDetailSearchDebounced] = useState("");
+  const [detailPage, setDetailPage] = useState(1);
+  const [detailTotal, setDetailTotal] = useState(0);
+  const [detailTotalPages, setDetailTotalPages] = useState(1);
+  const [detailDownloading, setDetailDownloading] = useState(false);
+
   // Use PKT date — matches server-side pktToday()
   const pktDate = useMemo(() => pktToday(), []);
 
   const metricsData: Metrics = metrics ?? defaultMetrics;
+
+  // Debounce search input + reset to page 1 on new search
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDetailSearchDebounced(detailSearchInput);
+      setDetailPage(1);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [detailSearchInput]);
 
   const fetchDetails = useCallback(async (cardKey: CardKey) => {
     // If same card clicked, close panel
@@ -157,20 +176,36 @@ export default function Dashboard() {
       setActiveCard(null);
       setDetailRows([]);
       setDetailLabel("");
+      setDetailSearchInput("");
+      setDetailSearchDebounced("");
+      setDetailPage(1);
+      setDetailTotal(0);
+      setDetailTotalPages(1);
       return;
     }
 
     setActiveCard(cardKey);
+    setDetailSearchInput("");
+    setDetailSearchDebounced("");
+    setDetailPage(1);
     setDetailLoading(true);
     setDetailRows([]);
     setDetailError("");
     // Set label immediately from card definition (not API) to prevent stale label
     setDetailLabel(cardLabels[cardKey] || cardKey);
     try {
-      const res = await fetch(`/api/reports/dashboard/details?type=${cardKey}&date=${pktDate}`);
+      const params = new URLSearchParams({
+        type: cardKey,
+        date: pktDate,
+        page: "1",
+        pageSize: String(PAGE_SIZE),
+      });
+      const res = await fetch(`/api/reports/dashboard/details?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         setDetailRows(data.rows || []);
+        setDetailTotal(data.total ?? 0);
+        setDetailTotalPages(data.totalPages ?? 1);
         if (data.label) setDetailLabel(data.label);
       } else {
         const err = await res.json().catch(() => ({}));
@@ -185,6 +220,76 @@ export default function Dashboard() {
       setDetailLoading(false);
     }
   }, [activeCard, pktDate]);
+
+  // Refetch when search term or page changes (only if panel is open)
+  useEffect(() => {
+    if (!activeCard) return;
+    let cancelled = false;
+    (async () => {
+      setDetailLoading(true);
+      setDetailError("");
+      try {
+        const params = new URLSearchParams({
+          type: activeCard,
+          date: pktDate,
+          page: String(detailPage),
+          pageSize: String(PAGE_SIZE),
+        });
+        const searchField = cardSearchField[activeCard];
+        if (searchField && detailSearchDebounced.trim()) {
+          params.set(searchField, detailSearchDebounced.trim());
+        }
+        const res = await fetch(`/api/reports/dashboard/details?${params.toString()}`);
+        if (cancelled) return;
+        if (res.ok) {
+          const data = await res.json();
+          setDetailRows(data.rows || []);
+          setDetailTotal(data.total ?? 0);
+          setDetailTotalPages(data.totalPages ?? 1);
+          if (data.label) setDetailLabel(data.label);
+        } else {
+          const err = await res.json().catch(() => ({}));
+          setDetailError(err.detail || err.error || "Failed to load records");
+          setDetailRows([]);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error("Dashboard details refetch error:", err);
+          setDetailRows([]);
+          setDetailError("Network error — check your connection");
+        }
+      } finally {
+        if (!cancelled) setDetailLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeCard, detailPage, detailSearchDebounced, pktDate]);
+
+  // Download ALL records as Excel — walks server-side pages transparently
+  const handleDownloadAllExcel = async () => {
+    if (!activeCard) return;
+    setDetailDownloading(true);
+    try {
+      const baseParams: Record<string, string> = {
+        type: activeCard,
+        date: pktDate,
+      };
+      const searchField = cardSearchField[activeCard];
+      // For download, intentionally DO NOT include the search filter — user wants
+      // every record for the date in the workbook, not just the current search.
+      await downloadAllExcelPaged(
+        "/api/reports/dashboard/details",
+        baseParams,
+        cols,
+        detailLabel,
+      );
+    } catch (err: any) {
+      console.error("Excel download failed:", err);
+      alert(err?.message || "Excel download failed. Please try again.");
+    } finally {
+      setDetailDownloading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -280,15 +385,74 @@ export default function Dashboard() {
                 <div className={cn("w-2 h-8 rounded-full", cardColors[cards.find(c => c.key === activeCard)?.color || "blue"]?.bg)} />
                 <div>
                   <h3 className="text-base font-bold text-slate-800">{detailLabel}</h3>
-                  <p className="text-xs text-slate-400">{detailRows.length} records</p>
+                  <p className="text-xs text-slate-400">
+                    {detailTotal > 0
+                      ? `${detailTotal} record${detailTotal === 1 ? "" : "s"}`
+                      : "—"}
+                    {detailSearchDebounced.trim() && detailTotal > 0
+                      ? ` matching "${detailSearchDebounced.trim()}"`
+                      : ""}
+                  </p>
                 </div>
               </div>
-              <button
-                onClick={() => { setActiveCard(null); setDetailRows([]); }}
-                className="p-1.5 rounded-lg hover:bg-slate-200 transition-colors"
-              >
-                <X className="w-4 h-4 text-slate-400" />
-              </button>
+              <div className="flex items-center gap-2">
+                {/* Download Excel (ALL records) */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDownloadAllExcel}
+                  disabled={detailDownloading}
+                  className="shrink-0"
+                >
+                  {detailDownloading ? (
+                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                  ) : (
+                    <Download className="w-3.5 h-3.5 mr-1.5" />
+                  )}
+                  {detailDownloading ? "Downloading..." : "Download Excel (All)"}
+                </Button>
+                <button
+                  onClick={() => {
+                    setActiveCard(null);
+                    setDetailRows([]);
+                    setDetailSearchInput("");
+                    setDetailSearchDebounced("");
+                    setDetailPage(1);
+                    setDetailTotal(0);
+                    setDetailTotalPages(1);
+                  }}
+                  className="p-1.5 rounded-lg hover:bg-slate-200 transition-colors"
+                >
+                  <X className="w-4 h-4 text-slate-400" />
+                </button>
+              </div>
+            </div>
+
+            {/* Search Bar */}
+            <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/30">
+              <div className="relative max-w-sm">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <Input
+                  value={detailSearchInput}
+                  onChange={(e) => setDetailSearchInput(e.target.value)}
+                  placeholder={
+                    cardSearchField[activeCard] === "description"
+                      ? "Search by description..."
+                      : "Search by customer name..."
+                  }
+                  className="pl-8 h-9"
+                />
+                {detailSearchInput && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 h-7 px-2 text-slate-400"
+                    onClick={() => setDetailSearchInput("")}
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
             </div>
 
             {/* Panel Body */}
@@ -301,7 +465,13 @@ export default function Dashboard() {
               ) : detailRows.length === 0 && !detailError ? (
                 <div className="flex flex-col items-center justify-center py-16 text-slate-400">
                   <FileText className="w-10 h-10 mb-2 opacity-40" />
-                  <p className="text-sm font-medium">No records found</p>
+                  <p className="text-sm font-medium">
+                    {detailSearchDebounced.trim()
+                      ? (cardSearchField[activeCard] === "description"
+                          ? `No record found for "${detailSearchDebounced.trim()}".`
+                          : `No record for the customer "${detailSearchDebounced.trim()}".`)
+                      : "No records found"}
+                  </p>
                 </div>
               ) : detailError ? (
                 <div className="flex flex-col items-center justify-center py-12 px-6 text-red-500">
@@ -348,21 +518,35 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* Download Excel button */}
-            {!detailLoading && detailRows.length > 0 && (
-              <div className="flex justify-end px-5 py-3 border-t border-slate-100 bg-slate-50/30">
-                <button
-                  onClick={() => {
-                    downloadExcel(detailRows, cols, detailLabel).catch((err) => {
-                      console.error("Excel download failed:", err);
-                      alert("Excel download failed. Please try again.");
-                    });
-                  }}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-emerald-600 bg-white border border-slate-200 rounded-lg px-3 py-2 hover:border-emerald-300 hover:bg-emerald-50 transition-colors"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  Download Excel ({detailRows.length} records)
-                </button>
+            {/* Pagination controls */}
+            {!detailLoading && detailTotal > 0 && (
+              <div className="flex items-center justify-end gap-3 px-5 py-3 border-t border-slate-100 bg-slate-50/30">
+                <span className="text-xs text-slate-500">
+                  Page {detailPage} of {detailTotalPages}
+                  {" · "}
+                  {detailTotal} record{detailTotal === 1 ? "" : "s"}
+                  {detailSearchDebounced.trim() ? ` matching "${detailSearchDebounced.trim()}"` : ""}
+                </span>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={detailPage <= 1}
+                    onClick={() => setDetailPage((p) => Math.max(1, p - 1))}
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    Prev
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={detailPage >= detailTotalPages}
+                    onClick={() => setDetailPage((p) => p + 1)}
+                  >
+                    Next
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </div>
               </div>
             )}
           </div>
