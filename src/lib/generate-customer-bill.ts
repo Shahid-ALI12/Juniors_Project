@@ -185,12 +185,49 @@ export async function generateCustomerBillPDF(bill: CustomerBillData) {
     });
   }
 
+  let rowNum = 1;
   bill.sales.forEach((sale, i) => {
+    // ─── Mix Order rows are collapsed into a single "Mix Order" row ───
+    // All ingredients share the same mix_order_id, sale_date, and cash_received.
+    // We aggregate the bill amount and rickshaw, and show "Mix Order" as the product.
+    if (sale.mix_order_id) {
+      // Skip if we've already processed this mix order (first ingredient emits the row)
+      // We detect this by checking if this is the first occurrence of this mix_order_id
+      const mixOrderId = sale.mix_order_id;
+      const firstOccurrenceIndex = bill.sales.findIndex((s) => s.mix_order_id === mixOrderId);
+      if (firstOccurrenceIndex !== i) return; // already emitted, skip
+
+      // Gather all ingredients of this mix order
+      const ingredients = bill.sales.filter((s) => s.mix_order_id === mixOrderId);
+      const totalBillAmount = ingredients.reduce(
+        (sum, s) => sum + (s.quantity * s.rate_per_bag + s.rickshaw_fare),
+        0
+      );
+      const totalRickshaw = ingredients.reduce((sum, s) => sum + s.rickshaw_fare, 0);
+      const totalCashReceived = ingredients.reduce((sum, s) => sum + s.cash_received, 0);
+
+      rows.push({
+        data: [
+          String(rowNum),
+          sale.sale_date || "",
+          "Mix Order",
+          "—", // qty varies per ingredient, not meaningful as a single value
+          "—", // rate varies per ingredient
+          totalRickshaw > 0 ? `Rs. ${totalRickshaw.toLocaleString("en-PK")}` : "—",
+          `Rs. ${totalBillAmount.toLocaleString("en-PK")}`,
+          totalCashReceived > 0 ? `Rs. ${totalCashReceived.toLocaleString("en-PK")}` : "—",
+        ],
+      });
+      rowNum++;
+      return;
+    }
+
+    // ─── Solo sale — render normally ───
     const unitLabel = sale.unit_type === "kg" ? "kg" : "bags";
     const billAmount = sale.quantity * sale.rate_per_bag + sale.rickshaw_fare;
     rows.push({
       data: [
-        String(i + 1),
+        String(rowNum),
         sale.sale_date || "",
         sale.products?.name || `Product #${sale.product_id}`,
         `${sale.quantity.toLocaleString("en-PK")} ${unitLabel}`,
@@ -200,6 +237,7 @@ export async function generateCustomerBillPDF(bill: CustomerBillData) {
         sale.cash_received > 0 ? `Rs. ${sale.cash_received.toLocaleString("en-PK")}` : "—",
       ],
     });
+    rowNum++;
   });
 
   // The opening-balance row spans the date column visually using empty string,

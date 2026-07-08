@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { PageHeader, MetricCard } from "@/components/shared/page-header";
 import { CREDIT_LIMIT } from "@/types";
 import type { Customer, Sale } from "@/types";
-import { AlertTriangle, Download, BookOpen, Users, Loader2 } from "lucide-react";
+import { AlertTriangle, Download, BookOpen, Users, Loader2, ChevronDown } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -52,6 +52,17 @@ export default function CustomerKhataPage() {
   const [loading, setLoading] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [expandedMixOrders, setExpandedMixOrders] = useState<Set<string>>(new Set());
+
+  // Toggle expand/collapse for a mix order group
+  const toggleMixOrder = (mixOrderId: string) => {
+    setExpandedMixOrders((prev) => {
+      const next = new Set(prev);
+      if (next.has(mixOrderId)) next.delete(mixOrderId);
+      else next.add(mixOrderId);
+      return next;
+    });
+  };
 
   // Load all customers + their balances
   useEffect(() => {
@@ -410,61 +421,140 @@ export default function CustomerKhataPage() {
                         <td className="px-3 py-2.5 text-right text-amber-700">—</td>
                       </tr>
                     )}
-                    {groupedSales.sortedGroups.map((group) =>
-                      group.sales.map((sale, idx) => {
-                        const billAmount = sale.quantity * sale.rate_per_bag + sale.rickshaw_fare;
-                        const unitLabel = sale.unit_type === "kg" ? "kg" : "bags";
-                        return (
-                          <tr
-                            key={sale.id}
-                            className={cn(
-                              "border-b border-slate-50 last:border-b-0",
-                              idx === group.sales.length - 1 &&
-                                group !== groupedSales.sortedGroups[groupedSales.sortedGroups.length - 1] &&
-                                "border-b-slate-200"
-                            )}
-                          >
-                            {idx === 0 && (
-                              <td className="px-3 py-2.5 font-bold text-slate-700 align-top" rowSpan={group.sales.length}>
-                                #{group.billNumber}
-                              </td>
-                            )}
-                            {idx === 0 && (
-                              <td className="px-3 py-2.5 text-slate-600 align-top" rowSpan={group.sales.length}>
-                                {sale.sale_date}
-                              </td>
-                            )}
-                            <td className="px-3 py-2.5 text-slate-800">
-                              {sale.products?.name ?? `Product #${sale.product_id}`}
-                              {sale.mix_order_id && (
-                                <Badge variant="secondary" className="ml-2 text-[10px] px-1.5 py-0">
-                                  MIX
-                                </Badge>
-                              )}
-                            </td>
-                            <td className="px-3 py-2.5 text-right tabular-nums">
-                              {fmt(sale.quantity)} {unitLabel}
-                            </td>
-                            <td className="px-3 py-2.5 text-right tabular-nums">
-                              {fmt(sale.rate_per_bag)}
-                            </td>
-                            <td className="px-3 py-2.5 text-right tabular-nums">
-                              {sale.rickshaw_fare > 0 ? fmt(sale.rickshaw_fare) : "—"}
-                            </td>
-                            <td className="px-3 py-2.5 text-right">
-                              <AmountWithWords amount={billAmount} className="items-end" />
-                            </td>
-                            <td className="px-3 py-2.5 text-right">
-                              {sale.cash_received > 0 ? (
-                                <AmountWithWords amount={sale.cash_received} className="items-end" />
-                              ) : (
-                                <span className="text-slate-300">—</span>
-                              )}
-                            </td>
-                          </tr>
+                    {groupedSales.sortedGroups.map((group, groupIdx) => {
+                      const firstSale = group.sales[0];
+                      const isMixOrder = group.sales.some((s) => s.mix_order_id);
+                      const isLastGroup = groupIdx === groupedSales.sortedGroups.length - 1;
+
+                      // ─── Mix Order: collapsed summary row + expandable sub-rows ───
+                      if (isMixOrder) {
+                        const mixOrderId = String(firstSale.mix_order_id);
+                        const isExpanded = expandedMixOrders.has(mixOrderId);
+                        const totalRickshaw = group.sales.reduce((sum, s) => sum + s.rickshaw_fare, 0);
+                        const totalBillAmount = group.sales.reduce(
+                          (sum, s) => sum + (s.quantity * s.rate_per_bag + s.rickshaw_fare),
+                          0
                         );
-                      })
-                    )}
+                        const totalCashReceived = group.sales.reduce((sum, s) => sum + s.cash_received, 0);
+                        return (
+                          <Fragment key={group.groupId}>
+                            {/* Main summary row — clickable to expand/collapse */}
+                            <tr
+                              className={cn(
+                                "border-b border-slate-50 cursor-pointer hover:bg-slate-50/80 transition-colors",
+                                !isLastGroup && "border-b-slate-200"
+                              )}
+                              onClick={() => toggleMixOrder(mixOrderId)}
+                            >
+                              <td className="px-3 py-2.5 font-bold text-slate-700 align-top">#{group.billNumber}</td>
+                              <td className="px-3 py-2.5 text-slate-600 align-top">{firstSale.sale_date}</td>
+                              <td className="px-3 py-2.5 text-slate-800">
+                                <span className="inline-flex items-center gap-1.5">
+                                  <ChevronDown
+                                    className={cn(
+                                      "size-4 text-slate-400 transition-transform",
+                                      isExpanded && "rotate-180"
+                                    )}
+                                  />
+                                  <span className="font-semibold">Mix Order</span>
+                                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                                    MIX
+                                  </Badge>
+                                </span>
+                              </td>
+                              <td className="px-3 py-2.5 text-right tabular-nums text-slate-400">—</td>
+                              <td className="px-3 py-2.5 text-right tabular-nums text-slate-400">—</td>
+                              <td className="px-3 py-2.5 text-right tabular-nums">
+                                {totalRickshaw > 0 ? fmt(totalRickshaw) : "—"}
+                              </td>
+                              <td className="px-3 py-2.5 text-right">
+                                <AmountWithWords amount={totalBillAmount} className="items-end" />
+                              </td>
+                              <td className="px-3 py-2.5 text-right">
+                                {totalCashReceived > 0 ? (
+                                  <AmountWithWords amount={totalCashReceived} className="items-end" />
+                                ) : (
+                                  <span className="text-slate-300">—</span>
+                                )}
+                              </td>
+                            </tr>
+                            {/* Sub-product rows — only visible when expanded */}
+                            {isExpanded &&
+                              group.sales.map((sale) => {
+                                const billAmount = sale.quantity * sale.rate_per_bag + sale.rickshaw_fare;
+                                const unitLabel = sale.unit_type === "kg" ? "kg" : "bags";
+                                return (
+                                  <tr
+                                    key={sale.id}
+                                    className="border-b border-slate-50 bg-slate-50/40"
+                                  >
+                                    <td className="px-3 py-2"></td>
+                                    <td className="px-3 py-2"></td>
+                                    <td className="px-3 py-2 text-slate-600">
+                                      <span className="inline-flex items-center gap-1.5 pl-6">
+                                        <span className="text-slate-300">↳</span>
+                                        {sale.products?.name ?? `Product #${sale.product_id}`}
+                                      </span>
+                                    </td>
+                                    <td className="px-3 py-2 text-right tabular-nums text-slate-600">
+                                      {fmt(sale.quantity)} {unitLabel}
+                                    </td>
+                                    <td className="px-3 py-2 text-right tabular-nums text-slate-600">
+                                      {fmt(sale.rate_per_bag)}
+                                    </td>
+                                    <td className="px-3 py-2 text-right tabular-nums text-slate-600">
+                                      {sale.rickshaw_fare > 0 ? fmt(sale.rickshaw_fare) : "—"}
+                                    </td>
+                                    <td className="px-3 py-2 text-right">
+                                      <AmountWithWords amount={billAmount} className="items-end" />
+                                    </td>
+                                    <td className="px-3 py-2 text-right text-slate-300">—</td>
+                                  </tr>
+                                );
+                              })}
+                          </Fragment>
+                        );
+                      }
+
+                      // ─── Solo Sale: single row (no expansion) ───
+                      const sale = firstSale;
+                      const billAmount = sale.quantity * sale.rate_per_bag + sale.rickshaw_fare;
+                      const unitLabel = sale.unit_type === "kg" ? "kg" : "bags";
+                      return (
+                        <tr
+                          key={sale.id}
+                          className={cn(
+                            "border-b border-slate-50 last:border-b-0",
+                            !isLastGroup && "border-b-slate-200"
+                          )}
+                        >
+                          <td className="px-3 py-2.5 font-bold text-slate-700 align-top">#{group.billNumber}</td>
+                          <td className="px-3 py-2.5 text-slate-600 align-top">{sale.sale_date}</td>
+                          <td className="px-3 py-2.5 text-slate-800">
+                            {sale.products?.name ?? `Product #${sale.product_id}`}
+                          </td>
+                          <td className="px-3 py-2.5 text-right tabular-nums">
+                            {fmt(sale.quantity)} {unitLabel}
+                          </td>
+                          <td className="px-3 py-2.5 text-right tabular-nums">
+                            {fmt(sale.rate_per_bag)}
+                          </td>
+                          <td className="px-3 py-2.5 text-right tabular-nums">
+                            {sale.rickshaw_fare > 0 ? fmt(sale.rickshaw_fare) : "—"}
+                          </td>
+                          <td className="px-3 py-2.5 text-right">
+                            <AmountWithWords amount={billAmount} className="items-end" />
+                          </td>
+                          <td className="px-3 py-2.5 text-right">
+                            {sale.cash_received > 0 ? (
+                              <AmountWithWords amount={sale.cash_received} className="items-end" />
+                            ) : (
+                              <span className="text-slate-300">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
                 {selectedSales.length === 0 && (
