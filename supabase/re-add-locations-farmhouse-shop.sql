@@ -49,29 +49,52 @@ SELECT id, name FROM public.locations ORDER BY id;
 -- ────────────────────────────────────────────────────────────────────────
 -- PHASE 2: Migrate product_stock to per-location model
 -- ────────────────────────────────────────────────────────────────────────
--- Existing rows have location_id = NULL. We migrate them to Farmhouse (id=1)
--- so existing stock is preserved under Farmhouse. Then we enforce NOT NULL
--- and restore the composite unique constraint.
+-- Existing rows may have location_id = NULL (from previous migration) OR
+-- an invalid location_id (e.g. 3, 4, 5) that no longer exists in `locations`
+-- after TRUNCATE (Phase 1). We migrate BOTH cases to Farmhouse (id=1) so
+-- no FK violations occur in Phase 3/4. This is idempotent and safe to re-run.
 
--- 2.1 Migrate NULL location_id → Farmhouse (id=1) in product_stock
+-- 2.1 Migrate NULL OR invalid location_id → Farmhouse (id=1) in product_stock
 UPDATE public.product_stock
 SET location_id = 1
-WHERE location_id IS NULL;
+WHERE location_id IS NULL
+   OR location_id NOT IN (SELECT id FROM public.locations);
 
--- 2.2 Migrate NULL location_id → Farmhouse (id=1) in sales
+-- 2.2 Migrate NULL OR invalid location_id → Farmhouse (id=1) in sales
 UPDATE public.sales
 SET location_id = 1
-WHERE location_id IS NULL;
+WHERE location_id IS NULL
+   OR location_id NOT IN (SELECT id FROM public.locations);
 
--- 2.3 Migrate NULL location_id → Farmhouse (id=1) in purchases
+-- 2.3 Migrate NULL OR invalid location_id → Farmhouse (id=1) in purchases
 UPDATE public.purchases
 SET location_id = 1
-WHERE location_id IS NULL;
+WHERE location_id IS NULL
+   OR location_id NOT IN (SELECT id FROM public.locations);
 
--- 2.4 Migrate NULL location_id → Farmhouse (id=1) in mix_orders
+-- 2.4 Migrate NULL OR invalid location_id → Farmhouse (id=1) in mix_orders
 UPDATE public.mix_orders
 SET location_id = 1
-WHERE location_id IS NULL;
+WHERE location_id IS NULL
+   OR location_id NOT IN (SELECT id FROM public.locations);
+
+-- 2.5 Verification: no rows should have NULL or invalid location_id now
+SELECT 'product_stock' AS table_name, COUNT(*) AS invalid_rows
+FROM public.product_stock
+WHERE location_id IS NULL OR location_id NOT IN (SELECT id FROM public.locations)
+UNION ALL
+SELECT 'sales', COUNT(*)
+FROM public.sales
+WHERE location_id IS NULL OR location_id NOT IN (SELECT id FROM public.locations)
+UNION ALL
+SELECT 'purchases', COUNT(*)
+FROM public.purchases
+WHERE location_id IS NULL OR location_id NOT IN (SELECT id FROM public.locations)
+UNION ALL
+SELECT 'mix_orders', COUNT(*)
+FROM public.mix_orders
+WHERE location_id IS NULL OR location_id NOT IN (SELECT id FROM public.locations);
+-- Expected: all 4 rows show 0 (zero invalid rows)
 
 
 -- ────────────────────────────────────────────────────────────────────────
