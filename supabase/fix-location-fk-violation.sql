@@ -57,15 +57,17 @@ WHERE location_id IS NULL
 -- ────────────────────────────────────────────────────────────────────────
 -- If Phase 1 of the original migration already ran, locations = {1, 2}.
 -- If for some reason locations is empty or missing id=1, restore it.
+-- Use OVERRIDING SYSTEM VALUE because locations.id is GENERATED ALWAYS AS IDENTITY
+-- (PostgreSQL 12+). Without this clause, inserting an explicit id raises:
+--   ERROR 428C9: cannot insert a non-DEFAULT value into column "id"
+--   HINT: Use OVERRIDING SYSTEM VALUE to override.
 INSERT INTO public.locations (id, name)
-VALUES (1, 'Farmhouse')
+VALUES (1, 'Farmhouse'), (2, 'Shop')
+OVERRIDING SYSTEM VALUE
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
 
-INSERT INTO public.locations (id, name)
-VALUES (2, 'Shop')
-ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
-
--- Make sure sequence is ahead of any manually-inserted ids
+-- Make sure sequence is ahead of any manually-inserted ids (so future
+-- auto-generated inserts don't collide with 1 or 2)
 SELECT setval(
   pg_get_serial_sequence('public.locations', 'id'),
   GREATEST((SELECT MAX(id) FROM public.locations), 2),
