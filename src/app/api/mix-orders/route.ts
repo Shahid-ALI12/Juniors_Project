@@ -5,32 +5,44 @@ import { deleteSalesByMixOrder } from "@/lib/data/sales";
 import { admin } from "@/lib/supabase/server-admin";
 import { getErrorDetail } from "@/lib/api-error";
 import { pktToday } from "@/lib/pkt-date";
+import { cachedGet, invalidateByTag, userKey, userTag } from "@/lib/cache";
 
 // Prevent Next.js from caching GET responses
 export const dynamic = "force-dynamic";
+
+// Mix orders list — short TTL (creates/deletes happen frequently)
+const MIX_ORDERS_TTL = 10_000;
 
 export async function GET() {
   const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   try {
-    const orders = await getMixOrders();
-    const orderIds = orders.map(o => o.id);
-    const salesByMix: Record<number, any[]> = {};
-    if (orderIds.length > 0) {
-      const { data: allMixSales, error } = await admin
-        .from("sales")
-        .select("*, products(id,name), customers(id,name)")
-        .in("mix_order_id", orderIds);
-      if (!error && allMixSales) {
-        for (const s of allMixSales) {
-          if (s.mix_order_id) {
-            if (!salesByMix[s.mix_order_id]) salesByMix[s.mix_order_id] = [];
-            salesByMix[s.mix_order_id].push(s);
+    const { orders, salesByMix } = await cachedGet(
+      userKey(auth.user.id, "mix-orders"),
+      [userTag(auth.user.id, "mix-orders")],
+      MIX_ORDERS_TTL,
+      async () => {
+        const orders = await getMixOrders();
+        const orderIds = orders.map(o => o.id);
+        const salesByMix: Record<number, any[]> = {};
+        if (orderIds.length > 0) {
+          const { data: allMixSales, error } = await admin
+            .from("sales")
+            .select("*, products(id,name), customers(id,name)")
+            .in("mix_order_id", orderIds);
+          if (!error && allMixSales) {
+            for (const s of allMixSales) {
+              if (s.mix_order_id) {
+                if (!salesByMix[s.mix_order_id]) salesByMix[s.mix_order_id] = [];
+                salesByMix[s.mix_order_id].push(s);
+              }
+            }
           }
         }
-      }
-    }
+        return { orders, salesByMix };
+      },
+    );
     return NextResponse.json({ orders, salesByMix });
   } catch (err) {
     console.error("Fetch mix orders error:", err);
@@ -76,6 +88,17 @@ export async function POST(request: NextRequest) {
       driver_rent: Number(driver_rent) || 0,
     });
 
+    // Mix order = sale lines → affects same domains as Sale POST
+    invalidateByTag(
+      userTag(auth.user.id, "mix-orders"),
+      userTag(auth.user.id, "sales"),
+      userTag(auth.user.id, "customer-balance"),
+      userTag(auth.user.id, "dashboard"),
+      userTag(auth.user.id, "stock"),
+      userTag(auth.user.id, "reconciliation"),
+      userTag(auth.user.id, "cash"),
+    );
+
     return NextResponse.json({ id }, { status: 201 });
   } catch (err) {
     console.error("Create mix order error:", err);
@@ -95,6 +118,17 @@ export async function DELETE(request: NextRequest) {
 
     await deleteSalesByMixOrder(id);
     await deleteMixOrder(id);
+
+    invalidateByTag(
+      userTag(auth.user.id, "mix-orders"),
+      userTag(auth.user.id, "sales"),
+      userTag(auth.user.id, "customer-balance"),
+      userTag(auth.user.id, "dashboard"),
+      userTag(auth.user.id, "stock"),
+      userTag(auth.user.id, "reconciliation"),
+      userTag(auth.user.id, "cash"),
+    );
+
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("Delete mix order error:", err);

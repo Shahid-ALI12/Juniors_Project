@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth/server-user";
 import { correctBalanceRPC } from "@/lib/data/cash";
 import { getErrorDetail } from "@/lib/api-error";
 import { pktToday } from "@/lib/pkt-date";
+import { invalidateByTag, userTag } from "@/lib/cache";
 
 export async function POST(request: NextRequest) {
   const auth = await requireUser();
@@ -23,6 +24,8 @@ export async function POST(request: NextRequest) {
       entered_by: `admin:${auth.user.id}`,
     });
 
+    // Correction changes balances → invalidate cash domain
+    invalidateByTag(userTag(auth.user.id, "cash"));
     return NextResponse.json({ id }, { status: 201 });
   } catch (err) {
     console.error("Cash correction error:", err);

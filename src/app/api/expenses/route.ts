@@ -2,9 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
 import { getExpenses, recordExpenseRPC, deleteExpense } from "@/lib/data/expenses";
 import { pktToday } from "@/lib/pkt-date";
+import { cachedGet, invalidateByTag, userKey, userTag } from "@/lib/cache";
 
 // Prevent Next.js from caching GET responses
 export const dynamic = "force-dynamic";
+
+// Expenses change frequently — short TTL
+const EXPENSES_TTL = 5_000;
 
 export async function GET(request: NextRequest) {
   const auth = await requireUser();
@@ -17,7 +21,13 @@ export async function GET(request: NextRequest) {
     if (url.searchParams.get("expense_date_gte")) filters.expense_date_gte = url.searchParams.get("expense_date_gte")!;
     if (url.searchParams.get("expense_date_lte")) filters.expense_date_lte = url.searchParams.get("expense_date_lte")!;
 
-    const expenses = await getExpenses(filters as any);
+    const filterSuffix = new URLSearchParams(filters).toString();
+    const expenses = await cachedGet(
+      userKey(auth.user.id, "expenses", filterSuffix),
+      [userTag(auth.user.id, "expenses")],
+      EXPENSES_TTL,
+      () => getExpenses(filters as any),
+    );
     return NextResponse.json({ expenses });
   } catch (err) {
     console.error("Fetch expenses error:", err);
@@ -45,6 +55,14 @@ export async function POST(request: NextRequest) {
       entered_by: `admin:${auth.user.id}`,
     });
 
+    // Expense affects: expenses list, dashboard, reconciliation, cash (ledger)
+    invalidateByTag(
+      userTag(auth.user.id, "expenses"),
+      userTag(auth.user.id, "dashboard"),
+      userTag(auth.user.id, "reconciliation"),
+      userTag(auth.user.id, "cash"),
+    );
+
     return NextResponse.json({ id }, { status: 201 });
   } catch (err) {
     console.error("Create expense error:", err);
@@ -63,6 +81,14 @@ export async function DELETE(request: NextRequest) {
     if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
     await deleteExpense(id);
+
+    invalidateByTag(
+      userTag(auth.user.id, "expenses"),
+      userTag(auth.user.id, "dashboard"),
+      userTag(auth.user.id, "reconciliation"),
+      userTag(auth.user.id, "cash"),
+    );
+
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("Delete expense error:", err);

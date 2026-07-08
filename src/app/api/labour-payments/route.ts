@@ -7,10 +7,14 @@ import {
   deleteLabourPayment,
 } from "@/lib/data/labours";
 import type { LabourPaymentType } from "@/types";
+import { cachedGet, invalidateByTag, userKey, userTag } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
 const VALID_TYPES: LabourPaymentType[] = ["salary", "advance", "expense"];
+
+// Payments list — short TTL (creates happen often)
+const PAYMENTS_TTL = 5_000;
 
 /**
  * GET /api/labour-payments
@@ -54,14 +58,24 @@ export async function GET(request: NextRequest) {
     const payment_type    = typeParam && VALID_TYPES.includes(typeParam) ? typeParam : undefined;
     const includeLabour   = sp.get("include_labour") === "true";
 
-    const payments = await getLabourPayments({
-      labour_id,
-      payment_date,
-      payment_date_gte,
-      payment_date_lte,
-      payment_type,
-      includeLabour,
+    // Build cache key from filter combination
+    const filterKey = JSON.stringify({
+      labour_id, payment_date, payment_date_gte, payment_date_lte, payment_type, includeLabour,
     });
+
+    const payments = await cachedGet(
+      userKey(auth.user.id, "labour-payments", filterKey),
+      [userTag(auth.user.id, "labour-payments")],
+      PAYMENTS_TTL,
+      () => getLabourPayments({
+        labour_id,
+        payment_date,
+        payment_date_gte,
+        payment_date_lte,
+        payment_type,
+        includeLabour,
+      }),
+    );
 
     return NextResponse.json({ payments });
   } catch (err) {
@@ -137,6 +151,16 @@ export async function POST(request: NextRequest) {
       entered_by,
     });
 
+    // Payment affects: labour-payments list, cash (if expense type), dashboard
+    invalidateByTag(userTag(auth.user.id, "labour-payments"));
+    if (payment_type === "expense") {
+      invalidateByTag(
+        userTag(auth.user.id, "cash"),
+        userTag(auth.user.id, "dashboard"),
+        userTag(auth.user.id, "reconciliation"),
+      );
+    }
+
     return NextResponse.json({ payment }, { status: 201 });
   } catch (err) {
     console.error("Create labour payment error:", err);
@@ -169,6 +193,14 @@ export async function DELETE(request: NextRequest) {
     }
 
     await deleteLabourPayment(id);
+    // We don't know payment type without fetching — invalidate all affected domains to be safe
+    invalidateByTag(
+      userTag(auth.user.id, "labour-payments"),
+      userTag(auth.user.id, "cash"),
+      userTag(auth.user.id, "dashboard"),
+      userTag(auth.user.id, "reconciliation"),
+    );
+
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("Delete labour payment error:", err);

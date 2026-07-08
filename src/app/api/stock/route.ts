@@ -2,16 +2,25 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
 import { getAllStock, upsertStock } from "@/lib/data/stock";
 import { getErrorDetail } from "@/lib/api-error";
+import { cachedGet, invalidateByTag, userKey, userTag } from "@/lib/cache";
 
 // Prevent Next.js from caching GET responses
 export const dynamic = "force-dynamic";
+
+// Stock changes on every sale/purchase — short TTL
+const STOCK_TTL = 5_000;
 
 export async function GET() {
   const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   try {
-    const stock = await getAllStock();
+    const stock = await cachedGet(
+      userKey(auth.user.id, "stock"),
+      [userTag(auth.user.id, "stock")],
+      STOCK_TTL,
+      () => getAllStock(),
+    );
     return NextResponse.json({ stock });
   } catch (err) {
     console.error("Fetch stock error:", err);
@@ -44,6 +53,7 @@ export async function POST(request: NextRequest) {
       last_bag_weight_kg: last_bag_weight_kg ? Number(last_bag_weight_kg) : null,
     });
 
+    invalidateByTag(userTag(auth.user.id, "stock"));
     return NextResponse.json({ stock }, { status: 201 });
   } catch (err) {
     console.error("Upsert stock error:", err);

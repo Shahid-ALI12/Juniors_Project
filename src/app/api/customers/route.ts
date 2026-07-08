@@ -10,9 +10,13 @@ import {
   deleteCustomer,
 } from "@/lib/data/customers";
 import { getErrorDetail } from "@/lib/api-error";
+import { cachedGet, invalidateByTag, userKey, userTag } from "@/lib/cache";
 
 // Prevent Next.js from caching GET responses
 export const dynamic = "force-dynamic";
+
+// Customer list changes rarely (admin adds/edits occasionally) — 30s TTL
+const CUSTOMERS_TTL = 30_000;
 
 export async function GET(request: NextRequest) {
   const auth = await requireUser();
@@ -21,7 +25,14 @@ export async function GET(request: NextRequest) {
   try {
     const url = new URL(request.url);
     const activeOnly = url.searchParams.get("active") === "true";
-    const customers = await getAllCustomers(activeOnly);
+    const suffix = activeOnly ? "active" : "all";
+
+    const customers = await cachedGet(
+      userKey(auth.user.id, "customers", suffix),
+      [userTag(auth.user.id, "customers"), userTag(auth.user.id, "customer-balance")],
+      CUSTOMERS_TTL,
+      () => getAllCustomers(activeOnly),
+    );
     return NextResponse.json({ customers });
   } catch (err) {
     console.error("Fetch customers error:", err);
@@ -49,6 +60,9 @@ export async function POST(request: NextRequest) {
       is_active: true,
       opening_balance: ob,
     });
+    invalidateByTag(userTag(auth.user.id, "customers"));
+    invalidateByTag(userTag(auth.user.id, "customer-balance"));
+    invalidateByTag(userTag(auth.user.id, "dashboard"));
     return NextResponse.json({ customer }, { status: 201 });
   } catch (err) {
     console.error("Create customer error:", err);
@@ -73,6 +87,9 @@ export async function PUT(request: NextRequest) {
     }
 
     const customer = await updateBizCustomer(id, updates);
+    invalidateByTag(userTag(auth.user.id, "customers"));
+    invalidateByTag(userTag(auth.user.id, "customer-balance"));
+    invalidateByTag(userTag(auth.user.id, "dashboard"));
     return NextResponse.json({ customer });
   } catch (err) {
     console.error("Update customer error:", err);
@@ -93,11 +110,17 @@ export async function DELETE(request: NextRequest) {
 
     if (mode === "restore") {
       await restoreCustomer(id);
+      invalidateByTag(userTag(auth.user.id, "customers"));
+      invalidateByTag(userTag(auth.user.id, "customer-balance"));
+      invalidateByTag(userTag(auth.user.id, "dashboard"));
       return NextResponse.json({ success: true, action: "restored" });
     }
 
     if (mode === "permanent") {
       await permanentDeleteCustomer(id);
+      invalidateByTag(userTag(auth.user.id, "customers"));
+      invalidateByTag(userTag(auth.user.id, "customer-balance"));
+      invalidateByTag(userTag(auth.user.id, "dashboard"));
       return NextResponse.json({ success: true, action: "permanent_deleted" });
     }
 
@@ -106,11 +129,17 @@ export async function DELETE(request: NextRequest) {
     // still sees the customer on the Manage page (with restore option).
     try {
       await deleteCustomer(id);
+      invalidateByTag(userTag(auth.user.id, "customers"));
+      invalidateByTag(userTag(auth.user.id, "customer-balance"));
+      invalidateByTag(userTag(auth.user.id, "dashboard"));
       return NextResponse.json({ success: true, action: "hard_deleted" });
     } catch (fkErr: any) {
       // FK restrict — fall back to soft-delete
       console.warn("Hard delete failed (likely FK restrict), falling back to soft-delete:", fkErr?.message);
       await deactivateCustomer(id);
+      invalidateByTag(userTag(auth.user.id, "customers"));
+      invalidateByTag(userTag(auth.user.id, "customer-balance"));
+      invalidateByTag(userTag(auth.user.id, "dashboard"));
       return NextResponse.json({
         success: true,
         action: "soft_deleted",

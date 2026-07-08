@@ -1,22 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
-import { transferCashRPC } from "@/lib/data/cash";
+import { transferCashRPC, getCashTransfers } from "@/lib/data/cash";
 import { getErrorDetail } from "@/lib/api-error";
 import { pktToday } from "@/lib/pkt-date";
+import { cachedGet, invalidateByTag, userKey, userTag } from "@/lib/cache";
+
+// Prevent Next.js from caching GET responses
+export const dynamic = "force-dynamic";
+
+// Recent transfers list — short TTL since new transfers appear quickly
+const TRANSFERS_TTL = 10_000;
 
 export async function GET(request: NextRequest) {
   const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   try {
-    const { getCashTransfers } = await import("@/lib/data/cash");
     const url = new URL(request.url);
     const filters: Record<string, string> = {};
     if (url.searchParams.get("transfer_date")) filters.transfer_date = url.searchParams.get("transfer_date")!;
     if (url.searchParams.get("transfer_date_gte")) filters.transfer_date_gte = url.searchParams.get("transfer_date_gte")!;
     if (url.searchParams.get("transfer_date_lte")) filters.transfer_date_lte = url.searchParams.get("transfer_date_lte")!;
 
-    const transfers = await getCashTransfers(filters as any);
+    // Cache key includes the filter string so different filters don't collide
+    const filterSuffix = new URLSearchParams(filters as Record<string, string>).toString();
+    const transfers = await cachedGet(
+      userKey(auth.user.id, "cash-transfers", filterSuffix),
+      [userTag(auth.user.id, "cash"), userTag(auth.user.id, "cash-transfers")],
+      TRANSFERS_TTL,
+      () => getCashTransfers(filters as any),
+    );
     return NextResponse.json({ transfers });
   } catch (err) {
     console.error("Fetch transfers error:", err);
@@ -45,6 +58,8 @@ export async function POST(request: NextRequest) {
       entered_by: `admin:${auth.user.id}`,
     });
 
+    // Transfer changes both balances and transfers list
+    invalidateByTag(userTag(auth.user.id, "cash"));
     return NextResponse.json({ id }, { status: 201 });
   } catch (err) {
     console.error("Transfer cash error:", err);

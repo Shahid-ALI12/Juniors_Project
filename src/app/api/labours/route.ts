@@ -7,8 +7,12 @@ import {
   updateLabour,
   deleteLabour,
 } from "@/lib/data/labours";
+import { cachedGet, invalidateByTag, userKey, userTag } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
+
+// Labours list changes rarely — 60s TTL
+const LABOURS_TTL = 60_000;
 
 /**
  * GET /api/labours?active=true
@@ -34,7 +38,14 @@ export async function GET(request: NextRequest) {
   try {
     const url = new URL(request.url);
     const activeOnly = url.searchParams.get("active") === "true";
-    const labours = await getAllLabours(activeOnly);
+    const suffix = activeOnly ? "active" : "all";
+
+    const labours = await cachedGet(
+      userKey(auth.user.id, "labours", suffix),
+      [userTag(auth.user.id, "labours")],
+      LABOURS_TTL,
+      () => getAllLabours(activeOnly),
+    );
     return NextResponse.json({ labours });
   } catch (err) {
     console.error("Fetch labours error:", err);
@@ -77,6 +88,7 @@ export async function POST(request: NextRequest) {
       daily_wage: dailyWage,
     });
 
+    invalidateByTag(userTag(auth.user.id, "labours"));
     return NextResponse.json({ labour }, { status: 201 });
   } catch (err) {
     console.error("Create labour error:", err);
@@ -133,6 +145,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const labour = await updateLabour(body.id, updates);
+    invalidateByTag(userTag(auth.user.id, "labours"));
     return NextResponse.json({ labour });
   } catch (err) {
     console.error("Update labour error:", err);
@@ -165,6 +178,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     await deleteLabour(id);
+    invalidateByTag(userTag(auth.user.id, "labours"));
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("Delete labour error:", err);

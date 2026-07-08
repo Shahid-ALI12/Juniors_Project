@@ -3,30 +3,37 @@ import { requireUser } from "@/lib/auth/server-user";
 import { getAllProducts, createProduct, updateProduct, deleteProduct, restoreProduct, permanentDeleteProduct } from "@/lib/data/products";
 import { getErrorDetail } from "@/lib/api-error";
 import { admin } from "@/lib/supabase/server-admin";
+import { cachedGet, invalidateByTag, userKey, userTag } from "@/lib/cache";
 
 // Prevent Next.js from caching GET responses
 export const dynamic = "force-dynamic";
+
+// Products change rarely — 30s TTL
+const PRODUCTS_TTL = 30_000;
 
 export async function GET(request: NextRequest) {
   const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   try {
-    // Query params:
-    //   ?active=true  → return only is_active=true AND deleted_at IS NULL
-    //                   (used by sale/purchase dropdowns)
-    //   (no params)   → return everything except tombstoned (deleted_at IS NULL)
-    //                   (used by Manage Products page so it can show inactive ones)
     const url = new URL(request.url);
     const onlyActive = url.searchParams.get("active") === "true";
+    const suffix = onlyActive ? "active" : "all";
 
-    let q = admin.from("products").select("*").is("deleted_at", null);
-    if (onlyActive) q = q.eq("is_active", true);
-    q = q.order("name", { ascending: true });
-
-    const { data, error } = await q;
-    if (error) throw error;
-    return NextResponse.json({ products: data || [] });
+    const products = await cachedGet(
+      userKey(auth.user.id, "products", suffix),
+      [userTag(auth.user.id, "products")],
+      PRODUCTS_TTL,
+      async () => {
+        let q = admin.from("products").select("*").is("deleted_at", null);
+        if (onlyActive) q = q.eq("is_active", true);
+        q = q.order("name", { ascending: true });
+        const { data, error } = await q;
+        if (error) throw error;
+        return data || [];
+      },
+    );
+    return NextResponse.json({ products });
   } catch (err) {
     console.error("Fetch products error:", err);
     return NextResponse.json({ error: "Failed to fetch products", detail: getErrorDetail(err) }, { status: 500 });
@@ -47,6 +54,7 @@ export async function POST(request: NextRequest) {
       default_rate: Number(default_rate) || 0,
       is_active: true,
     });
+    invalidateByTag(userTag(auth.user.id, "products"));
     return NextResponse.json({ product }, { status: 201 });
   } catch (err) {
     console.error("Create product error:", err);
@@ -64,6 +72,7 @@ export async function PUT(request: NextRequest) {
     if (!id) return NextResponse.json({ error: "ID is required" }, { status: 400 });
 
     const product = await updateProduct(id, updates);
+    invalidateByTag(userTag(auth.user.id, "products"));
     return NextResponse.json({ product });
   } catch (err) {
     console.error("Update product error:", err);
@@ -91,15 +100,18 @@ export async function DELETE(request: NextRequest) {
 
     if (restore) {
       const product = await restoreProduct(id);
+      invalidateByTag(userTag(auth.user.id, "products"));
       return NextResponse.json({ product, restored: true });
     }
 
     if (permanent) {
       const result = await permanentDeleteProduct(id);
+      invalidateByTag(userTag(auth.user.id, "products"));
       return NextResponse.json({ deleted: true, permanent: true, ...result });
     }
 
     const result = await deleteProduct(id);
+    invalidateByTag(userTag(auth.user.id, "products"));
     return NextResponse.json({ deleted: true, ...result });
   } catch (err) {
     console.error("Delete product error:", err);

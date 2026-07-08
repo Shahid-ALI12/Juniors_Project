@@ -3,9 +3,13 @@ import { requireUser } from "@/lib/auth/server-user";
 import { getSales, deleteSale, deleteSalesByGroup, deleteSalesByMixOrder, createSaleRPC } from "@/lib/data/sales";
 import { getErrorDetail } from "@/lib/api-error";
 import { pktToday } from "@/lib/pkt-date";
+import { cachedGet, invalidateByTag, userKey, userTag } from "@/lib/cache";
 
 // Prevent Next.js from caching GET responses — data changes after mutations
 export const dynamic = "force-dynamic";
+
+// Sales list changes very frequently — short TTL
+const SALES_TTL = 5_000;
 
 export async function GET(request: NextRequest) {
   const auth = await requireUser();
@@ -21,7 +25,14 @@ export async function GET(request: NextRequest) {
     if (url.searchParams.get("transaction_group_id")) filters.transaction_group_id = url.searchParams.get("transaction_group_id")!;
     if (url.searchParams.get("location_id")) filters.location_id = Number(url.searchParams.get("location_id")!);
 
-    const sales = await getSales(filters as any);
+    // Cache key includes filter string for collision-free reads
+    const filterSuffix = new URLSearchParams(filters as Record<string, string>).toString();
+    const sales = await cachedGet(
+      userKey(auth.user.id, "sales", filterSuffix),
+      [userTag(auth.user.id, "sales")],
+      SALES_TTL,
+      () => getSales(filters as any),
+    );
     return NextResponse.json({ sales });
   } catch (err) {
     console.error("Fetch sales error:", err);
@@ -56,6 +67,17 @@ export async function POST(request: NextRequest) {
       entered_by: `admin:${auth.user.id}`,
     });
 
+    // Sale affects: sales list, customer balances, dashboard, stock, reconciliation, cash
+    invalidateByTag(
+      userTag(auth.user.id, "sales"),
+      userTag(auth.user.id, "customer-balance"),
+      userTag(auth.user.id, "dashboard"),
+      userTag(auth.user.id, "stock"),
+      userTag(auth.user.id, "reconciliation"),
+      userTag(auth.user.id, "cash"),
+      userTag(auth.user.id, "mix-orders"),
+    );
+
     // Fetch the created sales for the client
     const createdSales = await getSales({ transaction_group_id: groupId });
     return NextResponse.json({ sales: createdSales }, { status: 201 });
@@ -81,6 +103,17 @@ export async function DELETE(request: NextRequest) {
     else if (groupId) await deleteSalesByGroup(groupId);
     else if (mixOrderId) await deleteSalesByMixOrder(Number(mixOrderId));
     else return NextResponse.json({ error: "id, group_id, or mix_order_id required" }, { status: 400 });
+
+    // Same domains as POST — sale deletion affects everything
+    invalidateByTag(
+      userTag(auth.user.id, "sales"),
+      userTag(auth.user.id, "customer-balance"),
+      userTag(auth.user.id, "dashboard"),
+      userTag(auth.user.id, "stock"),
+      userTag(auth.user.id, "reconciliation"),
+      userTag(auth.user.id, "cash"),
+      userTag(auth.user.id, "mix-orders"),
+    );
 
     return NextResponse.json({ success: true });
   } catch (err) {
