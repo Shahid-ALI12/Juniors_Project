@@ -15,49 +15,49 @@ export interface DashboardMetrics {
 const CREDIT_LIMIT = 3_000_000;
 
 export async function getDashboardMetrics(today: string): Promise<DashboardMetrics> {
-  // Sales today
-  const { data: todaySales, error: sErr } = await admin
-    .from("sales")
-    .select("quantity, rate_per_bag, rickshaw_fare, cash_received, customer_id")
-    .eq("sale_date", today);
-  if (sErr) throw sErr;
+  // Run all 4 independent queries in parallel — same result, ~3-4x faster.
+  // Order of destructure matches order of promises.
+  const [salesRes, expRes, custRes, allSalesRes] = await Promise.all([
+    admin
+      .from("sales")
+      .select("quantity, rate_per_bag, rickshaw_fare, cash_received, customer_id")
+      .eq("sale_date", today),
+    admin
+      .from("expenses")
+      .select("amount")
+      .eq("expense_date", today),
+    admin
+      .from("customers")
+      .select("*", { count: "exact", head: true }),
+    admin
+      .from("sales")
+      .select("customer_id, quantity, rate_per_bag, rickshaw_fare, cash_received"),
+  ]);
 
-  // Expenses today
-  const { data: todayExp, error: eErr } = await admin
-    .from("expenses")
-    .select("amount")
-    .eq("expense_date", today);
-  if (eErr) throw eErr;
+  if (salesRes.error) throw salesRes.error;
+  if (expRes.error) throw expRes.error;
+  if (custRes.error) throw custRes.error;
+  if (allSalesRes.error) throw allSalesRes.error;
 
-  // All customers count
-  const { count: custCount, error: cErr } = await admin
-    .from("customers")
-    .select("*", { count: "exact", head: true });
-  if (cErr) throw cErr;
-
-  // All sales (for customer balances)
-  const { data: allSales, error: aErr } = await admin
-    .from("sales")
-    .select("customer_id, quantity, rate_per_bag, rickshaw_fare, cash_received");
-  if (aErr) throw aErr;
+  const todaySales = salesRes.data || [];
+  const todayExp = expRes.data || [];
+  const custCount = custRes.count ?? 0;
+  const allSales = allSalesRes.data || [];
 
   // Customer balances
   const balances: Record<number, number> = {};
-  for (const s of allSales || []) {
+  for (const s of allSales) {
     const bill = (s.quantity as number) * (s.rate_per_bag as number) + (s.rickshaw_fare as number);
     const cid = s.customer_id as number;
     balances[cid] = (balances[cid] || 0) + bill - (s.cash_received as number);
   }
 
-  const sales = todaySales || [];
-  const expenses = todayExp || [];
-
   return {
-    salesTodayCount: sales.length,
-    billedToday: sales.reduce((s, x) => s + (x.quantity as number) * (x.rate_per_bag as number) + (x.rickshaw_fare as number), 0),
-    cashCollectedToday: sales.reduce((s, x) => s + (x.cash_received as number), 0),
-    expensesToday: expenses.reduce((s, x) => s + (x.amount as number), 0),
-    totalCustomers: custCount ?? 0,
+    salesTodayCount: todaySales.length,
+    billedToday: todaySales.reduce((s, x) => s + (x.quantity as number) * (x.rate_per_bag as number) + (x.rickshaw_fare as number), 0),
+    cashCollectedToday: todaySales.reduce((s, x) => s + (x.cash_received as number), 0),
+    expensesToday: todayExp.reduce((s, x) => s + (x.amount as number), 0),
+    totalCustomers: custCount,
     totalOutstanding: Object.values(balances).reduce((a, b) => a + b, 0),
     overCreditLimitCount: Object.values(balances).filter((b) => b > CREDIT_LIMIT).length,
   };

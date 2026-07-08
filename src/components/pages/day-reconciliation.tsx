@@ -14,7 +14,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import * as XLSX from "xlsx";
 import {
   CalendarDays,
   CreditCard,
@@ -137,8 +136,9 @@ const cardLabels: Record<ReconcileCardKey, string> = {
   "cash-out": "Total Cash Out / Expenses",
 };
 
-/* ─── Excel download helper ─── */
-function downloadExcel(rows: Record<string, any>[], cols: Col[], fileName: string) {
+/* ─── Excel download helper (dynamically imports xlsx only when invoked) ─── */
+async function downloadExcel(rows: Record<string, any>[], cols: Col[], fileName: string) {
+  const XLSX = await import("xlsx");
   const headers = cols.map(c => c.label);
   const data = rows.map(row => cols.map(c => {
     const raw = row[c.key];
@@ -403,7 +403,12 @@ export default function DayReconciliation() {
                   <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
                     {detailRows.length > 0 && (
                       <button
-                        onClick={() => downloadExcel(detailRows, cols, detailLabel)}
+                        onClick={() => {
+                          downloadExcel(detailRows, cols, detailLabel).catch((err) => {
+                            console.error("Excel download failed:", err);
+                            toast.error("Excel download failed. Please try again.");
+                          });
+                        }}
                         style={{display:"flex",alignItems:"center",gap:"5px",fontSize:"11px",fontWeight:600,color:"#059669",background:"#ecfdf5",border:"1px solid #a7f3d0",borderRadius:"6px",padding:"4px 10px",cursor:"pointer"}}
                       >
                         <Download style={{width:"13px",height:"13px"}} />

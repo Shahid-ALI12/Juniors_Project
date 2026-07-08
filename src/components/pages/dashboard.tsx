@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useEffect, useState, useCallback } from "react";
-import * as XLSX from "xlsx";
 import {
   FileText, FlaskConical, BookOpen, CheckCircle,
   Package, Settings, Loader2, ChevronDown, ChevronUp, X, Download, AlertTriangle,
@@ -119,8 +118,9 @@ const cardLabels: Record<CardKey, string> = {
   "over-credit": "Over Credit Limit",
 };
 
-/* ─── Excel download helper ─── */
-function downloadExcel(rows: Record<string, any>[], cols: Col[], fileName: string) {
+/* ─── Excel download helper (dynamically imports xlsx only when invoked) ─── */
+async function downloadExcel(rows: Record<string, any>[], cols: Col[], fileName: string) {
+  const XLSX = await import("xlsx");
   const headers = cols.map(c => c.label);
   const data = rows.map(row => cols.map(c => {
     const raw = row[c.key];
@@ -327,7 +327,12 @@ export default function Dashboard() {
             {!detailLoading && detailRows.length > 0 && (
               <div className="flex justify-end px-5 py-3 border-t border-slate-100 bg-slate-50/30">
                 <button
-                  onClick={() => downloadExcel(detailRows, cols, detailLabel)}
+                  onClick={() => {
+                    downloadExcel(detailRows, cols, detailLabel).catch((err) => {
+                      console.error("Excel download failed:", err);
+                      alert("Excel download failed. Please try again.");
+                    });
+                  }}
                   className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-emerald-600 bg-white border border-slate-200 rounded-lg px-3 py-2 hover:border-emerald-300 hover:bg-emerald-50 transition-colors"
                 >
                   <Download className="w-3.5 h-3.5" />
