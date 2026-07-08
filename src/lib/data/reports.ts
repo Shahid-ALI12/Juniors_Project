@@ -126,6 +126,45 @@ export interface CustomerBalanceInfo {
 }
 
 export async function getCustomerBalance(customerId: number): Promise<CustomerBalanceInfo> {
+  // Try RPC first (single round-trip, all math done in Postgres).
+  // Falls back to old multi-query logic if RPC is not deployed.
+  try {
+    const { data: rpcRows, error } = await admin.rpc("get_all_customer_balances");
+    if (!error && Array.isArray(rpcRows)) {
+      const row = rpcRows.find((r: any) => Number(r.customer_id) === customerId);
+      if (row) {
+        return {
+          opening_balance: Number(row.opening_balance ?? 0),
+          total_bill: Number(row.total_bill ?? 0),
+          total_cash_paid: Number(row.total_cash_paid ?? 0),
+          total_goods_value: Number(row.total_goods_value ?? 0),
+          balance_due: Number(row.balance_due ?? 0),
+        };
+      }
+      // Customer exists but had no sales/purchases → return zeros (with opening_balance if any)
+      const { data: cust } = await admin
+        .from("customers")
+        .select("opening_balance")
+        .eq("id", customerId)
+        .maybeSingle();
+      const ob = Number(cust?.opening_balance ?? 0);
+      return {
+        opening_balance: ob,
+        total_bill: 0,
+        total_cash_paid: 0,
+        total_goods_value: 0,
+        balance_due: ob,
+      };
+    }
+  } catch (rpcErr: any) {
+    const msg = rpcErr?.message || "";
+    if (!msg.includes("Could not find the function") && !msg.includes("does not exist")) {
+      // Unexpected RPC error — log and fall through to fallback
+      console.warn("getCustomerBalance RPC failed, using fallback:", msg);
+    }
+  }
+
+  // ─── Fallback: original TS logic (3 queries + JS reduction) ───
   // Fetch customer row to get opening_balance (defaults to 0 if customer missing)
   const { data: customer } = await admin
     .from("customers")
@@ -158,6 +197,32 @@ export async function getCustomerBalance(customerId: number): Promise<CustomerBa
 
 // ─── All customer balances at once ───
 export async function getAllCustomerBalances(): Promise<Record<number, CustomerBalanceInfo>> {
+  // Try RPC first (single round-trip, all math done in Postgres).
+  // Falls back to old multi-query logic if RPC is not deployed.
+  try {
+    const { data: rpcRows, error } = await admin.rpc("get_all_customer_balances");
+    if (!error && Array.isArray(rpcRows)) {
+      const map: Record<number, CustomerBalanceInfo> = {};
+      for (const row of rpcRows as any[]) {
+        const cid = Number(row.customer_id);
+        map[cid] = {
+          opening_balance: Number(row.opening_balance ?? 0),
+          total_bill: Number(row.total_bill ?? 0),
+          total_cash_paid: Number(row.total_cash_paid ?? 0),
+          total_goods_value: Number(row.total_goods_value ?? 0),
+          balance_due: Number(row.balance_due ?? 0),
+        };
+      }
+      return map;
+    }
+  } catch (rpcErr: any) {
+    const msg = rpcErr?.message || "";
+    if (!msg.includes("Could not find the function") && !msg.includes("does not exist")) {
+      console.warn("getAllCustomerBalances RPC failed, using fallback:", msg);
+    }
+  }
+
+  // ─── Fallback: original TS logic (3 queries + JS reduction) ───
   const { data: sales, error } = await admin
     .from("sales")
     .select("customer_id, quantity, rate_per_bag, rickshaw_fare, cash_received");
