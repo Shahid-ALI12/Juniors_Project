@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { PageHeader, MetricCard } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
@@ -81,7 +81,44 @@ export default function CashManagementPage() {
   const [correctionOpen, setCorrectionOpen] = useState(false);
   const [correctionAccount, setCorrectionAccount] = useState<string>(HAND_ACCOUNT_NAME);
   const [correctionTarget, setCorrectionTarget] = useState("");
+  const [correctionName, setCorrectionName] = useState("");
+  const [correctionReason, setCorrectionReason] = useState("");
   const [correctionSuccess, setCorrectionSuccess] = useState(false);
+
+  // Correction history state
+  interface CorrectionRow {
+    id: number;
+    entry_date: string;
+    account_id: number;
+    account_name: string;
+    direction: "in" | "out";
+    amount: number;
+    description: string | null;
+    entered_by: string | null;
+    created_at: string;
+  }
+  const [corrections, setCorrections] = useState<CorrectionRow[]>([]);
+  const [loadingCorrections, setLoadingCorrections] = useState(false);
+
+  // Fetch corrections when the correction section is opened (lazy load)
+  useEffect(() => {
+    if (!correctionOpen) return;
+    let cancelled = false;
+    (async () => {
+      setLoadingCorrections(true);
+      try {
+        const res = await fetch("/api/cash/correction", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setCorrections(data.corrections ?? []);
+      } catch {
+        // Silent fail — history is non-critical
+      } finally {
+        if (!cancelled) setLoadingCorrections(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [correctionOpen, correctionSuccess]);
 
   // Saving state for forms (local, since mutations happen here)
   const [submitting, setSubmitting] = useState(false);
@@ -164,19 +201,32 @@ export default function CashManagementPage() {
       toast.error("Account not found");
       return;
     }
+    // Name + Reason compulsory (also enforced by API, but check here for instant feedback)
+    const trimmedName = correctionName.trim();
+    const trimmedReason = correctionReason.trim();
+    if (!trimmedName) {
+      toast.error("Naam likhna zaroori hai (Name is required)");
+      return;
+    }
+    if (!trimmedReason) {
+      toast.error("Reason likhna zaroori hai (Reason is required)");
+      return;
+    }
 
     setSubmitting(true);
     try {
       const res = await fetch("/api/cash/correction", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account_id: accId, target }),
+        body: JSON.stringify({ account_id: accId, target, name: trimmedName, reason: trimmedReason }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail || err.error || "Failed to apply correction");
       }
       setCorrectionTarget("");
+      setCorrectionName("");
+      setCorrectionReason("");
       setCorrectionSuccess(true);
       setTimeout(() => setCorrectionSuccess(false), 3000);
       invalidate.invalidateCash();
@@ -470,9 +520,41 @@ export default function CashManagementPage() {
 
                   <div className="space-y-2 max-w-xs">
                     <Label htmlFor="correction-target" className="text-sm font-medium text-slate-700">
-                      Target Balance (Rs.)
+                      Target Balance (Rs.) <span className="text-red-500">*</span>
                     </Label>
                     <Input id="correction-target" type="number" min="0" step="1" placeholder="Enter correct balance" value={correctionTarget} onChange={(e) => setCorrectionTarget(e.target.value)} required />
+                  </div>
+
+                  {/* Name + Reason — compulsory */}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="correction-name" className="text-sm font-medium text-slate-700">
+                        Naam (Your Name) <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id="correction-name"
+                        type="text"
+                        placeholder="e.g. Shahid, Ali..."
+                        value={correctionName}
+                        onChange={(e) => setCorrectionName(e.target.value)}
+                        required
+                        maxLength={100}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="correction-reason" className="text-sm font-medium text-slate-700">
+                        Reason <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id="correction-reason"
+                        type="text"
+                        placeholder="e.g. Cash short by Rs.500"
+                        value={correctionReason}
+                        onChange={(e) => setCorrectionReason(e.target.value)}
+                        required
+                        maxLength={200}
+                      />
+                    </div>
                   </div>
 
                   <Button type="submit" variant="outline" className="gap-2 border-amber-300 text-amber-700 hover:bg-amber-50 hover:text-amber-800" disabled={submitting}>
@@ -480,6 +562,92 @@ export default function CashManagementPage() {
                     Apply Correction
                   </Button>
                 </form>
+
+                {/* ── Correction History (below the form) ── */}
+                <div className="mt-8 border-t border-slate-100 pt-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wider">
+                      Correction History
+                    </h3>
+                    <span className="text-xs text-slate-400">
+                      {corrections.length > 0 ? `${corrections.length} record${corrections.length === 1 ? "" : "s"}` : ""}
+                    </span>
+                  </div>
+
+                  {loadingCorrections ? (
+                    <div className="space-y-2">
+                      {[0, 1, 2].map((i) => (
+                        <Skeleton key={i} className="h-12 w-full" />
+                      ))}
+                    </div>
+                  ) : corrections.length === 0 ? (
+                    <div className="text-center py-8 text-sm text-slate-400">
+                      <AlertTriangle className="size-8 mx-auto mb-2 opacity-30" />
+                      No corrections recorded yet.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto rounded-lg border border-slate-100">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-100">
+                            <th className="text-left text-xs uppercase text-slate-500 font-semibold px-3 py-2.5">Date</th>
+                            <th className="text-left text-xs uppercase text-slate-500 font-semibold px-3 py-2.5">Account</th>
+                            <th className="text-left text-xs uppercase text-slate-500 font-semibold px-3 py-2.5">Direction</th>
+                            <th className="text-right text-xs uppercase text-slate-500 font-semibold px-3 py-2.5">Amount</th>
+                            <th className="text-left text-xs uppercase text-slate-500 font-semibold px-3 py-2.5">Reason</th>
+                            <th className="text-left text-xs uppercase text-slate-500 font-semibold px-3 py-2.5">By</th>
+                            <th className="text-left text-xs uppercase text-slate-500 font-semibold px-3 py-2.5">When</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {corrections.map((c) => (
+                            <tr key={c.id} className="border-b border-slate-50 last:border-b-0 hover:bg-slate-50/60">
+                              <td className="px-3 py-2.5 text-slate-600 tabular-nums whitespace-nowrap">{c.entry_date}</td>
+                              <td className="px-3 py-2.5">
+                                <span className="inline-flex items-center gap-1.5">
+                                  {c.account_name === HAND_ACCOUNT_NAME ? (
+                                    <Banknote className="size-3.5 text-green-500" />
+                                  ) : (
+                                    <Lock className="size-3.5 text-purple-500" />
+                                  )}
+                                  <span className="text-slate-800">{c.account_name}</span>
+                                </span>
+                              </td>
+                              <td className="px-3 py-2.5">
+                                {c.direction === "in" ? (
+                                  <span className="inline-flex items-center gap-1 text-green-700 font-medium">
+                                    <ArrowRightLeft className="size-3.5" /> Added
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-red-600 font-medium">
+                                    <ArrowRightLeft className="size-3.5 rotate-180" /> Deducted
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-slate-800">
+                                Rs. {formatRs(c.amount)}
+                              </td>
+                              <td className="px-3 py-2.5 text-slate-600 max-w-xs">
+                                <span className="line-clamp-2">{c.description || "—"}</span>
+                              </td>
+                              <td className="px-3 py-2.5 text-slate-700 font-medium whitespace-nowrap">
+                                {c.entered_by || "—"}
+                              </td>
+                              <td className="px-3 py-2.5 text-slate-400 text-xs whitespace-nowrap">
+                                {new Date(c.created_at).toLocaleString("en-PK", {
+                                  day: "2-digit",
+                                  month: "short",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
               </div>
             </CollapsibleContent>
           </Collapsible>

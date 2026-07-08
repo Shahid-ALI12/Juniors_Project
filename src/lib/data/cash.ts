@@ -187,6 +187,8 @@ export async function correctBalanceRPC(params: {
   target: number;
   correction_date: string;
   entered_by: string | null;
+  name?: string | null;     // who is making the correction (compulsory at UI layer)
+  reason?: string | null;   // why the correction is being made (compulsory at UI layer)
 }): Promise<number | null> {
   try {
     // Try RPC first (atomic: calculates diff + single ledger entry)
@@ -195,6 +197,8 @@ export async function correctBalanceRPC(params: {
       p_target: params.target,
       p_date: params.correction_date,
       p_entered_by: params.entered_by,
+      p_name: params.name ?? null,
+      p_reason: params.reason ?? null,
     });
     if (error) throw error;
     // RPC returns TABLE(id bigint) — extract first row's id or null
@@ -202,8 +206,8 @@ export async function correctBalanceRPC(params: {
     return Array.isArray(data) ? (data as any)[0]?.id as number : data as number;
   } catch (rpcErr: any) {
     const msg = rpcErr?.message || "";
-    if (msg.includes("does not exist") || msg.includes("Could not find the function") || msg.includes("cannot extract elements from a scalar")) {
-      console.warn("correct_cash_balance RPC not found or scalar error — falling back to manual calculation");
+    if (msg.includes("does not exist") || msg.includes("Could not find the function") || msg.includes("cannot extract elements from a scalar") || msg.includes("function public.correct_cash_balance")) {
+      console.warn("correct_cash_balance RPC not found or signature mismatch — falling back to manual calculation");
       return correctBalanceFallback(params);
     }
     throw rpcErr;
@@ -216,6 +220,8 @@ async function correctBalanceFallback(params: {
   target: number;
   correction_date: string;
   entered_by: string | null;
+  name?: string | null;
+  reason?: string | null;
 }): Promise<number | null> {
   // Calculate current balance
   const { data: ledger, error } = await admin
@@ -234,6 +240,12 @@ async function correctBalanceFallback(params: {
 
   const direction = diff > 0 ? "in" : "out";
 
+  // Use name + reason if provided; fall back to defaults
+  const trimmedReason = (params.reason ?? "").trim();
+  const trimmedName = (params.name ?? "").trim();
+  const description = trimmedReason || "Manual balance correction";
+  const enteredBy = trimmedName || params.entered_by;
+
   const { data: corrData, error: corrErr } = await admin
     .from("cash_ledger")
     .insert({
@@ -243,11 +255,56 @@ async function correctBalanceFallback(params: {
       amount: Math.abs(diff),
       source_type: "correction",
       source_id: null,
-      description: "Manual balance correction",
-      entered_by: params.entered_by,
+      description,
+      entered_by: enteredBy,
     })
     .select("id")
     .single();
   if (corrErr) throw corrErr;
   return (corrData as any).id as number;
+}
+
+// ─── Fetch all manual corrections (source_type = 'correction') ───
+// Returns most-recent-first list with account name joined.
+export async function getCorrections(): Promise<Array<{
+  id: number;
+  entry_date: string;
+  account_id: number;
+  account_name: string;
+  direction: "in" | "out";
+  amount: number;
+  description: string | null;
+  entered_by: string | null;
+  created_at: string;
+}>> {
+  const { data, error } = await admin
+    .from("cash_ledger")
+    .select(`
+      id,
+      entry_date,
+      account_id,
+      direction,
+      amount,
+      description,
+      entered_by,
+      created_at,
+      cash_accounts!inner ( name )
+    `)
+    .eq("source_type", "correction")
+    .order("created_at", { ascending: false })
+    .limit(200);
+
+  if (error) throw error;
+
+  return (data ?? []).map((row: any) => ({
+    id: row.id,
+    entry_date: row.entry_date,
+    account_id: row.account_id,
+    account_name: row.cash_accounts?.name ?? `Account #${row.account_id}`,
+    direction: row.direction as "in" | "out",
+    amount: Number(row.amount),
+    description: row.description,
+    entered_by: row.entered_by,
+    created_at: row.created_at,
+  }));
 }
