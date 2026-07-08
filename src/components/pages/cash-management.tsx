@@ -74,21 +74,34 @@ export default function CashManagementPage() {
 
   const reloadData = async () => {
     const failed: string[] = [];
-    try {
-      const accRes = await fetch("/api/cash/accounts");
-      if (accRes.ok) { const acc = await accRes.json(); setAccounts(acc.accounts ?? []); }
-      else failed.push("accounts");
-    } catch { failed.push("accounts"); }
-    try {
-      const balRes = await fetch("/api/cash/balances");
-      if (balRes.ok) { const bal = await balRes.json(); setBalances(bal.balances ?? {}); }
-      else failed.push("balances");
-    } catch { failed.push("balances"); }
-    try {
-      const trRes = await fetch("/api/cash/transfer");
-      if (trRes.ok) { const tr = await trRes.json(); setTransfers(tr.transfers ?? []); }
-      else failed.push("transfers");
-    } catch { failed.push("transfers"); }
+    // Fetch all 3 endpoints in parallel — was sequential before (3 round-trips → 1 batch)
+    const [accRes, balRes, trRes] = await Promise.allSettled([
+      fetch("/api/cash/accounts"),
+      fetch("/api/cash/balances"),
+      fetch("/api/cash/transfer"),
+    ]);
+
+    if (accRes.status === "fulfilled" && accRes.value.ok) {
+      const acc = await accRes.value.json();
+      setAccounts(acc.accounts ?? []);
+    } else {
+      failed.push("accounts");
+    }
+
+    if (balRes.status === "fulfilled" && balRes.value.ok) {
+      const bal = await balRes.value.json();
+      setBalances(bal.balances ?? {});
+    } else {
+      failed.push("balances");
+    }
+
+    if (trRes.status === "fulfilled" && trRes.value.ok) {
+      const tr = await trRes.value.json();
+      setTransfers(tr.transfers ?? []);
+    } else {
+      failed.push("transfers");
+    }
+
     if (failed.length > 0) toast.error(`Failed to load: ${failed.join(", ")}`);
   };
 
@@ -98,7 +111,6 @@ export default function CashManagementPage() {
       await reloadData();
       setLoading(false);
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handBalance = balances[HAND_ACCOUNT_NAME] ?? 0;

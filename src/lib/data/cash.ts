@@ -45,22 +45,31 @@ export async function createCashAccount(name: string): Promise<CashAccountRow> {
 }
 
 export async function getCashBalances(): Promise<Record<string, number>> {
-  const { data, error } = await admin.from("cash_accounts").select("*");
-  if (error) throw error;
-  const accounts = (data || []) as CashAccountRow[];
-  const result: Record<string, number> = {};
+  // Fetch accounts + ALL ledger entries in parallel (2 queries instead of N+1).
+  // Previously: for each account, ran a separate ledger query → N+1 problem.
+  // Now: single ledger fetch + JS aggregation. Same result, much faster.
+  const [accRes, ledgerRes] = await Promise.all([
+    admin.from("cash_accounts").select("*"),
+    admin.from("cash_ledger").select("account_id, direction, amount"),
+  ]);
+  if (accRes.error) throw accRes.error;
+  if (ledgerRes.error) throw ledgerRes.error;
 
+  const accounts = (accRes.data || []) as CashAccountRow[];
+  const ledger = (ledgerRes.data || []) as Array<{ account_id: number; direction: "in" | "out"; amount: number }>;
+
+  // Aggregate ledger by account_id in memory (single pass)
+  const balanceById: Record<number, number> = {};
+  for (const e of ledger) {
+    const aid = e.account_id as number;
+    const signed = e.direction === "in" ? e.amount : -e.amount;
+    balanceById[aid] = (balanceById[aid] || 0) + signed;
+  }
+
+  // Map account_id → account name
+  const result: Record<string, number> = {};
   for (const acct of accounts) {
-    const { data: ledger, error: lErr } = await admin
-      .from("cash_ledger")
-      .select("direction, amount")
-      .eq("account_id", acct.id);
-    if (lErr) continue;
-    const entries = ledger || [];
-    result[acct.name] = entries.reduce(
-      (sum, e) => sum + (e.direction === "in" ? e.amount : -e.amount),
-      0
-    );
+    result[acct.name] = balanceById[acct.id] ?? 0;
   }
   return result;
 }
