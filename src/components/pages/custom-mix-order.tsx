@@ -19,6 +19,7 @@ import { useMixStore, fetchCached, invalidateCache, apiError } from "@/store";
 import { PageHeader, MetricCard } from "@/components/shared/page-header";
 import type { MixIngredient, Product } from "@/types";
 import { LocationSelect } from "@/components/shared/location-select";
+import { AvailableStock } from "@/components/shared/available-stock";
 import { generateMixBillPDF } from "@/lib/generate-mix-bill";
 import { numberToRupeeWords } from "@/lib/number-to-words";
 
@@ -197,6 +198,10 @@ export default function CustomMixOrder() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Bumped after every successful mix order save so the <AvailableStock>
+  // panel knows to refetch stock automatically (mix orders decrement stock
+  // just like regular sales).
+  const [stockRefreshTrigger, setStockRefreshTrigger] = useState(0);
 
   /* ── State 1 form ── */
   const [s1Name, setS1Name] = useState("");
@@ -429,6 +434,9 @@ export default function CustomMixOrder() {
       setS1DriverRent("");
       toast.success("Order finished! Bill PDF download ho rahi hai.");
       invalidateCache("stock");
+      // Bump the trigger so the <AvailableStock> panel refetches stock
+      // and the displayed values reflect the just-saved mix order.
+      setStockRefreshTrigger((n) => n + 1);
       await reloadPastOrders();
     } catch (e: any) {
       toast.error(e.message || "Failed to save mix order");
@@ -465,6 +473,11 @@ export default function CustomMixOrder() {
             title="Custom Mix Order"
             subtitle="Build a custom cattle feed mix bill with multiple ingredients"
           />
+
+          {/* Live stock panel — shown at the top so the user can see what's
+              available before starting a mix order. Auto-refreshes when a
+              mix order is saved (stockRefreshTrigger bumps). */}
+          <AvailableStock refreshTrigger={stockRefreshTrigger} />
 
           {/* Start New Order Form */}
           <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-6 space-y-6">
@@ -617,6 +630,12 @@ export default function CustomMixOrder() {
           title="Custom Mix Order"
           subtitle={`Building mix for ${store.customerName} — ${store.orderDate}`}
         />
+
+        {/* Live stock panel — visible while building the mix order so the
+            user can see stock depleting in real time as they add ingredients.
+            Use hideSummary to avoid duplicating the metric cards already shown
+            in the Metrics Row below. */}
+        <AvailableStock refreshTrigger={stockRefreshTrigger} hideSummary />
 
         {/* ── Metrics Row ── */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
