@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { useCartStore, fetchCached, invalidateCache, apiError } from "@/store";
 import { PageHeader } from "@/components/shared/page-header";
 import type { CartItem, Sale, Expense, Product, Customer, ProductStock } from "@/types";
+import { LocationSelect } from "@/components/shared/location-select";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -64,6 +65,7 @@ export default function DailyEntryPage() {
   const { items: cartItems, addItem, removeItem, clearCart, getTotal: getCartTotal } = useCartStore();
 
   const [date, setDate] = useState(today);
+  const [locationId, setLocationId] = useState<number>(1); // default to Farmhouse
   const [unitChoice, setUnitChoice] = useState<"bags" | "kg">("bags");
   const [productId, setProductId] = useState<string>("");
   const [quantity, setQuantity] = useState<string>("");
@@ -142,7 +144,11 @@ export default function DailyEntryPage() {
 
   const selectedProduct = products.find((p) => String(p.id) === productId);
 
-  const stockEntry = stockData.find((s) => s.product_id === Number(productId));
+  // Find stock for the selected product AT THE SELECTED LOCATION.
+  // Falls back to 0 if no stock row exists at that location.
+  const stockEntry = stockData.find(
+    (s) => s.product_id === Number(productId) && s.location_id === locationId
+  );
   const stockBags = stockEntry?.stock_quantity ?? 0;
 
   const defaultRate = selectedProduct?.default_rate ?? 0;
@@ -210,7 +216,7 @@ export default function DailyEntryPage() {
       product: selectedProduct.name,
       product_id: selectedProduct.id,
       location: null,
-      location_id: null,
+      location_id: locationId,
       quantity: quantityNum,
       unit_type: unitChoice,
       bag_weight_kg: unitChoice === "bags" ? bagWeightNum : null,
@@ -305,6 +311,7 @@ export default function DailyEntryPage() {
         body: JSON.stringify({
           items,
           customer_id: customerId,
+          location_id: locationId,
           sale_date: date,
           cash_received: Number(cashReceived) || 0,
           rickshaw_fare: rickshawNum,
@@ -468,9 +475,15 @@ export default function DailyEntryPage() {
         <PageHeader title="Daily Entry" subtitle="Add today's sales and expenses, and see the live cash summary." />
 
         <Card className="rounded-2xl border-slate-200/60 shadow-sm">
-          <CardContent className="p-4">
-            <Label className="text-xs uppercase text-slate-500 font-semibold tracking-wider">Date</Label>
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="mt-1.5 max-w-[200px]" />
+          <CardContent className="p-4 flex flex-wrap items-end gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase text-slate-500 font-semibold tracking-wider">Date</Label>
+              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="max-w-[200px]" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase text-slate-500 font-semibold tracking-wider">Location</Label>
+              <LocationSelect value={locationId} onChange={setLocationId} />
+            </div>
           </CardContent>
         </Card>
 
@@ -608,9 +621,10 @@ export default function DailyEntryPage() {
                     </TableHeader>
                     <TableBody>
                       {cartItems.map((item, idx) => {
-                        // Compute remaining stock for THIS product after considering
-                        // ALL cart items of the same product (not just this row).
-                        const entry = stockData.find((s) => s.product_id === item.product_id);
+                        // Compute remaining stock for THIS product AT THE SELECTED LOCATION.
+                        const entry = stockData.find(
+                          (s) => s.product_id === item.product_id && s.location_id === locationId
+                        );
                         const currentBags = entry?.stock_quantity ?? 0;
                         const bw = item.bag_weight_kg ?? (entry?.last_bag_weight_kg ?? 50);
                         const totalCartBags = cartItems

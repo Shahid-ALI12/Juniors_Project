@@ -19,6 +19,7 @@ export async function GET(request: NextRequest) {
     if (url.searchParams.get("sale_date_lte")) filters.sale_date_lte = url.searchParams.get("sale_date_lte")!;
     if (url.searchParams.get("customer_id")) filters.customer_id = Number(url.searchParams.get("customer_id")!);
     if (url.searchParams.get("transaction_group_id")) filters.transaction_group_id = url.searchParams.get("transaction_group_id")!;
+    if (url.searchParams.get("location_id")) filters.location_id = Number(url.searchParams.get("location_id")!);
 
     const sales = await getSales(filters as any);
     return NextResponse.json({ sales });
@@ -46,7 +47,7 @@ export async function POST(request: NextRequest) {
     await createSaleRPC({
       items,
       customer_id,
-      location_id: location_id ?? null,
+      location_id: location_id ?? 1, // default to Farmhouse
       sale_date: sale_date || pktToday(),
       cash_received: Number(cash_received) || 0,
       rickshaw_fare: Number(rickshaw_fare) || 0,

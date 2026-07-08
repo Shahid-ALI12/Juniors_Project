@@ -31,10 +31,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "product_id is required" }, { status: 400 });
     }
 
-    // location_id may be null (default warehouse row); only validate when provided
+    // location_id defaults to Farmhouse (id=1) if not provided
     const locId =
       location_id === null || location_id === undefined || location_id === ""
-        ? null
+        ? 1 // default to Farmhouse
         : Number(location_id);
 
     const stock = await upsertStock({

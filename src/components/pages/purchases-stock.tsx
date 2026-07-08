@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { fetchCached, invalidateCache, apiError } from "@/store";
 import { PageHeader } from "@/components/shared/page-header";
 import type { Product, Customer, Purchase, Supplier, ProductStock } from "@/types";
+import { LocationSelect } from "@/components/shared/location-select";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -84,6 +85,9 @@ export default function PurchasesStockPage() {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
 
   // Section 1: Stock state — single unified table (no more Farm/Shop tabs)
+  // (Now per-location: filter by selected location)
+  const [stockLocationId, setStockLocationId] = useState<number>(1); // default Farmhouse
+  const [purchaseLocationId, setPurchaseLocationId] = useState<number>(1); // default Farmhouse
   const [allStock, setAllStock] = useState<StockRow[]>([]);
   const [savedAllStock, setSavedAllStock] = useState<boolean>(false);
   const [stockSavedAt, setStockSavedAt] = useState<Date | null>(null);
@@ -111,7 +115,10 @@ export default function PurchasesStockPage() {
 
   const buildStockRows = useCallback((): StockRow[] => {
     return products.map((p) => {
-      const entry = stockData.find((s) => s.product_id === p.id);
+      // Find stock for this product AT THE SELECTED location
+      const entry = stockData.find(
+        (s) => s.product_id === p.id && s.location_id === stockLocationId
+      );
       const bags = entry?.stock_quantity ?? 0;
       const bw = entry?.last_bag_weight_kg ?? DEFAULT_BAG_WEIGHT;
       return {
@@ -122,7 +129,7 @@ export default function PurchasesStockPage() {
         totalKg: Number(bags) * Number(bw),
       };
     });
-  }, [products, stockData]);
+  }, [products, stockData, stockLocationId]);
 
   // Load each data source independently — one failure must not block the rest
   const loadAllData = useCallback(async () => {
@@ -275,7 +282,7 @@ export default function PurchasesStockPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             product_id: row.productId,
-            location_id: null,
+            location_id: stockLocationId,
             stock_quantity: row.totalKg > 0 ? Math.round(row.bags * 100) / 100 : 0,
             last_bag_weight_kg: row.bagWeight,
           }),
@@ -413,6 +420,7 @@ export default function PurchasesStockPage() {
           supplier_id: supplierId,
           settled_by_customer_id: null,
           cash_paid: cp,
+          location_id: purchaseLocationId,
           notes: notes?.trim() || null,
           unit_type: purchaseUnit,
           bag_weight_kg: purchaseUnit === "bags" ? bw : null,
@@ -463,6 +471,7 @@ export default function PurchasesStockPage() {
           supplier_id: null,
           settled_by_customer_id: customer.id,
           cash_paid: 0,
+          location_id: purchaseLocationId,
           notes: notes?.trim() || null,
           unit_type: purchaseUnit,
           bag_weight_kg: purchaseUnit === "bags" ? bw : null,
@@ -748,10 +757,18 @@ export default function PurchasesStockPage() {
 
         <Card className="rounded-2xl border-slate-200/60 shadow-sm bg-white">
           <CardHeader className="pb-2">
-            <CardTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
-              <Package className="size-5 text-slate-600" /> Current Stock Levels
-            </CardTitle>
-            <CardDescription>Edit bags or total KG — the other value auto-calculates.</CardDescription>
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <CardTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <Package className="size-5 text-slate-600" /> Current Stock Levels
+                </CardTitle>
+                <CardDescription>Edit bags or total KG — the other value auto-calculates. Filter by location below.</CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <Label className="text-xs font-semibold text-slate-600">Location:</Label>
+                <LocationSelect value={stockLocationId} onChange={(v) => { setStockLocationId(v); setSavedAllStock(false); }} />
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             {renderStockTable(allStock)}
@@ -765,6 +782,12 @@ export default function PurchasesStockPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
+            <div className="flex items-center gap-3 p-3 rounded-lg border border-slate-200/60 bg-slate-50/40">
+              <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide whitespace-nowrap">Purchase Location:</Label>
+              <LocationSelect value={purchaseLocationId} onChange={setPurchaseLocationId} />
+              <span className="text-xs text-slate-500">Stock will be added to this location.</span>
+            </div>
+
             <div className="space-y-2">
               <Label className="text-sm font-semibold text-slate-700">Purchase Type</Label>
               <RadioGroup value={purchaseType} onValueChange={(v) => { setPurchaseType(v as "supplier" | "settlement"); resetForm(); }} className="flex flex-col sm:flex-row gap-3">

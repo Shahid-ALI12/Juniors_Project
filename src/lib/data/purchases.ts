@@ -24,6 +24,7 @@ export interface PurchaseRow {
 export async function getPurchases(filters?: {
   purchase_date_gte?: string;
   purchase_date_lte?: string;
+  location_id?: number;
 }): Promise<PurchaseRow[]> {
   let q = admin
     .from("purchases")
@@ -32,6 +33,9 @@ export async function getPurchases(filters?: {
 
   if (filters?.purchase_date_gte) q = q.gte("purchase_date", filters.purchase_date_gte);
   if (filters?.purchase_date_lte) q = q.lte("purchase_date", filters.purchase_date_lte);
+  if (filters?.location_id !== undefined && filters?.location_id !== null) {
+    q = q.eq("location_id", filters.location_id);
+  }
 
   const { data, error } = await q;
   if (error) throw error;
@@ -123,33 +127,34 @@ async function recordPurchaseFallback(params: {
   if (purErr) throw purErr;
   const purId = (purData as any).id as number;
 
-  // Always increment stock (locations concept removed — stock keyed by product_id only).
+  // Always increment stock at the specified location.
   // Handle both 'bags' and 'kg' units: convert kg → bags using bag_weight_kg.
   // We reuse decrement_stock_fallback with NEGATIVE qty (it clamps via GREATEST,
   // so adding works too: GREATEST(0 + qty, 0) = qty).
+  const locId = params.location_id ?? 1; // default to Farmhouse if missing
   try {
     const bw = params.bag_weight_kg ?? 50;
     const qtyBags = params.unit_type === "kg"
       ? (bw > 0 ? params.quantity / bw : params.quantity)
       : params.quantity;
 
-    // Upsert stock row to make sure it exists (with bag weight if provided)
+    // Upsert stock row at the location to make sure it exists
     await admin
       .from("product_stock")
       .upsert(
         {
           product_id: params.product_id,
-          location_id: null,
+          location_id: locId,
           stock_quantity: 0,
           last_bag_weight_kg: params.bag_weight_kg ?? null,
         },
-        { onConflict: "product_id" }
+        { onConflict: "product_id,location_id" }
       );
 
     // Use the decrement RPC with NEGATIVE qty → effectively increments stock
     await admin.rpc("decrement_stock_fallback", {
       p_product_id: params.product_id,
-      p_location_id: null,
+      p_location_id: locId,
       p_quantity: -qtyBags, // negative = increment
     });
   } catch (stockErr) {

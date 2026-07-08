@@ -13,9 +13,10 @@ export async function GET(request: NextRequest) {
 
   try {
     const url = new URL(request.url);
-    const filters: Record<string, string> = {};
+    const filters: Record<string, string | number> = {};
     if (url.searchParams.get("purchase_date_gte")) filters.purchase_date_gte = url.searchParams.get("purchase_date_gte")!;
     if (url.searchParams.get("purchase_date_lte")) filters.purchase_date_lte = url.searchParams.get("purchase_date_lte")!;
+    if (url.searchParams.get("location_id")) filters.location_id = Number(url.searchParams.get("location_id")!);
 
     const purchases = await getPurchases(filters as any);
     return NextResponse.json({ purchases });
@@ -46,7 +47,7 @@ export async function POST(request: NextRequest) {
       supplier_id: supplier_id || null,
       settled_by_customer_id: settled_by_customer_id || null,
       cash_paid: Number(cash_paid) || 0,
-      location_id: location_id ?? null,
+      location_id: location_id ?? 1, // default to Farmhouse
       notes: notes?.trim() || null,
       unit_type: unit_type || "bags",
       bag_weight_kg: bag_weight_kg ? Number(bag_weight_kg) : null,

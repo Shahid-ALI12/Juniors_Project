@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { useMixStore, fetchCached, invalidateCache, apiError } from "@/store";
 import { PageHeader, MetricCard } from "@/components/shared/page-header";
 import type { MixIngredient, Product } from "@/types";
+import { LocationSelect } from "@/components/shared/location-select";
 import { generateMixBillPDF } from "@/lib/generate-mix-bill";
 import { numberToRupeeWords } from "@/lib/number-to-words";
 
@@ -202,6 +203,7 @@ export default function CustomMixOrder() {
   const [s1Type, setS1Type] = useState<"credit" | "cash">("credit");
   const [s1Date, setS1Date] = useState(today);
   const [s1Target, setS1Target] = useState("");
+  const [s1LocationId, setS1LocationId] = useState<number>(1); // default Farmhouse
   // Driver fields (optional) — order level
   const [s1DriverName, setS1DriverName] = useState("");
   const [s1DriverRent, setS1DriverRent] = useState("");
@@ -284,10 +286,10 @@ export default function CustomMixOrder() {
     store.startOrder(s1Name.trim(), s1Type, s1Date, target, {
       driverName,
       driverRent: driverRentNum,
-      locationId: null,
+      locationId: s1LocationId,
     });
     toast.success("Mix order started — add ingredients below");
-  }, [s1Name, s1Type, s1Date, s1Target, s1DriverName, s1DriverRent, store]);
+  }, [s1Name, s1Type, s1Date, s1Target, s1DriverName, s1DriverRent, s1LocationId, store]);
 
   const handleAddIngredient = useCallback(() => {
     if (!addProduct) {
@@ -571,6 +573,15 @@ export default function CustomMixOrder() {
                   />
                 </div>
               </div>
+            </div>
+
+            <Separator />
+
+            {/* ── Location selector ── */}
+            <div className="flex items-center gap-3 p-3 rounded-lg border border-slate-200/60 bg-slate-50/40">
+              <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide whitespace-nowrap">Sale Location:</Label>
+              <LocationSelect value={s1LocationId} onChange={setS1LocationId} />
+              <span className="text-xs text-slate-500">Stock will be deducted from this location.</span>
             </div>
 
             <Separator />

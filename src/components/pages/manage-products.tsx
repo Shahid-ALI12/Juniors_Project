@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
 import ConfirmAction from "@/components/shared/confirm-action";
 import type { Product, ProductStock } from "@/types";
+import { LocationSelect } from "@/components/shared/location-select";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +37,7 @@ export default function ManageProducts() {
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState<Product[]>([]);
   const [stockData, setStockData] = useState<ProductStock[]>([]);
+  const [locationId, setLocationId] = useState<number>(1); // default Farmhouse
   const [editedRates, setEditedRates] = useState<Record<number, string>>({});
   const [updatedIds, setUpdatedIds] = useState<Set<number>>(new Set());
   const [updating, setUpdating] = useState<Set<number>>(new Set());
@@ -266,7 +268,9 @@ export default function ManageProducts() {
         return;
       }
       const enriched = list.map((p) => {
-        const stockEntry = stockData.find((s) => s.product_id === p.id);
+        const stockEntry = stockData.find(
+          (s) => s.product_id === p.id && s.location_id === locationId
+        );
         return {
           id: p.id,
           name: p.name,
@@ -299,7 +303,7 @@ export default function ManageProducts() {
         description: `${enriched.length} product(s) exported as JSON.`,
       });
     },
-    [stockData]
+    [stockData, locationId]
   );
 
   if (loading) {
@@ -345,6 +349,13 @@ export default function ManageProducts() {
       />
 
       <PageHeader title="Manage Products & Rates" subtitle="Add products, set default selling rates, deactivate, or permanently delete." />
+
+      {/* ───────────── LOCATION FILTER ───────────── */}
+      <div className="flex items-center gap-3 px-4 py-3 bg-white rounded-2xl border border-slate-200/60 shadow-sm">
+        <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide whitespace-nowrap">Stock Location:</Label>
+        <LocationSelect value={locationId} onChange={setLocationId} />
+        <span className="text-xs text-slate-500">Stock column below reflects the selected location.</span>
+      </div>
 
       {/* ───────────── ACTIVE PRODUCTS ───────────── */}
       <section className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden" aria-label="Active products">
@@ -406,7 +417,9 @@ export default function ManageProducts() {
                     </TableCell>
                     <TableCell className="text-center">
                       {(() => {
-                        const entry = stockData.find((s) => s.product_id === product.id);
+                        const entry = stockData.find(
+                          (s) => s.product_id === product.id && s.location_id === locationId
+                        );
                         const stock = entry?.stock_quantity ?? 0;
                         return (
                           <span className={cn("inline-flex items-center gap-1 text-sm font-medium px-2.5 py-0.5 rounded-full", stock > 0 ? "text-emerald-700 bg-emerald-50" : "text-red-600 bg-red-50")}>
@@ -510,7 +523,9 @@ export default function ManageProducts() {
                     </TableCell>
                     <TableCell className="text-center">
                       {(() => {
-                        const entry = stockData.find((s) => s.product_id === product.id);
+                        const entry = stockData.find(
+                          (s) => s.product_id === product.id && s.location_id === locationId
+                        );
                         const stock = entry?.stock_quantity ?? 0;
                         return (
                           <span className="text-sm text-slate-500 font-medium">

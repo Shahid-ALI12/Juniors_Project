@@ -29,6 +29,7 @@ export async function getSales(filters?: {
   customer_id?: number;
   transaction_group_id?: string;
   mix_order_id?: number;
+  location_id?: number;
 }): Promise<SaleRow[]> {
   let q = admin
     .from("sales")
@@ -41,6 +42,9 @@ export async function getSales(filters?: {
   if (filters?.customer_id) q = q.eq("customer_id", filters.customer_id);
   if (filters?.transaction_group_id) q = q.eq("transaction_group_id", filters.transaction_group_id);
   if (filters?.mix_order_id) q = q.eq("mix_order_id", filters.mix_order_id);
+  if (filters?.location_id !== undefined && filters?.location_id !== null) {
+    q = q.eq("location_id", filters.location_id);
+  }
 
   const { data, error } = await q;
   if (error) throw error;
@@ -157,30 +161,31 @@ async function createSaleFallback(params: {
     console.warn("Cash ledger insert failed (non-critical):", ledgerErr);
   }
 
-  // Always decrement stock (locations concept removed — stock keyed by product_id only).
+  // Always decrement stock at the specified location.
   // Handle both 'bags' and 'kg' units: convert kg → bags using bag_weight_kg.
+  const locId = params.location_id ?? 1; // default to Farmhouse if missing
   for (const item of params.items) {
     try {
       const bw = item.bag_weight_kg ?? 50;
       const qtyBags = item.unit_type === "kg"
         ? (bw > 0 ? item.quantity / bw : item.quantity)
         : item.quantity;
-      // Upsert stock row (location_id NULL)
+      // Upsert stock row at the location
       await admin
         .from("product_stock")
         .upsert(
           {
             product_id: item.product_id,
-            location_id: null,
+            location_id: locId,
             stock_quantity: 0,
             last_bag_weight_kg: item.bag_weight_kg ?? null,
           },
-          { onConflict: "product_id" }
+          { onConflict: "product_id,location_id" }
         );
-      // Decrement (clamped to 0 via RPC; here we do a direct update)
+      // Decrement (clamped to 0 via RPC)
       await admin.rpc("decrement_stock_fallback", {
         p_product_id: item.product_id,
-        p_location_id: null,
+        p_location_id: locId,
         p_quantity: qtyBags,
       });
     } catch {

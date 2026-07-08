@@ -30,10 +30,16 @@ export interface CashTransfer {
   created_at: string;
 }
 
-// NOTE: The "locations" concept (Farm / Shop / etc.) has been removed
-// from the project. The locations table may still exist in the database
-// for backward compatibility with old backups, but no UI references it
-// and new rows are created with location_id = NULL.
+// NOTE: Locations (Farmhouse / Shop) were re-introduced to support
+// per-location stock. Each product can have separate stock quantities
+// at each location. Sales/purchases are tagged with a location_id so
+// the user can filter by location. Default location id = 1 (Farmhouse).
+
+export interface Location {
+  id: number;
+  name: string;
+  created_at: string;
+}
 
 export interface Product {
   id: number;
