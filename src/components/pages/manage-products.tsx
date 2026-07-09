@@ -258,51 +258,49 @@ export default function ManageProducts() {
     }
   }, []);
 
-  // ─── Download JSON helper ───
-  // Builds a JSON file from a list of products with stock info merged in,
+  // ─── Download Excel helper ───
+  // Builds an XLSX workbook from a list of products with stock info merged in,
   // then triggers a browser download. Filename includes a date stamp so
   // repeated exports don't overwrite each other.
-  const downloadProductsJson = useCallback(
-    (list: Product[], kind: "active" | "inactive") => {
+  const [downloadingExcel, setDownloadingExcel] = useState(false);
+  const downloadProductsExcel = useCallback(
+    async (list: Product[], kind: "active" | "inactive") => {
       if (list.length === 0) {
         toast.error(`No ${kind} products to download.`);
         return;
       }
-      const enriched = list.map((p) => {
-        const stockEntry = stockData.find(
-          (s) => s.product_id === p.id && s.location_id === locationId
-        );
-        return {
-          id: p.id,
-          name: p.name,
-          default_rate: p.default_rate,
-          rate_per_bag_rs: p.default_rate,
-          stock_bags: stockEntry?.stock_quantity ?? 0,
-          is_active: p.is_active,
-          created_at: p.created_at,
-        };
-      });
-      const payload = {
-        exported_at: new Date().toISOString(),
-        kind,
-        count: enriched.length,
-        products: enriched,
-      };
-      const blob = new Blob([JSON.stringify(payload, null, 2)], {
-        type: "application/json",
-      });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      const dateStamp = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-      link.href = url;
-      link.download = `${kind}-products-${dateStamp}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      toast.success(`${kind === "active" ? "Active" : "Inactive"} products downloaded`, {
-        description: `${enriched.length} product(s) exported as JSON.`,
-      });
+      setDownloadingExcel(true);
+      try {
+        const { downloadExcel } = await import("@/lib/download-excel");
+        const rows = list.map((p) => {
+          const stockEntry = stockData.find(
+            (s) => s.product_id === p.id && s.location_id === locationId
+          );
+          return {
+            id: p.id,
+            name: p.name,
+            default_rate: p.default_rate,
+            stock_bags: stockEntry?.stock_quantity ?? 0,
+            is_active: p.is_active ? "Yes" : "No",
+            created_at: p.created_at,
+          };
+        });
+        await downloadExcel(rows, [
+          { key: "id", label: "ID" },
+          { key: "name", label: "Product Name" },
+          { key: "default_rate", label: "Rate (Rs./bag)", align: "right" },
+          { key: "stock_bags", label: "Stock (bags)", align: "right" },
+          { key: "is_active", label: "Active" },
+          { key: "created_at", label: "Created At" },
+        ], `${kind}-products`);
+        toast.success(`${kind === "active" ? "Active" : "Inactive"} products Excel downloaded`, {
+          description: `${rows.length} product(s) exported.`,
+        });
+      } catch (e: any) {
+        toast.error(e?.message || "Excel download failed");
+      } finally {
+        setDownloadingExcel(false);
+      }
     },
     [stockData, locationId]
   );
@@ -380,12 +378,13 @@ export default function ManageProducts() {
           <Button
             size="sm"
             variant="outline"
-            onClick={() => downloadProductsJson(activeProducts, "active")}
-            disabled={activeProducts.length === 0}
+            onClick={() => downloadProductsExcel(activeProducts, "active")}
+            disabled={activeProducts.length === 0 || downloadingExcel}
             className="gap-1.5 text-xs font-semibold text-slate-700 border-slate-300 hover:bg-slate-50 hover:text-slate-900 self-start sm:self-auto"
-            title="Download active products as JSON"
+            title="Download active products as Excel"
           >
-            <Download className="size-3.5" /> Download JSON
+            {downloadingExcel ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+            {downloadingExcel ? "Downloading..." : "Download Excel"}
           </Button>
         </div>
 
@@ -490,11 +489,13 @@ export default function ManageProducts() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => downloadProductsJson(inactiveProducts, "inactive")}
+              onClick={() => downloadProductsExcel(inactiveProducts, "inactive")}
+              disabled={downloadingExcel}
               className="gap-1.5 text-xs font-semibold text-slate-700 border-slate-300 hover:bg-slate-50 hover:text-slate-900 self-start sm:self-auto"
-              title="Download inactive products as JSON"
+              title="Download inactive products as Excel"
             >
-              <Download className="size-3.5" /> Download JSON
+              {downloadingExcel ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+              {downloadingExcel ? "Downloading..." : "Download Excel"}
             </Button>
           </div>
 

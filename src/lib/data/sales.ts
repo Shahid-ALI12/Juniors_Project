@@ -177,8 +177,12 @@ export async function createSaleRPC(params: {
 }): Promise<void> {
   try {
     // Try RPC first (atomic: sale rows + stock decrement + cash ledger)
+    // Pass items as a NATIVE array (supabase-js serializes it correctly).
+    // Avoid JSON.stringify — deployed create_sale() functions do
+    // `jsonb_typeof(p_items) <> 'array'` which fails if the value arrives
+    // as a JSON string scalar instead of a JSON array.
     const { error } = await admin.rpc("create_sale", {
-      p_items: JSON.stringify(params.items),
+      p_items: params.items as unknown as any,
       p_customer_id: params.customer_id,
       p_location_id: params.location_id ?? null,
       p_sale_date: params.sale_date,
@@ -192,8 +196,13 @@ export async function createSaleRPC(params: {
   } catch (rpcErr: any) {
     // If RPC function doesn't exist, fall back to direct inserts
     const msg = rpcErr?.message || "";
-    if (msg.includes("does not exist") || msg.includes("Could not find the function") || msg.includes("cannot extract elements from a scalar")) {
-      console.warn("create_sale RPC not found or scalar error — falling back to direct insert");
+    if (
+      msg.includes("does not exist") ||
+      msg.includes("Could not find the function") ||
+      msg.includes("cannot extract elements from a scalar") ||
+      msg.includes("Items array cannot be empty")
+    ) {
+      console.warn("create_sale RPC failed — falling back to direct insert. Error:", msg);
       return createSaleFallback(params);
     }
     throw rpcErr;
