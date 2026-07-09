@@ -248,6 +248,10 @@ export default function CustomerKhataPage() {
         // Pass mix-order driver info so the bill shows correct driver rent
         // and driver name for mix-order rows (sale rows have rickshaw_fare=0).
         mixMeta,
+        // Pass goods value so Balance Due can be recomputed correctly after
+        // we recalculate Total Bill from displayed rows (which include
+        // mix-order driver rents that the DB's total_bill field may not).
+        totalGoodsValue: bal.total_goods_value,
       });
       toast.success("Bill downloaded successfully!");
     } catch (err) {

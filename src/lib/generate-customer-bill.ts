@@ -14,6 +14,11 @@ interface CustomerBillData {
   // Without this lookup, mix-order rows in the bill would show Rs. 0 rent
   // and miss the driver name.
   mixMeta?: Record<number, { driver_name: string | null; driver_rent: number }>;
+  // Optional total of goods-settlement value (paid in goods by customer).
+  // Used to recompute the correct Balance Due after we recompute Total Bill
+  // from the displayed rows (which include mix-order driver rents the
+  // database's total_bill field may not include).
+  totalGoodsValue?: number;
 }
 
 /* ─── Farm branding constants ─── */
@@ -38,6 +43,42 @@ export async function generateCustomerBillPDF(bill: CustomerBillData) {
   const { default: jsPDF } = await import("jspdf");
   const { default: autoTable } = await import("jspdf-autotable");
   const { numberToRupeeWords } = await import("@/lib/number-to-words");
+
+  // ── Pre-compute ACTUAL totals from displayed sales rows ──
+  // These are the source of truth for ALL totals shown in the bill
+  // (summary box at top + footer at bottom). They include mix-order
+  // driver_rents (which the database's total_bill field may NOT include,
+  // since driver_rent lives on the mix_orders table, not on sale rows).
+  // Solo sale bill amount = qty * rate + rickshaw_fare (rickshaw_fare IS the driver rent).
+  // Mix order bill amount = sum(ingredient qty * rate) + driver_rent (looked up via mixMeta).
+  let actualTotalBill = 0;
+  let actualTotalCash = 0;
+  const seenMixOrderIds = new Set<number | string>();
+  for (const sale of bill.sales) {
+    if (sale.mix_order_id) {
+      // Only count each mix order once (its row in the table is collapsed)
+      if (seenMixOrderIds.has(sale.mix_order_id)) continue;
+      seenMixOrderIds.add(sale.mix_order_id);
+      const ingredients = bill.sales.filter((s) => s.mix_order_id === sale.mix_order_id);
+      const ingredientsTotal = ingredients.reduce(
+        (sum, s) => sum + s.quantity * s.rate_per_bag,
+        0,
+      );
+      const mixMetaEntry = bill.mixMeta?.[Number(sale.mix_order_id)];
+      const driverRent = mixMetaEntry?.driver_rent ?? 0;
+      actualTotalBill += ingredientsTotal + driverRent;
+      actualTotalCash += ingredients.reduce((sum, s) => sum + s.cash_received, 0);
+    } else {
+      actualTotalBill += sale.quantity * sale.rate_per_bag + sale.rickshaw_fare;
+      actualTotalCash += sale.cash_received;
+    }
+  }
+
+  const totalGoodsValue = bill.totalGoodsValue ?? 0;
+  const effectiveTotalBill = actualTotalBill;
+  const effectiveTotalCash = actualTotalCash;
+  const effectiveBalanceDue =
+    bill.openingBalance + effectiveTotalBill - effectiveTotalCash - totalGoodsValue;
 
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pw = doc.internal.pageSize.getWidth();
@@ -159,9 +200,10 @@ export async function generateCustomerBillPDF(bill: CustomerBillData) {
   doc.setFontSize(9.5);
   doc.setTextColor(...C_DARK);
   doc.setFontSize(8.5);
+  // Use ACTUAL totals computed from displayed rows (include mix-order driver rents).
   doc.text(`Rs. ${bill.openingBalance.toLocaleString("en-PK")}`, rightX + 32, y + 11);
-  doc.text(`Rs. ${bill.totalBill.toLocaleString("en-PK")}`, rightX + 32, y + 17);
-  doc.text(`Rs. ${bill.totalCashPaid.toLocaleString("en-PK")}`, rightX + 32, y + 23);
+  doc.text(`Rs. ${effectiveTotalBill.toLocaleString("en-PK")}`, rightX + 32, y + 17);
+  doc.text(`Rs. ${effectiveTotalCash.toLocaleString("en-PK")}`, rightX + 32, y + 23);
 
   y += colH + 8;
 
@@ -192,6 +234,10 @@ export async function generateCustomerBillPDF(bill: CustomerBillData) {
   }
 
   let rowNum = 1;
+  // actualTotalBill / actualTotalCash are computed upfront at the top of
+  // this function so the summary box at the top of the bill can also use
+  // them. We don't accumulate again here.
+
   bill.sales.forEach((sale, i) => {
     // ─── Mix Order rows are collapsed into a single "Mix Order" row ───
     // All ingredients share the same mix_order_id, sale_date, and cash_received.
@@ -274,9 +320,13 @@ export async function generateCustomerBillPDF(bill: CustomerBillData) {
     .map((r, i) => (r.opening ? i : -1))
     .filter((i) => i >= 0);
 
-  const totalBillStr = `Rs. ${bill.totalBill.toLocaleString("en-PK")}`;
-  const totalCashStr = `Rs. ${bill.totalCashPaid.toLocaleString("en-PK")}`;
-  const balanceStr = `Rs. ${bill.balanceDue.toLocaleString("en-PK")}`;
+  // effectiveTotalBill / effectiveTotalCash / effectiveBalanceDue are
+  // computed upfront at the top of this function (so the summary box at
+  // the top of the bill can use the same values). Reuse them here for
+  // the totals box at the bottom of the bill.
+  const totalBillStr = `Rs. ${effectiveTotalBill.toLocaleString("en-PK")}`;
+  const totalCashStr = `Rs. ${effectiveTotalCash.toLocaleString("en-PK")}`;
+  const balanceStr = `Rs. ${effectiveBalanceDue.toLocaleString("en-PK")}`;
 
   autoTable(doc, {
     startY: y,
