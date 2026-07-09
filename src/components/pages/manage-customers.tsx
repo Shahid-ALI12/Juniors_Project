@@ -52,6 +52,7 @@ interface BalanceRow {
   total_bill: number;
   total_cash_paid: number;
   total_goods_value: number;
+  advance_payment?: number;
   balance_due: number;
 }
 
@@ -354,10 +355,11 @@ export default function ManageCustomersPage() {
         .sort((a: any, b: any) => (a.name || "").localeCompare(b.name || ""))
         .map((c: any, idx: number) => {
           const b = balances[c.id];
-          const due = b?.balance_due ?? c.opening_balance ?? 0;
+          const due = b?.balance_due ?? (c.opening_balance ?? 0) - (c.advance_payment ?? 0);
           const totalBill = b?.total_bill ?? 0;
           const cashPaid = b?.total_cash_paid ?? 0;
           const goods = b?.total_goods_value ?? 0;
+          const advance = b?.advance_payment ?? c.advance_payment ?? 0;
           return {
             "#": idx + 1,
             Name: c.name,
@@ -368,6 +370,7 @@ export default function ManageCustomersPage() {
             "Total Billed (Rs.)": totalBill,
             "Cash Paid (Rs.)": cashPaid,
             "Paid in Goods (Rs.)": goods,
+            "Advance Payment (Rs.)": advance,
             "Balance Due (Rs.)": due,
             "Joined On": c.created_at?.slice(0, 10) ?? "",
           };
@@ -377,6 +380,7 @@ export default function ManageCustomersPage() {
       const totalBill = rows.reduce((s, r) => s + (r["Total Billed (Rs.)"] || 0), 0);
       const totalCash = rows.reduce((s, r) => s + (r["Cash Paid (Rs.)"] || 0), 0);
       const totalGoods = rows.reduce((s, r) => s + (r["Paid in Goods (Rs.)"] || 0), 0);
+      const totalAdv = rows.reduce((s, r) => s + (r["Advance Payment (Rs.)"] || 0), 0);
       const totalDue = rows.reduce((s, r) => s + (r["Balance Due (Rs.)"] || 0), 0);
       rows.push({
         "#": "",
@@ -388,6 +392,7 @@ export default function ManageCustomersPage() {
         "Total Billed (Rs.)": totalBill,
         "Cash Paid (Rs.)": totalCash,
         "Paid in Goods (Rs.)": totalGoods,
+        "Advance Payment (Rs.)": totalAdv,
         "Balance Due (Rs.)": totalDue,
         "Joined On": "TOTAL",
       });
@@ -395,7 +400,7 @@ export default function ManageCustomersPage() {
       const ws = XLSX.utils.json_to_sheet(rows);
       ws["!cols"] = [
         { wch: 5 }, { wch: 25 }, { wch: 10 }, { wch: 15 }, { wch: 10 },
-        { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 12 },
+        { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 12 },
       ];
 
       const wb = XLSX.utils.book_new();
@@ -728,6 +733,7 @@ function CustomerTable({
             <th className="text-left text-xs uppercase text-slate-500 font-semibold px-4 py-3">Customer</th>
             <th className="text-left text-xs uppercase text-slate-500 font-semibold px-4 py-3">Type</th>
             <th className="text-right text-xs uppercase text-slate-500 font-semibold px-4 py-3">Opening Balance</th>
+            <th className="text-right text-xs uppercase text-slate-500 font-semibold px-4 py-3">Advance Payment</th>
             <th className="text-right text-xs uppercase text-slate-500 font-semibold px-4 py-3">Balance Due</th>
             <th className="text-left text-xs uppercase text-slate-500 font-semibold px-4 py-3">Joined</th>
             <th className="text-right text-xs uppercase text-slate-500 font-semibold px-4 py-3">Actions</th>
@@ -736,7 +742,8 @@ function CustomerTable({
         <tbody>
           {customers.map((c) => {
             const b = balances[c.id];
-            const due = b?.balance_due ?? c.opening_balance ?? 0;
+            const adv = b?.advance_payment ?? c.advance_payment ?? 0;
+            const due = b?.balance_due ?? (c.opening_balance ?? 0) - (adv);
             const ob = c.opening_balance ?? 0;
             return (
               <tr
@@ -766,7 +773,14 @@ function CustomerTable({
                     <span className="text-slate-300">—</span>
                   )}
                 </td>
-                <td className="px-4 py-3 text-right tabular-nums font-semibold">
+                <td className="px-4 py-3 text-right tabular-nums">
+                  {adv > 0 ? (
+                    <span className="font-medium text-emerald-700">Rs. {fmt(adv)}</span>
+                  ) : (
+                    <span className="text-slate-300">—</span>
+                  )}
+                </td>
+                <td className={cn("px-4 py-3 text-right tabular-nums font-semibold", due > 0 ? "text-orange-700" : due < 0 ? "text-emerald-700" : "text-slate-700")}>
                   Rs. {fmt(due)}
                 </td>
                 <td className="px-4 py-3 text-slate-500 text-xs">

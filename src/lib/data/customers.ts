@@ -11,6 +11,10 @@ export interface CustomerRow {
   // Added to total bill on every statement so the customer's true
   // outstanding = opening_balance + total_sales - cash_paid - goods.
   opening_balance: number;
+  // Current advance balance the customer has paid WITHOUT buying
+  // anything. Subtracted from balance_due. May be undefined if the
+  // migration hasn't been applied yet — callers should treat as 0.
+  advance_payment?: number;
   // Tombstone for permanent UI deletion. NULL = visible in UI.
   deleted_at: string | null;
 }

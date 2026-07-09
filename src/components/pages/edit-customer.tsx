@@ -45,6 +45,7 @@ interface BalanceRow {
   total_bill: number;
   total_cash_paid: number;
   total_goods_value: number;
+  advance_payment?: number;
   balance_due: number;
 }
 
@@ -119,12 +120,13 @@ export default function EditCustomerPage() {
   // Predicted new balance_due after OB update
   const predictedBalanceDue = useMemo(() => {
     if (!selectedBalance) return 0;
-    // balance_due = opening_balance + total_bill - cash_paid - goods_value
+    // balance_due = opening_balance + total_bill - cash_paid - goods_value - advance_payment
     // We just swap the old OB for the new one.
     const totalBill = selectedBalance.total_bill ?? 0;
     const cashPaid = selectedBalance.total_cash_paid ?? 0;
     const goods = selectedBalance.total_goods_value ?? 0;
-    return newObNum + totalBill - cashPaid - goods;
+    const advance = selectedBalance.advance_payment ?? 0;
+    return newObNum + totalBill - cashPaid - goods - advance;
   }, [selectedBalance, newObNum]);
 
   // ────────────────────────────────────────────────────────────
@@ -354,7 +356,7 @@ export default function EditCustomerPage() {
                     <AlertCircle className="size-3.5" />
                     Balance Impact Preview
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
                     <div>
                       <div className="text-[10px] uppercase text-slate-400">Total Billed</div>
                       <div className="font-semibold text-slate-700 tabular-nums">Rs. {fmt(selectedBalance.total_bill)}</div>
@@ -368,6 +370,10 @@ export default function EditCustomerPage() {
                       <div className="font-semibold text-purple-700 tabular-nums">Rs. {fmt(selectedBalance.total_goods_value)}</div>
                     </div>
                     <div>
+                      <div className="text-[10px] uppercase text-slate-400">Advance Payment</div>
+                      <div className="font-semibold text-emerald-700 tabular-nums">Rs. {fmt(selectedBalance.advance_payment ?? 0)}</div>
+                    </div>
+                    <div>
                       <div className="text-[10px] uppercase text-slate-400">Current Balance Due</div>
                       <div className="font-semibold text-orange-700 tabular-nums">Rs. {fmt(selectedBalance.balance_due)}</div>
                     </div>
@@ -377,7 +383,7 @@ export default function EditCustomerPage() {
                     <div className="flex items-center gap-2 text-xs uppercase tracking-wider font-semibold">
                       Predicted Balance Due
                       <span className="text-[10px] text-slate-300 normal-case font-normal tracking-normal">
-                        (new OB + bill − cash − goods)
+                        (new OB + bill − cash − goods − advance)
                       </span>
                     </div>
                     <div className="flex items-center gap-3">

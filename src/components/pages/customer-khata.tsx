@@ -61,6 +61,7 @@ interface BalanceRow {
   total_bill: number;
   total_cash_paid: number;
   total_goods_value: number;
+  advance_payment?: number;
   balance_due: number;
 }
 
@@ -152,7 +153,8 @@ export default function CustomerKhataPage() {
         total_bill: 0,
         total_cash_paid: 0,
         total_goods_value: 0,
-        balance_due: c.opening_balance ?? 0,
+        advance_payment: c.advance_payment ?? 0,
+        balance_due: (c.opening_balance ?? 0) - (c.advance_payment ?? 0),
       };
       return { ...c, ...b } as CustomerWithBalance;
     })
@@ -235,7 +237,8 @@ export default function CustomerKhataPage() {
         total_bill: 0,
         total_cash_paid: 0,
         total_goods_value: 0,
-        balance_due: selectedCustomer?.opening_balance ?? 0,
+        advance_payment: selectedCustomer?.advance_payment ?? 0,
+        balance_due: (selectedCustomer?.opening_balance ?? 0) - (selectedCustomer?.advance_payment ?? 0),
       };
       await generateCustomerBillPDF({
         customer: selectedCustomer,
@@ -245,6 +248,9 @@ export default function CustomerKhataPage() {
         totalCashPaid: bal.total_cash_paid,
         balanceDue: bal.balance_due,
         generatedAt: new Date().toLocaleString("en-PK"),
+        // Pass advance_payment so the bill shows it as a separate row
+        // in the totals box and subtracts it from Balance Due.
+        advancePayment: (bal as any).advance_payment ?? 0,
         // Pass mix-order driver info so the bill shows correct driver rent
         // and driver name for mix-order rows (sale rows have rickshaw_fare=0).
         mixMeta,
@@ -295,7 +301,8 @@ export default function CustomerKhataPage() {
           total_bill: 0,
           total_cash_paid: 0,
           total_goods_value: 0,
-          balance_due: c.opening_balance ?? 0,
+          advance_payment: c.advance_payment ?? 0,
+          balance_due: (c.opening_balance ?? 0) - (c.advance_payment ?? 0),
         };
         return {
           id: c.id,
@@ -307,6 +314,7 @@ export default function CustomerKhataPage() {
           total_bill: b.total_bill,
           total_cash_paid: b.total_cash_paid,
           total_goods_value: b.total_goods_value,
+          advance_payment: b.advance_payment ?? 0,
           balance_due: b.balance_due,
           created_at: c.created_at,
         };
@@ -321,6 +329,7 @@ export default function CustomerKhataPage() {
         { key: "total_bill", label: "Total Billed (Rs.)", align: "right" },
         { key: "total_cash_paid", label: "Cash Paid (Rs.)", align: "right" },
         { key: "total_goods_value", label: "Paid in Goods (Rs.)", align: "right" },
+        { key: "advance_payment", label: "Advance Payment (Rs.)", align: "right" },
         { key: "balance_due", label: "Balance Due (Rs.)", align: "right" },
         { key: "created_at", label: "Created At" },
       ], "all-customers-with-balances");

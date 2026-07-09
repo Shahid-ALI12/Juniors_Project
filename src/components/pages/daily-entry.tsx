@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { useCartStore, fetchCached, invalidateCache, apiError } from "@/store";
 import { PageHeader } from "@/components/shared/page-header";
 import { QuickNav } from "@/components/shared/quick-nav";
-import type { CartItem, Sale, Expense, Product, Customer, ProductStock, Location } from "@/types";
+import type { CartItem, Sale, Expense, Product, Customer, ProductStock, Location, CustomerPayment } from "@/types";
 import { LocationSelect } from "@/components/shared/location-select";
 
 import { Button } from "@/components/ui/button";
@@ -58,12 +58,14 @@ import {
   ChevronRight,
   Download,
   CalendarDays,
+  Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
 import ConfirmAction from "@/components/shared/confirm-action";
 import { AvailableStock } from "@/components/shared/available-stock";
 import { pktToday } from "@/lib/pkt-date";
 import { downloadExcel } from "@/lib/download-excel";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const fmt = (n: number) => n.toLocaleString("en-PK");
 
@@ -95,12 +97,38 @@ export default function DailyEntryPage() {
   const [expenseDesc, setExpenseDesc] = useState("");
   const [expenseAmount, setExpenseAmount] = useState<string>("");
 
+  // ── Customer Payment panel state ──
+  // Tracks: which customer is paying, how much, optional notes, saving state.
+  const [cpCustomerId, setCpCustomerId] = useState<string>("");
+  const [cpCustomerSearch, setCpCustomerSearch] = useState("");
+  const [cpAmount, setCpAmount] = useState<string>("");
+  const [cpNotes, setCpNotes] = useState("");
+  const [savingCustomerPayment, setSavingCustomerPayment] = useState(false);
+
+  // ── Today's Customer Payments: server-side pagination + customer-name search ──
+  // Declared UP HERE (before loadCustomerPayments + the useEffect that uses them)
+  // so we don't hit "used before declaration" TS errors.
+  const CP_PAGE_SIZE = 10;
+  const [cpSearchInput, setCpSearchInput] = useState("");
+  const [cpSearchDebounced, setCpSearchDebounced] = useState("");
+  const [cpPage, setCpPage] = useState(1);
+  const [cpTotal, setCpTotal] = useState(0);
+  const [cpTotalPages, setCpTotalPages] = useState(1);
+  const [downloadingCpExcel, setDownloadingCpExcel] = useState(false);
+
+  // ── Use Advance checkbox state (Complete Sale panel) ──
+  // When true AND the selected customer has advance_payment > 0,
+  // the sale's effective cash_received is bumped by min(advance, grandTotal)
+  // and the customer's advance_payment is decremented after the sale.
+  const [useAdvance, setUseAdvance] = useState(false);
+
   // Data from API
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [stockData, setStockData] = useState<ProductStock[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [customerPayments, setCustomerPayments] = useState<CustomerPayment[]>([]);
 
   // ── Today's Sales: server-side customer-name search + pagination ──
   const [salesSearchInput, setSalesSearchInput] = useState("");
@@ -168,10 +196,43 @@ export default function DailyEntryPage() {
     } catch { toast.error("Failed to load expenses"); }
   }, []);
 
+  // Separate loader for customer payments (server-side paginated).
+  // Kept separate from loadDayData so it can be re-triggered independently
+  // when only the payments list needs to refresh (e.g. after adding a payment).
+  const loadCustomerPayments = useCallback(async (d: string, customerName = "", page = 1) => {
+    try {
+      const params = new URLSearchParams({ payment_date: d });
+      if (customerName.trim()) params.set("customer_name", customerName.trim());
+      params.set("page", String(page));
+      params.set("pageSize", String(CP_PAGE_SIZE));
+      const res = await fetch(`/api/customer-payments?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        setCustomerPayments(data.rows ?? []);
+        setCpTotal(data.total ?? 0);
+        setCpTotalPages(data.totalPages ?? 1);
+      } else {
+        // Silent fail — table not deployed yet (migration not run).
+        // Show empty list so UI doesn't crash.
+        setCustomerPayments([]);
+        setCpTotal(0);
+        setCpTotalPages(1);
+      }
+    } catch {
+      setCustomerPayments([]);
+      setCpTotal(0);
+      setCpTotalPages(1);
+    }
+  }, [CP_PAGE_SIZE]);
+
   useEffect(() => {
     (async () => {
       setLoading(true);
-      await Promise.allSettled([loadMasterData(), loadDayData(date)]);
+      await Promise.allSettled([
+        loadMasterData(),
+        loadDayData(date),
+        loadCustomerPayments(date),
+      ]);
       setLoading(false);
     })();
   }, []);
@@ -180,6 +241,11 @@ export default function DailyEntryPage() {
   useEffect(() => {
     loadDayData(date, salesSearchDebounced, salesPage);
   }, [date, salesSearchDebounced, salesPage, loadDayData]);
+
+  // Refetch customer payments when date, search, or page changes
+  useEffect(() => {
+    loadCustomerPayments(date, cpSearchDebounced, cpPage);
+  }, [date, cpSearchDebounced, cpPage, loadCustomerPayments]);
 
   // ── Download ALL sales for the current date as Excel ──
   // Walks pages server-side so we get every sale record for the date,
@@ -297,6 +363,25 @@ export default function DailyEntryPage() {
     return c ? c.opening_balance ?? 0 : null;
   }, [selectedCustomerId, customers]);
 
+  // ── Selected customer's advance_payment (for the "Use advance" checkbox) ──
+  // Used to:
+  //   1. Show the customer's current advance balance next to the sale form
+  //   2. Decide whether to display the "Use advance" checkbox
+  //   3. Compute how much of the advance will actually be applied
+  //      (= min(advance_payment, grandTotal))
+  const selectedCustomerAdvance = useMemo(() => {
+    if (!selectedCustomerId) return 0;
+    const c = customers.find((x) => String(x.id) === selectedCustomerId);
+    return c ? Number(c.advance_payment ?? 0) : 0;
+  }, [selectedCustomerId, customers]);
+
+  // Effective advance to apply when "Use advance" is checked.
+  // Capped at the sale's grand total — can't apply more advance than the bill.
+  const appliedAdvance = useMemo(() => {
+    if (!useAdvance) return 0;
+    return Math.min(selectedCustomerAdvance, grandTotal);
+  }, [useAdvance, selectedCustomerAdvance, grandTotal]);
+
   const obModified = useMemo(() => {
     if (savedOpeningBalance === null) return false;
     const current = parseFloat(openingBalance) || 0;
@@ -312,6 +397,8 @@ export default function DailyEntryPage() {
       // Auto-fill opening balance from the customer's existing record
       // (defaults to 0 if they don't have one set yet).
       setOpeningBalance(String(c.opening_balance ?? 0));
+      // Reset "Use advance" — new customer may not have advance balance.
+      setUseAdvance(false);
     }
   };
 
@@ -424,6 +511,12 @@ export default function DailyEntryPage() {
         bag_weight_kg: item.bag_weight_kg,
       }));
 
+      // ── If "Use advance" is checked, bump cash_received by the applied ──
+      // amount so the sale's balance math reflects the offset. The API route
+      // will then decrement customer.advance_payment by the same amount.
+      const cashReceivedNum = Number(cashReceived) || 0;
+      const effectiveCashReceived = cashReceivedNum + appliedAdvance;
+
       const res = await fetch("/api/sales", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -432,15 +525,20 @@ export default function DailyEntryPage() {
           customer_id: customerId,
           location_id: locationId,
           sale_date: date,
-          cash_received: Number(cashReceived) || 0,
+          cash_received: effectiveCashReceived,
           rickshaw_fare: rickshawNum,
           rickshaw_driver: rickshawDriver || null,
+          // Tell the API to decrement customer.advance_payment by this much
+          // AFTER the sale is recorded. 0 when "Use advance" is unchecked.
+          apply_advance: appliedAdvance,
         }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail || err.error || "Failed to complete sale");
       }
+      const saleResp = await res.json().catch(() => ({}));
+      const advanceConsumed = Number(saleResp?.advance_consumed ?? appliedAdvance);
 
       clearCart();
       setRickshawFare("0");
@@ -449,21 +547,25 @@ export default function DailyEntryPage() {
       setOpeningBalance("0");
       setCustomerName("");
       setSelectedCustomerId("");
+      setUseAdvance(false);
 
       // ── Compose the success toast ──
       // If the OB was changed for an existing customer, mention the overwrite
       // explicitly so the user knows the saved opening_balance was updated.
+      const advanceDesc = advanceConsumed > 0
+        ? ` · Advance used: Rs. ${fmt(advanceConsumed)}`
+        : "";
       if (obWasUpdated) {
         toast.success(`Sale completed for ${customerName} — Rs. ${fmt(grandTotal)} total bill.`, {
-          description: `Opening balance OVERWRITTEN: Rs. ${fmt(obOldValue)} → Rs. ${fmt(obNewValue)} for ${existing?.name ?? customerName}.`,
+          description: `Opening balance OVERWRITTEN: Rs. ${fmt(obOldValue)} → Rs. ${fmt(obNewValue)} for ${existing?.name ?? customerName}.${advanceDesc}`,
           duration: 6000,
         });
       } else {
-        toast.success(`Sale completed for ${customerName} — Rs. ${fmt(grandTotal)} total bill.`);
+        toast.success(`Sale completed for ${customerName} — Rs. ${fmt(grandTotal)} total bill.${advanceDesc}`);
       }
       invalidateCache("stock");
       invalidateCache("customers");
-      await Promise.all([loadDayData(date), loadMasterData()]);
+      await Promise.all([loadDayData(date), loadMasterData(), loadCustomerPayments(date)]);
       // Bump the trigger so the <AvailableStock> panel refetches stock
       // and the displayed values reflect the just-completed sale.
       setStockRefreshTrigger((n) => n + 1);
@@ -560,6 +662,179 @@ export default function DailyEntryPage() {
     });
   };
 
+  // ──────────────────────────────────────────────────────────
+  // CUSTOMER PAYMENT handlers
+  //
+  // A "customer payment" = money a customer hands over WITHOUT buying
+  // anything (e.g. a farmhouse customer comes, gives cash, and leaves).
+  //
+  // Logic (server-side, atomic via record_customer_payment RPC):
+  //   1. If the customer has outstanding debt (balance_due > 0), the
+  //      payment first reduces the debt (lowers customer.opening_balance).
+  //   2. Any excess over the debt becomes customer.advance_payment.
+  //      If the customer has NO debt at all, the FULL amount becomes
+  //      advance_payment (this is the "cash customer gives money and
+  //      leaves without buying" case).
+  //   3. A history row is inserted into customer_payments with full
+  //      before/after snapshot.
+  //
+  // The advance_payment can later be auto-consumed when the customer
+  // buys something (Complete Sale panel → "Use advance payment" checkbox).
+  // ──────────────────────────────────────────────────────────
+
+  const handleSaveCustomerPayment = async () => {
+    // Validate customer + amount
+    if (!cpCustomerId) {
+      toast.error("Pehle customer select karein.");
+      return;
+    }
+    const amt = parseFloat(cpAmount) || 0;
+    if (amt <= 0) {
+      toast.error("Amount 0 se zyada hona chahiye.");
+      return;
+    }
+    setSavingCustomerPayment(true);
+    try {
+      const res = await fetch("/api/customer-payments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customer_id: Number(cpCustomerId),
+          amount: amt,
+          payment_date: date,
+          notes: cpNotes.trim() || null,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || err.error || "Failed to save payment");
+      }
+      const data = await res.json().catch(() => ({}));
+      const newId = data?.id;
+
+      // Clear the form
+      setCpCustomerId("");
+      setCpCustomerSearch("");
+      setCpAmount("");
+      setCpNotes("");
+
+      // Refresh customers list (advance_payment / opening_balance changed)
+      // + customer payments history + master data
+      invalidateCache("customers");
+      await Promise.all([
+        loadMasterData(),
+        loadCustomerPayments(date, cpSearchDebounced, cpPage),
+      ]);
+
+      // Compose a helpful toast — tell the user how the payment was split
+      // (we don't get the split back from the API directly, but we can
+      // re-derive it client-side from the customer's NEW values vs. what
+      // we know was the previous state). For simplicity we just toast the
+      // amount + customer name.
+      const cust = customers.find((c) => String(c.id) === String(cpCustomerId));
+      toast.success(
+        `Rs. ${fmt(amt)} payment saved for ${cust?.name ?? "customer"}.`,
+        {
+          description:
+            "Agar customer ka udhaar tha to pehle us se minus hua, bacha hua amount advance payment me chala gaya.",
+          duration: 6000,
+        },
+      );
+      void newId;
+    } catch (e: any) {
+      toast.error(e.message || "Failed to save payment");
+    } finally {
+      setSavingCustomerPayment(false);
+    }
+  };
+
+  const handleDeleteCustomerPayment = (paymentId: number) => {
+    askConfirm(
+      "Delete Payment",
+      `Payment #${paymentId} ko delete karna hai? Customer ka opening_balance aur advance_payment dono reverse ho jayenge.`,
+      async () => {
+        setConfirmLoading(true);
+        try {
+          const res = await fetch(`/api/customer-payments?id=${paymentId}`, {
+            method: "DELETE",
+          });
+          if (!res.ok) throw new Error(await apiError(res, "Failed"));
+          // Refresh customer payments history + customers list
+          invalidateCache("customers");
+          await Promise.all([
+            loadMasterData(),
+            loadCustomerPayments(date, cpSearchDebounced, cpPage),
+          ]);
+          toast.success("Payment #" + paymentId + " delete ho gaya");
+        } catch (e: any) {
+          toast.error(e.message || "Database me delete nahi hua");
+        } finally {
+          setConfirmLoading(false);
+          setConfirmOpen(false);
+        }
+      },
+    );
+  };
+
+  // Download ALL customer payments for the current date as Excel.
+  // Walks pages server-side so we get every payment record for the date,
+  // regardless of the current search filter.
+  const handleDownloadCpExcel = async () => {
+    setDownloadingCpExcel(true);
+    try {
+      const all: Record<string, any>[] = [];
+      let page = 1;
+      let totalPages = 1;
+      const pageSize = 200;
+      while (page <= totalPages) {
+        const qs = new URLSearchParams({
+          payment_date: date,
+          page: String(page),
+          pageSize: String(pageSize),
+        });
+        const res = await fetch(`/api/customer-payments?${qs.toString()}`);
+        if (!res.ok) throw new Error("Failed to fetch customer payments");
+        const body = await res.json();
+        const rows: any[] = Array.isArray(body?.rows) ? body.rows : [];
+        all.push(...rows);
+        totalPages = typeof body?.totalPages === "number" ? body.totalPages : 1;
+        if (rows.length === 0) break;
+        page += 1;
+      }
+      if (all.length === 0) {
+        toast.error("No customer payments to download for this date");
+        return;
+      }
+      await downloadExcel(all, [
+        { key: "payment_date", label: "Date" },
+        {
+          key: "customers",
+          label: "Customer",
+          fmt: (v: any) => v?.name ?? "—",
+        },
+        {
+          key: "customers",
+          label: "Type",
+          fmt: (v: any) => v?.type ?? "—",
+        },
+        { key: "amount", label: "Amount Paid", align: "right" },
+        { key: "applied_to_opening", label: "Applied to Debt", align: "right" },
+        { key: "applied_to_advance", label: "Added to Advance", align: "right" },
+        { key: "opening_balance_before", label: "OB Before", align: "right" },
+        { key: "opening_balance_after", label: "OB After", align: "right" },
+        { key: "advance_before", label: "Advance Before", align: "right" },
+        { key: "advance_after", label: "Advance After", align: "right" },
+        { key: "notes", label: "Notes" },
+        { key: "entered_by", label: "Entered By" },
+      ], `customer-payments-${date}`);
+      toast.success(`Customer payments Excel downloaded (${all.length} records)`);
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to download Excel");
+    } finally {
+      setDownloadingCpExcel(false);
+    }
+  };
+
   const regularSales = sales.filter((s) => !s.mix_order_id);
   const mixSales = sales.filter((s) => !!s.mix_order_id);
 
@@ -586,6 +861,25 @@ export default function DailyEntryPage() {
   const [expensePage, setExpensePage] = useState(1);
   const [downloadingExpensesExcel, setDownloadingExpensesExcel] = useState(false);
   const EXPENSE_PAGE_SIZE = 10;
+
+  // ── Today's Customer Payments: server-side pagination + customer-name search ──
+  // State declarations moved up (see "Customer Payment panel state" block).
+
+  // Debounce customer-payment search + reset page on new search
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setCpSearchDebounced(cpSearchInput);
+      setCpPage(1);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [cpSearchInput]);
+
+  // Reset page when date changes (customer payments array is reloaded)
+  useEffect(() => {
+    setCpPage(1);
+    setCpSearchInput("");
+    setCpSearchDebounced("");
+  }, [date]);
 
   // Debounce expense search + reset page on new search
   useEffect(() => {
@@ -716,6 +1010,8 @@ export default function DailyEntryPage() {
             { id: "section-today-sales", label: "Today's Sales", icon: Receipt },
             { id: "section-add-expense", label: "Add Expense", icon: TrendingDown },
             { id: "section-today-expenses", label: "Today's Expenses", icon: TrendingDown, iconColor: "text-orange-500" },
+            { id: "section-add-customer-payment", label: "Add Payment", icon: Wallet, iconColor: "text-emerald-600" },
+            { id: "section-customer-payment-history", label: "Payment History", icon: Wallet },
           ]}
         />
 
@@ -1031,6 +1327,84 @@ export default function DailyEntryPage() {
                 </div>
               </div>
             </div>
+
+            {/* ── Use Advance Payment block ──
+                Visible ONLY when the selected customer has an existing
+                advance_payment balance (> 0). Lets the user decide whether
+                to auto-consume part of that advance against this sale.
+
+                Behaviour:
+                  • Checkbox unchecked (default) → sale proceeds normally,
+                    advance_payment is left untouched.
+                  • Checkbox checked → appliedAdvance = min(advance, grandTotal)
+                    is added to effective cash_received, and the API decrements
+                    customer.advance_payment by that same amount after the sale.
+                  • If advance > grandTotal, only grandTotal is consumed
+                    (can't apply more advance than the bill).
+                  • The customer's remaining advance after this sale is shown
+                    live so the user knows what will be left.
+            */}
+            {selectedCustomerAdvance > 0 && (
+              <div className="rounded-lg border border-emerald-300 bg-emerald-50/70 px-4 py-3 space-y-2">
+                <div className="flex items-start gap-3 flex-wrap">
+                  <div className="flex items-start gap-2 flex-1 min-w-[200px]">
+                    <Checkbox
+                      id="use-advance"
+                      checked={useAdvance}
+                      onCheckedChange={(v) => setUseAdvance(v === true)}
+                      className="mt-0.5 border-emerald-500 data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
+                    />
+                    <div className="space-y-1">
+                      <Label htmlFor="use-advance" className="text-sm font-semibold text-emerald-800 cursor-pointer flex items-center gap-1.5 flex-wrap">
+                        <Wallet className="size-4" /> Use advance payment for this sale
+                      </Label>
+                      <p className="text-[11px] text-emerald-700/90 leading-tight">
+                        Is customer ke paas <strong>Rs. {fmt(selectedCustomerAdvance)}</strong> advance
+                        payment hai. Agar ye checkbox tick karen to sale ke total me se utna amount
+                        (max Rs. {fmt(Math.min(selectedCustomerAdvance, grandTotal))}) auto minus ho
+                        jayega aur customer ka advance_payment balance kam ho jayega.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Live math — show how the sale + advance interact */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 border-t border-emerald-200/70">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wider text-emerald-700/80 font-semibold">Sale Total</div>
+                    <div className="text-sm font-bold text-slate-900 tabular-nums">Rs. {fmt(grandTotal)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wider text-emerald-700/80 font-semibold">
+                      {useAdvance ? "Advance Applied" : "Advance Available"}
+                    </div>
+                    <div className="text-sm font-bold text-emerald-700 tabular-nums">
+                      Rs. {fmt(useAdvance ? appliedAdvance : selectedCustomerAdvance)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wider text-emerald-700/80 font-semibold">
+                      {useAdvance ? "Customer Pays Cash" : "Customer Pays Cash"}
+                    </div>
+                    <div className={`text-sm font-bold tabular-nums ${useAdvance ? "text-emerald-800" : "text-slate-700"}`}>
+                      Rs. {fmt(Math.max(0, grandTotal - appliedAdvance))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* When checked AND there's leftover advance, show what will remain */}
+                {useAdvance && (selectedCustomerAdvance - appliedAdvance) > 0 && (
+                  <div className="text-[11px] text-emerald-700/80">
+                    Sale ke baad customer ke advance balance me <strong>Rs. {fmt(selectedCustomerAdvance - appliedAdvance)}</strong> bacha jayega.
+                  </div>
+                )}
+                {useAdvance && (selectedCustomerAdvance - appliedAdvance) === 0 && (
+                  <div className="text-[11px] text-emerald-700/80">
+                    Sale ke baad customer ka advance balance <strong>0</strong> ho jayega (poora consume ho gaya).
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="flex items-center justify-between rounded-lg bg-slate-900 text-white px-4 py-3">
               <span className="text-sm font-medium">Grand Total (incl. freight)</span>
@@ -1424,6 +1798,333 @@ export default function DailyEntryPage() {
                 <div className="mt-3 flex items-center justify-between rounded-lg bg-red-50 border border-red-200 px-4 py-2.5">
                   <span className="text-sm font-semibold text-red-700">Total Expenses Today</span>
                   <span className="text-lg font-extrabold text-red-700">Rs. {fmt(totalExpensesAmt)}</span>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ──────────────────────────────────────────────────────────
+            CUSTOMER PAYMENT PANEL
+            A "customer payment" is money a customer hands over WITHOUT
+            buying anything. Common at the farmhouse — a customer comes,
+            gives cash, and leaves.
+
+            Server-side logic (record_customer_payment RPC):
+              1. If customer has debt (balance_due > 0), payment first
+                 reduces the debt (lowers customer.opening_balance).
+              2. Any excess → customer.advance_payment.
+                 If customer has NO debt, the FULL amount becomes advance.
+              3. A history row is inserted into customer_payments.
+
+            The advance_payment can later be consumed during a sale
+            (Complete Sale panel → "Use advance payment" checkbox).
+           ────────────────────────────────────────────────────────── */}
+        <Card id="section-add-customer-payment" className="rounded-2xl border-slate-200/60 shadow-sm scroll-mt-24">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Wallet className="size-5 text-emerald-600" /> Add a Customer Payment
+            </CardTitle>
+            <CardDescription>
+              Jab customer paise de kar jata hai aur kuch buy nahi karta — yahan
+              entry karein. Agar customer ka udhaar hai to pehle us se minus hoga,
+              bacha hua amount <strong>advance payment</strong> ban jayega jo
+              baad me kisi sale me use ho sakta hai.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Customer search + select — same pattern as the sale form */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase text-slate-500 font-semibold">Search Customer</Label>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+                  <Input
+                    placeholder="Type a customer name..."
+                    value={cpCustomerSearch}
+                    onChange={(e) => setCpCustomerSearch(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase text-slate-500 font-semibold">Select Customer</Label>
+                <Select
+                  value={cpCustomerId}
+                  onValueChange={(id) => {
+                    setCpCustomerId(id);
+                    const c = customers.find((x) => String(x.id) === id);
+                    if (c) setCpCustomerSearch("");
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Click to select" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {customers
+                      .filter((c) => c.is_active)
+                      .filter((c) => {
+                        if (!cpCustomerSearch.trim()) return true;
+                        return c.name.toLowerCase().includes(cpCustomerSearch.toLowerCase());
+                      })
+                      .map((c) => (
+                        <SelectItem key={c.id} value={String(c.id)}>
+                          {c.name} ({c.type})
+                          {Number(c.advance_payment ?? 0) > 0 && (
+                            <span className="text-emerald-600"> · Adv Rs. {fmt(Number(c.advance_payment))}</span>
+                          )}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Show selected customer's current debt + advance so the user
+                knows what to expect before recording the payment */}
+            {cpCustomerId && (() => {
+              const c = customers.find((x) => String(x.id) === cpCustomerId);
+              if (!c) return null;
+              const adv = Number(c.advance_payment ?? 0);
+              const ob = Number(c.opening_balance ?? 0);
+              return (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Customer</div>
+                    <div className="font-semibold text-slate-900">{c.name}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Opening Balance</div>
+                    <div className={`font-semibold tabular-nums ${ob > 0 ? "text-amber-700" : "text-slate-500"}`}>
+                      Rs. {fmt(ob)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Advance Payment</div>
+                    <div className={`font-semibold tabular-nums ${adv > 0 ? "text-emerald-700" : "text-slate-500"}`}>
+                      Rs. {fmt(adv)}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            <div className="grid grid-cols-1 sm:grid-cols-[1fr_2fr] gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase text-slate-500 font-semibold">Amount (Rs.)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="100"
+                  placeholder="0"
+                  value={cpAmount}
+                  onChange={(e) => setCpAmount(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase text-slate-500 font-semibold">Notes (optional)</Label>
+                <Input
+                  placeholder="e.g. cash received at farmhouse"
+                  value={cpNotes}
+                  onChange={(e) => setCpNotes(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <Button
+              onClick={handleSaveCustomerPayment}
+              className="w-full"
+              size="lg"
+              disabled={savingCustomerPayment || !cpCustomerId}
+            >
+              {savingCustomerPayment ? (
+                <Loader2 className="size-4 mr-2 animate-spin" />
+              ) : (
+                <Wallet className="size-4 mr-2" />
+              )}
+              {savingCustomerPayment ? "Saving..." : "Save Customer Payment"}
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* ──────────────────────────────────────────────────────────
+            CUSTOMER PAYMENTS HISTORY (today)
+            Server-side paginated, customer-name search, Excel download.
+            Mirrors the Today's Sales / Today's Expenses pattern.
+           ────────────────────────────────────────────────────────── */}
+        <Card id="section-customer-payment-history" className="rounded-2xl border-slate-200/60 shadow-sm scroll-mt-24">
+          <CardHeader className="pb-2">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Wallet className="size-5 text-slate-600" /> Today&apos;s Customer Payments
+              </CardTitle>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+                  <Input
+                    value={cpSearchInput}
+                    onChange={(e) => setCpSearchInput(e.target.value)}
+                    placeholder="Search by customer name..."
+                    className="pl-8 w-full sm:w-64 h-9"
+                  />
+                  {cpSearchInput && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 h-7 px-2 text-slate-400"
+                      onClick={() => setCpSearchInput("")}
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDownloadCpExcel}
+                  disabled={downloadingCpExcel || cpTotal === 0}
+                  className="shrink-0"
+                >
+                  {downloadingCpExcel ? (
+                    <Loader2 className="size-4 mr-1.5 animate-spin" />
+                  ) : (
+                    <Download className="size-4 mr-1.5" />
+                  )}
+                  {downloadingCpExcel ? "Downloading..." : "Download Excel (All)"}
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {customerPayments.length === 0 ? (
+              <p className="text-sm text-slate-400 py-4 text-center">
+                {cpSearchDebounced.trim()
+                  ? `No record for the customer "${cpSearchDebounced}".`
+                  : "No customer payments recorded for this date."}
+              </p>
+            ) : (
+              <>
+                <div className="max-h-96 overflow-y-auto rounded-lg border border-slate-200/60">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-slate-50">
+                        <TableHead className="text-xs uppercase text-slate-500 font-semibold">Customer</TableHead>
+                        <TableHead className="text-xs uppercase text-slate-500 font-semibold">Type</TableHead>
+                        <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Amount Paid</TableHead>
+                        <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right hidden sm:table-cell">Applied to Debt</TableHead>
+                        <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right hidden sm:table-cell">Added to Advance</TableHead>
+                        <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right hidden lg:table-cell">OB After</TableHead>
+                        <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right hidden lg:table-cell">Adv After</TableHead>
+                        <TableHead className="text-xs uppercase text-slate-500 font-semibold hidden md:table-cell">Notes</TableHead>
+                        <TableHead className="w-10" />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {customerPayments.map((p) => (
+                        <TableRow key={p.id}>
+                          <TableCell className="text-sm font-medium">
+                            {p.customers?.name ?? `#${p.customer_id}`}
+                          </TableCell>
+                          <TableCell>
+                            <span className={cn(
+                              "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold",
+                              p.customers?.type === "credit" ? "bg-amber-100 text-amber-800" : "bg-green-100 text-green-800",
+                            )}>
+                              {p.customers?.type ?? "—"}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-sm text-right font-bold tabular-nums text-emerald-700">
+                            Rs. {fmt(Number(p.amount))}
+                          </TableCell>
+                          <TableCell className="text-sm text-right hidden sm:table-cell tabular-nums">
+                            {Number(p.applied_to_opening) > 0 ? (
+                              <span className="text-amber-700">Rs. {fmt(Number(p.applied_to_opening))}</span>
+                            ) : (
+                              <span className="text-slate-300">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-sm text-right hidden sm:table-cell tabular-nums">
+                            {Number(p.applied_to_advance) > 0 ? (
+                              <span className="text-emerald-700">Rs. {fmt(Number(p.applied_to_advance))}</span>
+                            ) : (
+                              <span className="text-slate-300">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-sm text-right hidden lg:table-cell tabular-nums text-slate-600">
+                            Rs. {fmt(Number(p.opening_balance_after ?? 0))}
+                          </TableCell>
+                          <TableCell className="text-sm text-right hidden lg:table-cell tabular-nums text-slate-600">
+                            Rs. {fmt(Number(p.advance_after ?? 0))}
+                          </TableCell>
+                          <TableCell className="text-xs text-slate-500 hidden md:table-cell max-w-[200px] truncate">
+                            {p.notes ?? "—"}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="size-7 text-slate-400 hover:text-red-600"
+                              onClick={() => handleDeleteCustomerPayment(p.id)}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {/* Pagination controls — same shape as Today's Sales */}
+                <div className="flex items-center justify-end gap-3 pt-2">
+                  <span className="text-xs text-slate-500">
+                    Page {cpPage} of {cpTotalPages}
+                    {" · "}
+                    {cpTotal} record{cpTotal === 1 ? "" : "s"}
+                    {cpSearchDebounced.trim() ? ` matching "${cpSearchDebounced}"` : ""}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={cpPage <= 1}
+                      onClick={() => setCpPage((p) => Math.max(1, p - 1))}
+                    >
+                      <ChevronLeft className="size-4" />
+                      Prev
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={cpPage >= cpTotalPages}
+                      onClick={() => setCpPage((p) => p + 1)}
+                    >
+                      Next
+                      <ChevronRight className="size-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Summary line — total amount + total advance added today */}
+                <div className="mt-3 flex flex-wrap gap-3">
+                  <div className="flex-1 min-w-[140px] rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-2.5">
+                    <div className="text-xs uppercase text-emerald-700 font-semibold tracking-wider">Total Received Today</div>
+                    <div className="text-lg font-extrabold text-emerald-700 tabular-nums">
+                      Rs. {fmt(customerPayments.reduce((sum, p) => sum + Number(p.amount), 0))}
+                    </div>
+                  </div>
+                  <div className="flex-1 min-w-[140px] rounded-lg bg-blue-50 border border-blue-200 px-4 py-2.5">
+                    <div className="text-xs uppercase text-blue-700 font-semibold tracking-wider">Added to Advance</div>
+                    <div className="text-lg font-extrabold text-blue-700 tabular-nums">
+                      Rs. {fmt(customerPayments.reduce((sum, p) => sum + Number(p.applied_to_advance), 0))}
+                    </div>
+                  </div>
+                  <div className="flex-1 min-w-[140px] rounded-lg bg-amber-50 border border-amber-200 px-4 py-2.5">
+                    <div className="text-xs uppercase text-amber-700 font-semibold tracking-wider">Applied to Debt</div>
+                    <div className="text-lg font-extrabold text-amber-700 tabular-nums">
+                      Rs. {fmt(customerPayments.reduce((sum, p) => sum + Number(p.applied_to_opening), 0))}
+                    </div>
+                  </div>
                 </div>
               </>
             )}

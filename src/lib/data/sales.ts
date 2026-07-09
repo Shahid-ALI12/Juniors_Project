@@ -175,6 +175,21 @@ export async function createSaleRPC(params: {
   transaction_group_id: string;
   entered_by: string | null;
 }): Promise<void> {
+  // Same as before — see full implementation below (unchanged).
+  return createSaleRPCImpl(params);
+}
+
+async function createSaleRPCImpl(params: {
+  items: { product_id: number; quantity: number; rate_per_bag: number; unit_type: string; bag_weight_kg: number | null }[];
+  customer_id: number;
+  location_id?: number | null;
+  sale_date: string;
+  cash_received: number;
+  rickshaw_fare: number;
+  rickshaw_driver: string | null;
+  transaction_group_id: string;
+  entered_by: string | null;
+}): Promise<void> {
   try {
     // Try RPC first (atomic: sale rows + stock decrement + cash ledger)
     // Pass items as a NATIVE array (supabase-js serializes it correctly).

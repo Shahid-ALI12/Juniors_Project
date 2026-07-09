@@ -175,12 +175,15 @@ export async function getReconciliation(fromDate: string, toDate: string): Promi
 
 // ─── Customer Khata balance ───
 // opening_balance = one-time previous balance entered by the shopkeeper.
-// balance_due = opening_balance + total_bill - total_cash_paid - total_goods_value.
+// advance_payment = current advance the customer paid WITHOUT buying
+//   (subtracted from balance_due so the customer effectively gets goods for it).
+// balance_due = opening_balance + total_bill - total_cash_paid - total_goods_value - advance_payment.
 export interface CustomerBalanceInfo {
   opening_balance: number;
   total_bill: number;
   total_cash_paid: number;
   total_goods_value: number;
+  advance_payment: number;
   balance_due: number;
 }
 
@@ -197,22 +200,25 @@ export async function getCustomerBalance(customerId: number): Promise<CustomerBa
           total_bill: Number(row.total_bill ?? 0),
           total_cash_paid: Number(row.total_cash_paid ?? 0),
           total_goods_value: Number(row.total_goods_value ?? 0),
+          advance_payment: Number(row.advance_payment ?? 0),
           balance_due: Number(row.balance_due ?? 0),
         };
       }
-      // Customer exists but had no sales/purchases → return zeros (with opening_balance if any)
+      // Customer exists but had no sales/purchases → return zeros (with opening_balance + advance if any)
       const { data: cust } = await admin
         .from("customers")
-        .select("opening_balance")
+        .select("opening_balance, advance_payment")
         .eq("id", customerId)
         .maybeSingle();
       const ob = Number(cust?.opening_balance ?? 0);
+      const adv = Number((cust as any)?.advance_payment ?? 0);
       return {
         opening_balance: ob,
         total_bill: 0,
         total_cash_paid: 0,
         total_goods_value: 0,
-        balance_due: ob,
+        advance_payment: adv,
+        balance_due: ob - adv,
       };
     }
   } catch (rpcErr: any) {
@@ -224,13 +230,14 @@ export async function getCustomerBalance(customerId: number): Promise<CustomerBa
   }
 
   // ─── Fallback: original TS logic (3 queries + JS reduction) ───
-  // Fetch customer row to get opening_balance (defaults to 0 if customer missing)
+  // Fetch customer row to get opening_balance + advance_payment (defaults to 0 if customer missing)
   const { data: customer } = await admin
     .from("customers")
-    .select("opening_balance")
+    .select("opening_balance, advance_payment")
     .eq("id", customerId)
     .maybeSingle();
   const opening_balance = (customer?.opening_balance as number) ?? 0;
+  const advance_payment = Number((customer as any)?.advance_payment ?? 0);
 
   const { data: sales, error } = await admin
     .from("sales")
@@ -250,7 +257,8 @@ export async function getCustomerBalance(customerId: number): Promise<CustomerBa
     total_bill,
     total_cash_paid,
     total_goods_value,
-    balance_due: opening_balance + total_bill - total_cash_paid - total_goods_value,
+    advance_payment,
+    balance_due: opening_balance + total_bill - total_cash_paid - total_goods_value - advance_payment,
   };
 }
 
@@ -269,6 +277,7 @@ export async function getAllCustomerBalances(): Promise<Record<number, CustomerB
           total_bill: Number(row.total_bill ?? 0),
           total_cash_paid: Number(row.total_cash_paid ?? 0),
           total_goods_value: Number(row.total_goods_value ?? 0),
+          advance_payment: Number(row.advance_payment ?? 0),
           balance_due: Number(row.balance_due ?? 0),
         };
       }
@@ -290,7 +299,7 @@ export async function getAllCustomerBalances(): Promise<Record<number, CustomerB
   const map: Record<number, CustomerBalanceInfo> = {};
   for (const s of sales || []) {
     const cid = s.customer_id as number;
-    if (!map[cid]) map[cid] = { opening_balance: 0, total_bill: 0, total_cash_paid: 0, total_goods_value: 0, balance_due: 0 };
+    if (!map[cid]) map[cid] = { opening_balance: 0, total_bill: 0, total_cash_paid: 0, total_goods_value: 0, advance_payment: 0, balance_due: 0 };
     map[cid].total_bill += (s.quantity as number) * (s.rate_per_bag as number) + (s.rickshaw_fare as number);
     map[cid].total_cash_paid += s.cash_received as number;
   }
@@ -302,30 +311,33 @@ export async function getAllCustomerBalances(): Promise<Record<number, CustomerB
     .not("settled_by_customer_id", "is", null);
   for (const p of purchases || []) {
     const cid = p.settled_by_customer_id as number;
-    if (!map[cid]) map[cid] = { opening_balance: 0, total_bill: 0, total_cash_paid: 0, total_goods_value: 0, balance_due: 0 };
+    if (!map[cid]) map[cid] = { opening_balance: 0, total_bill: 0, total_cash_paid: 0, total_goods_value: 0, advance_payment: 0, balance_due: 0 };
     map[cid].total_goods_value += (p.quantity as number) * (p.rate_per_bag as number);
   }
 
-  // Fetch opening_balance for all customers in one shot
+  // Fetch opening_balance + advance_payment for all customers in one shot
   const { data: customerRows } = await admin
     .from("customers")
-    .select("id, opening_balance");
+    .select("id, opening_balance, advance_payment");
   const obMap: Record<number, number> = {};
+  const advMap: Record<number, number> = {};
   for (const c of customerRows || []) {
     obMap[c.id as number] = (c.opening_balance as number) ?? 0;
+    advMap[c.id as number] = Number((c as any)?.advance_payment ?? 0);
   }
 
   // Make sure every customer (even those with no sales but with an opening_balance)
-  // appears in the map, then compute balance_due including opening_balance.
+  // appears in the map, then compute balance_due including opening_balance - advance_payment.
   for (const c of customerRows || []) {
     const cid = c.id as number;
-    if (!map[cid]) map[cid] = { opening_balance: 0, total_bill: 0, total_cash_paid: 0, total_goods_value: 0, balance_due: 0 };
+    if (!map[cid]) map[cid] = { opening_balance: 0, total_bill: 0, total_cash_paid: 0, total_goods_value: 0, advance_payment: 0, balance_due: 0 };
     map[cid].opening_balance = obMap[cid] ?? 0;
+    map[cid].advance_payment = advMap[cid] ?? 0;
   }
 
   for (const cid of Object.keys(map)) {
     const b = map[Number(cid)];
-    b.balance_due = b.opening_balance + b.total_bill - b.total_cash_paid - b.total_goods_value;
+    b.balance_due = b.opening_balance + b.total_bill - b.total_cash_paid - b.total_goods_value - b.advance_payment;
   }
 
   return map;

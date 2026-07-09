@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/server-user";
 import { getSales, getSalesPaginated, deleteSale, deleteSalesByGroup, deleteSalesByMixOrder, createSaleRPC } from "@/lib/data/sales";
+import { consumeCustomerAdvance } from "@/lib/data/customer-payments";
 import { getErrorDetail } from "@/lib/api-error";
 import { pktToday } from "@/lib/pkt-date";
 import { cachedGet, invalidateByTag, userKey, userTag } from "@/lib/cache";
@@ -71,13 +72,17 @@ export async function GET(request: NextRequest) {
 }
 
 // POST — atomic sale via RPC (cart → multiple sale rows + stock decrement + cash ledger)
+// Optional body field `apply_advance`: when > 0, the sale will consume that
+// much from the customer's advance_payment column AFTER the sale is recorded.
+// The caller is responsible for already having added `apply_advance` to
+// `cash_received` (so the sale's cash_received reflects the offset).
 export async function POST(request: NextRequest) {
   const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   try {
     const body = await request.json();
-    const { items, customer_id, location_id, sale_date, cash_received, rickshaw_fare, rickshaw_driver } = body;
+    const { items, customer_id, location_id, sale_date, cash_received, rickshaw_fare, rickshaw_driver, apply_advance } = body;
 
     if (!items?.length || !customer_id) {
       return NextResponse.json({ error: "items, customer_id are required" }, { status: 400 });
@@ -97,7 +102,24 @@ export async function POST(request: NextRequest) {
       entered_by: `admin:${auth.user.id}`,
     });
 
+    // ── Optional: consume customer advance payment ──
+    // The caller (Daily Entry UI) decides how much of the customer's
+    // advance to apply toward this sale. The amount has already been
+    // added to cash_received above so the sale's balance math is correct.
+    // Here we decrement customer.advance_payment by the same amount.
+    let advanceConsumed = 0;
+    const requestedAdvance = Number(apply_advance) || 0;
+    if (requestedAdvance > 0) {
+      try {
+        advanceConsumed = await consumeCustomerAdvance(Number(customer_id), requestedAdvance);
+      } catch (advErr: any) {
+        // Non-fatal — the sale is already recorded. Log and continue.
+        console.warn("consumeCustomerAdvance failed (non-critical):", advErr?.message);
+      }
+    }
+
     // Sale affects: sales list, customer balances, dashboard, stock, reconciliation, cash
+    // If advance was consumed, customer-balance + customer list also need invalidation.
     invalidateByTag(
       userTag(auth.user.id, "sales"),
       userTag(auth.user.id, "customer-balance"),
@@ -106,11 +128,13 @@ export async function POST(request: NextRequest) {
       userTag(auth.user.id, "reconciliation"),
       userTag(auth.user.id, "cash"),
       userTag(auth.user.id, "mix-orders"),
+      userTag(auth.user.id, "customers"),
+      userTag(auth.user.id, "customer-payments"),
     );
 
     // Fetch the created sales for the client
     const createdSales = await getSales({ transaction_group_id: groupId });
-    return NextResponse.json({ sales: createdSales }, { status: 201 });
+    return NextResponse.json({ sales: createdSales, advance_consumed: advanceConsumed }, { status: 201 });
   } catch (err) {
     console.error("Create sale error:", err);
     const { getErrorDetail } = await import("@/lib/api-error");

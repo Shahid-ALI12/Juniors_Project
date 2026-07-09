@@ -8,6 +8,10 @@ interface CustomerBillData {
   totalCashPaid: number;
   balanceDue: number;
   generatedAt: string;
+  // Customer's current advance balance (paid without buying anything).
+  // Subtracted from Balance Due so the bill shows the true net payable.
+  // Defaults to 0 when not provided (migration not yet applied).
+  advancePayment?: number;
   // Optional mix-order driver info lookup — keyed by mix_order_id.
   // Mix orders store driver_name/driver_rent on the mix_orders table
   // (NOT on individual sale rows, where rickshaw_fare = 0).
@@ -78,10 +82,11 @@ export async function generateCustomerBillPDF(bill: CustomerBillData) {
   }
 
   const totalGoodsValue = bill.totalGoodsValue ?? 0;
+  const advancePayment = bill.advancePayment ?? 0;
   const effectiveTotalBill = actualTotalBill;
   const effectiveTotalCash = actualTotalCash;
   const effectiveBalanceDue =
-    bill.openingBalance + effectiveTotalBill - effectiveTotalCash - totalGoodsValue;
+    bill.openingBalance + effectiveTotalBill - effectiveTotalCash - totalGoodsValue - advancePayment;
 
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pw = doc.internal.pageSize.getWidth();
@@ -210,6 +215,18 @@ export async function generateCustomerBillPDF(bill: CustomerBillData) {
   doc.text(`Rs. ${bill.openingBalance.toLocaleString("en-PK")}`, rightX + 32, y + 11);
   doc.text(`Rs. ${effectiveTotalBill.toLocaleString("en-PK")}`, rightX + 32, y + 17);
   doc.text(`Rs. ${effectiveTotalCash.toLocaleString("en-PK")}`, rightX + 32, y + 23);
+
+  // Advance Payment row — shown only when customer has advance balance > 0
+  if (advancePayment > 0) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(...C_GRAY);
+    doc.text("Advance Paid", rightX + 5, y + 29);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...C_GREEN);
+    doc.text(`Rs. ${advancePayment.toLocaleString("en-PK")}`, rightX + 32, y + 29);
+  }
 
   y += colH + 8;
 
@@ -394,9 +411,11 @@ export async function generateCustomerBillPDF(bill: CustomerBillData) {
   const fy = (doc as any).lastAutoTable.finalY + 8;
   const tBoxW = 80;
   const tBoxX = pw - m - tBoxW;
-  // 4 rows when opening balance > 0, else 3 rows
+  // 4 rows when opening balance > 0, else 3 rows. Add 1 more row when advance > 0.
   const hasOpening = bill.openingBalance > 0;
-  const tBoxH = 8 + (hasOpening ? 4 : 3) * 7 + 10;
+  const hasAdvance = advancePayment > 0;
+  const rowCount = (hasOpening ? 4 : 3) + (hasAdvance ? 1 : 0);
+  const tBoxH = 8 + rowCount * 7 + 10;
 
   doc.setFillColor(...C_WHITE);
   doc.setDrawColor(...C_GREEN);
@@ -438,6 +457,18 @@ export async function generateCustomerBillPDF(bill: CustomerBillData) {
   doc.setFont("helvetica", "bold");
   doc.setTextColor(...C_DARK);
   doc.text(totalCashStr, valX, ty, { align: "right" });
+
+  // Advance Payment (only when > 0)
+  if (hasAdvance) {
+    ty += 7;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(...C_GRAY);
+    doc.text("Advance Paid:", labelX, ty);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(...C_GREEN);
+    doc.text(`Rs. ${advancePayment.toLocaleString("en-PK")}`, valX, ty, { align: "right" });
+  }
 
   // Divider
   ty += 5;

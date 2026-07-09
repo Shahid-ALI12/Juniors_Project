@@ -74,10 +74,36 @@ export interface Customer {
   // re-entering all historical sales). Added to total bill on every
   // statement so balance_due = opening_balance + total_bill - cash_paid - goods.
   opening_balance: number;
+  // Current advance balance the customer has paid WITHOUT buying anything.
+  // Subtracted from balance_due so the customer effectively gets goods for
+  // it later (via the "Use advance payment" checkbox on Complete Sale).
+  // Defaults to 0 when the migration hasn't been applied yet.
+  advance_payment?: number;
   // Tombstone for permanent UI deletion. NULL = visible in UI.
   // Set = customer removed from all dropdowns / Manage Customers page,
   // but the DB row stays so historical sales/purchases keep working.
   deleted_at?: string | null;
+}
+
+// ─── Customer Payments (incoming money without a sale) ───
+// One row per payment. The record_customer_payment() RPC computes
+// applied_to_opening / applied_to_advance atomically.
+export interface CustomerPayment {
+  id: number;
+  customer_id: number;
+  payment_date: string;
+  amount: number;
+  applied_to_opening: number;
+  applied_to_advance: number;
+  opening_balance_before: number | null;
+  opening_balance_after: number | null;
+  advance_before: number | null;
+  advance_after: number | null;
+  notes: string | null;
+  entered_by: string | null;
+  created_at: string;
+  // Joined (optional — only present when API includes it)
+  customers?: { id: number; name: string; type: string };
 }
 
 export interface Sale {
@@ -219,6 +245,10 @@ export interface CustomerBalance {
   total_bill: number;
   total_cash_paid: number;
   total_goods_value: number;
+  // Customer's current advance balance (paid without buying).
+  // Subtracted from balance_due. Defaults to 0 when the migration
+  // hasn't been applied yet.
+  advance_payment?: number;
   balance_due: number;
 }
 
