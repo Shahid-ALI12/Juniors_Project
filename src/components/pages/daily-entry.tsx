@@ -56,7 +56,6 @@ import {
   Truck,
   ChevronLeft,
   ChevronRight,
-  FileJson,
   Download,
   CalendarDays,
 } from "lucide-react";
@@ -64,7 +63,7 @@ import { toast } from "sonner";
 import ConfirmAction from "@/components/shared/confirm-action";
 import { AvailableStock } from "@/components/shared/available-stock";
 import { pktToday } from "@/lib/pkt-date";
-import { downloadAllJson } from "@/lib/download-json";
+import { downloadExcel } from "@/lib/download-excel";
 
 const fmt = (n: number) => n.toLocaleString("en-PK");
 
@@ -109,7 +108,7 @@ export default function DailyEntryPage() {
   const [salesPage, setSalesPage] = useState(1);
   const [salesTotal, setSalesTotal] = useState(0);
   const [salesTotalPages, setSalesTotalPages] = useState(1);
-  const [downloadingSalesJson, setDownloadingSalesJson] = useState(false);
+  const [downloadingSalesExcel, setDownloadingSalesExcel] = useState(false);
 
   // Debounce search input by 350ms + reset to page 1 on new search
   useEffect(() => {
@@ -182,24 +181,83 @@ export default function DailyEntryPage() {
     loadDayData(date, salesSearchDebounced, salesPage);
   }, [date, salesSearchDebounced, salesPage, loadDayData]);
 
-  // ── Download ALL sales for the current date as JSON ──
+  // ── Download ALL sales for the current date as Excel ──
   // Walks pages server-side so we get every sale record for the date,
   // regardless of the current search filter (search filter is for finding
   // records, not for limiting the export).
-  const handleDownloadSalesJson = async () => {
-    setDownloadingSalesJson(true);
+  const handleDownloadSalesExcel = async () => {
+    setDownloadingSalesExcel(true);
     try {
-      await downloadAllJson(
-        "/api/sales",
-        { sale_date: date },
-        `sales-${date}.json`,
-        "sales",
-      );
-      toast.success("Sales JSON downloaded");
+      const all: Record<string, any>[] = [];
+      let page = 1;
+      let totalPages = 1;
+      const pageSize = 200;
+      while (page <= totalPages) {
+        const qs = new URLSearchParams({
+          sale_date: date,
+          page: String(page),
+          pageSize: String(pageSize),
+        });
+        const res = await fetch(`/api/sales?${qs.toString()}`);
+        if (!res.ok) throw new Error("Failed to fetch sales");
+        const body = await res.json();
+        const rows: any[] = Array.isArray(body?.sales) ? body.sales : [];
+        all.push(...rows);
+        totalPages = typeof body?.totalPages === "number" ? body.totalPages : 1;
+        if (rows.length === 0) break;
+        page += 1;
+      }
+      if (all.length === 0) {
+        toast.error("No sales to download for this date");
+        return;
+      }
+      await downloadExcel(all, [
+        { key: "sale_date", label: "Date" },
+        {
+          key: "customers",
+          label: "Customer",
+          fmt: (v: any) => v?.name ?? "—",
+        },
+        {
+          key: "products",
+          label: "Product",
+          fmt: (v: any) => v?.name ?? "—",
+        },
+        { key: "quantity", label: "Qty", align: "right" },
+        { key: "unit_type", label: "Unit" },
+        { key: "rate_per_bag", label: "Rate", align: "right" },
+        { key: "rickshaw_fare", label: "Rickshaw", align: "right" },
+        {
+          key: "_bill",
+          label: "Bill",
+          align: "right",
+          fmt: (_v: any, row: any) =>
+            String(
+              (Number(row.quantity) || 0) * (Number(row.rate_per_bag) || 0) +
+                (Number(row.rickshaw_fare) || 0),
+            ),
+        },
+        { key: "cash_received", label: "Cash", align: "right" },
+        {
+          key: "_remaining",
+          label: "Remaining",
+          align: "right",
+          fmt: (_v: any, row: any) =>
+            String(
+              (Number(row.quantity) || 0) * (Number(row.rate_per_bag) || 0) +
+                (Number(row.rickshaw_fare) || 0) -
+                (Number(row.cash_received) || 0),
+            ),
+        },
+        { key: "rickshaw_driver_name", label: "Rickshaw Driver" },
+        { key: "entered_by", label: "Entered By" },
+        { key: "mix_order_id", label: "Mix Order ID" },
+      ], `sales-${date}`);
+      toast.success(`Sales Excel downloaded (${all.length} records)`);
     } catch (e: any) {
-      toast.error(e?.message || "Failed to download JSON");
+      toast.error(e?.message || "Failed to download Excel");
     } finally {
-      setDownloadingSalesJson(false);
+      setDownloadingSalesExcel(false);
     }
   };
 
@@ -1015,16 +1073,16 @@ export default function DailyEntryPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={handleDownloadSalesJson}
-                  disabled={downloadingSalesJson}
+                  onClick={handleDownloadSalesExcel}
+                  disabled={downloadingSalesExcel || salesTotal === 0}
                   className="shrink-0"
                 >
-                  {downloadingSalesJson ? (
+                  {downloadingSalesExcel ? (
                     <Loader2 className="size-4 mr-1.5 animate-spin" />
                   ) : (
-                    <FileJson className="size-4 mr-1.5" />
+                    <Download className="size-4 mr-1.5" />
                   )}
-                  {downloadingSalesJson ? "Downloading..." : "Download JSON"}
+                  {downloadingSalesExcel ? "Downloading..." : "Download Excel (All)"}
                 </Button>
               </div>
             </div>

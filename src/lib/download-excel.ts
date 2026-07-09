@@ -15,7 +15,11 @@ export type Col = {
   key: string;
   label: string;
   align?: "left" | "right";
-  fmt?: (v: any) => string;
+  /**
+   * Optional formatter. Receives the raw cell value plus the full row so
+   * computed columns (key starts with `_`) can use other fields.
+   */
+  fmt?: (value: any, row: Record<string, any>) => string;
 };
 
 /**
@@ -33,7 +37,7 @@ export async function downloadExcel(
   const data = rows.map((row) =>
     cols.map((c) => {
       const raw = row[c.key];
-      return c.fmt ? c.fmt(raw) : String(raw ?? "");
+      return c.fmt ? c.fmt(raw, row) : String(raw ?? "");
     }),
   );
   const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);

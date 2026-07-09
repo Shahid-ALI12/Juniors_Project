@@ -59,10 +59,10 @@ export function QuickNav({ items, title }: { items: QuickNavItem[]; title?: stri
   };
 
   return (
-    <div className="sticky top-0 z-30 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 pb-3 pt-1 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200/70">
-      <div className="max-w-7xl mx-auto flex items-center gap-2 overflow-x-auto no-scrollbar">
+    <div className="sticky top-0 z-30 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 pb-3 pt-2 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200/70">
+      <div className="max-w-7xl mx-auto flex flex-wrap items-center gap-2">
         {title && (
-          <span className="text-[0.65rem] font-bold uppercase tracking-wider text-slate-400 shrink-0 pr-2 border-r border-slate-200 mr-1 hidden sm:inline">
+          <span className="text-[0.65rem] font-bold uppercase tracking-wider text-slate-400 shrink-0 pr-2 border-r border-slate-200 mr-1 w-full sm:w-auto sm:inline-block mb-1 sm:mb-0">
             {title}
           </span>
         )}

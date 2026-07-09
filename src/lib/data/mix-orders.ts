@@ -118,6 +118,10 @@ export async function createMixOrderRPC(params: {
 }): Promise<number> {
   try {
     // Try RPC first (atomic: mix_orders row + sale lines + cash ledger)
+    // Pass items as a NATIVE array (supabase-js serializes it correctly).
+    // Avoid JSON.stringify — older deployed create_mix_order() functions
+    // do `jsonb_typeof(p_items) <> 'array'` which fails if the value arrives
+    // as a JSON string scalar instead of a JSON array.
     const { data, error } = await admin.rpc("create_mix_order", {
       p_customer_id: params.customer_id,
       p_location_id: params.location_id ?? 1, // default to Farmhouse
@@ -125,17 +129,42 @@ export async function createMixOrderRPC(params: {
       p_target_weight_kg: params.target_weight_kg,
       p_cash_received: params.cash_received,
       p_entered_by: params.entered_by,
-      p_items: JSON.stringify(params.items),
+      p_items: params.items as unknown as any,
       p_driver_name: params.driver_name ?? null,
       p_driver_rent: params.driver_rent ?? 0,
     });
     if (error) throw error;
-    // RPC returns TABLE(id bigint) — extract first row's id
-    return Array.isArray(data) ? (data as any)[0]?.id as number : data as number;
+    // RPC returns TABLE(id bigint) — extract first row's id.
+    // Older deployed versions return void (data === null); in that case
+    // we look up the just-created mix_order by customer + date.
+    if (Array.isArray(data) && (data as any)[0]?.id != null) {
+      return (data as any)[0].id as number;
+    }
+    if (typeof data === "number") return data as number;
+    // Fallback: fetch the latest mix_order for this customer/date.
+    const { data: latest, error: latestErr } = await admin
+      .from("mix_orders")
+      .select("id")
+      .eq("customer_id", params.customer_id)
+      .eq("order_date", params.order_date)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single();
+    if (latestErr || !latest) {
+      // Even if we can't get the id, the order WAS created — return 0 as
+      // a sentinel so the caller knows it succeeded (no exception thrown).
+      return 0;
+    }
+    return (latest as any).id as number;
   } catch (rpcErr: any) {
     const msg = rpcErr?.message || "";
-    if (msg.includes("does not exist") || msg.includes("Could not find the function") || msg.includes("cannot extract elements from a scalar")) {
-      console.warn("create_mix_order RPC not found or scalar error — falling back to direct insert");
+    if (
+      msg.includes("does not exist") ||
+      msg.includes("Could not find the function") ||
+      msg.includes("cannot extract elements from a scalar") ||
+      msg.includes("Items array cannot be empty")
+    ) {
+      console.warn("create_mix_order RPC failed — falling back to direct insert. Error:", msg);
       return createMixOrderFallback(params);
     }
     throw rpcErr;

@@ -666,7 +666,7 @@ export default function DayReconciliation() {
                                   col.key === "balance" && row.balance <= 0 ? "text-green-600" : "",
                                 )}
                               >
-                                {col.fmt ? col.fmt(row[col.key]) : String(row[col.key] ?? "—")}
+                                {col.fmt ? col.fmt(row[col.key], row) : String(row[col.key] ?? "—")}
                               </TableCell>
                             ))}
                           </TableRow>
