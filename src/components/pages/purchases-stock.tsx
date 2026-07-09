@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { fetchCached, invalidateCache, apiError } from "@/store";
 import { PageHeader } from "@/components/shared/page-header";
 import { QuickNav } from "@/components/shared/quick-nav";
-import type { Product, Customer, Purchase, Supplier, ProductStock } from "@/types";
+import type { Product, Customer, Purchase, Supplier, ProductStock, Location } from "@/types";
 import { LocationSelect } from "@/components/shared/location-select";
 
 import { Button } from "@/components/ui/button";
@@ -54,6 +54,8 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  FileText,
+  Receipt as ReceiptIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { pktToday } from "@/lib/pkt-date";
@@ -87,6 +89,8 @@ export default function PurchasesStockPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [stockData, setStockData] = useState<ProductStock[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
   // Purchase History pagination (10 records per page)
   const [historyPage, setHistoryPage] = useState(1);
@@ -187,6 +191,17 @@ export default function PurchasesStockPage() {
       }
     } catch (e: any) {
       errors.push("Purchases: " + (e.message || "unknown error"));
+    }
+
+    // Locations (for bill/receipt location name lookup)
+    try {
+      const locRes = await fetch("/api/locations", { cache: "no-store" });
+      if (locRes.ok) {
+        const locData = await locRes.json();
+        if (Array.isArray(locData.locations)) setLocations(locData.locations);
+      }
+    } catch {
+      // Non-critical — bill/receipt will fall back to "Farmhouse"
     }
 
     setLoadErrors(errors);
@@ -507,6 +522,79 @@ export default function PurchasesStockPage() {
       toast.success("Purchase deleted.");
     } catch (e: any) {
       toast.error(e.message || "Failed to delete purchase");
+    }
+  };
+
+  // ── Location name lookup (for bill/receipt) ──
+  const getLocationName = (locId: number | null): string => {
+    if (!locId) return "Farmhouse";
+    const loc = locations.find((l) => l.id === locId);
+    return loc?.name ?? "Farmhouse";
+  };
+
+  // ── Download Bill PDF for a single purchase row ──
+  const handleDownloadBill = async (p: Purchase) => {
+    if (downloadingId !== null) return;
+    setDownloadingId(p.id);
+    try {
+      // Resolve joined objects from local state (p.products/p.suppliers/p.customers
+      // may be incomplete depending on the API select list).
+      const product = products.find((pr) => pr.id === p.product_id) ?? null;
+      const customer = p.settled_by_customer_id
+        ? (customers.find((c) => c.id === p.settled_by_customer_id) ?? null)
+        : null;
+      // For supplier purchases, p.suppliers may have come from the API join;
+      // fall back to local suppliers list.
+      const supplier = !p.settled_by_customer_id
+        ? (p.suppliers ?? suppliers.find((s) => s.id === p.supplier_id) ?? null)
+        : null;
+
+      const { generatePurchaseBillPDF } = await import("@/lib/generate-purchase-bill");
+      await generatePurchaseBillPDF({
+        purchase: p,
+        customer,
+        supplier,
+        product,
+        locationName: getLocationName(p.location_id),
+        generatedAt: new Date().toLocaleString("en-PK"),
+      });
+      toast.success("Bill downloaded.");
+    } catch (err: any) {
+      console.error("Bill download error:", err);
+      toast.error(err?.message || "Failed to generate bill.");
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  // ── Download Receipt PDF for a single purchase row ──
+  const handleDownloadReceipt = async (p: Purchase) => {
+    if (downloadingId !== null) return;
+    setDownloadingId(p.id);
+    try {
+      const product = products.find((pr) => pr.id === p.product_id) ?? null;
+      const customer = p.settled_by_customer_id
+        ? (customers.find((c) => c.id === p.settled_by_customer_id) ?? null)
+        : null;
+      const supplier = !p.settled_by_customer_id
+        ? (p.suppliers ?? suppliers.find((s) => s.id === p.supplier_id) ?? null)
+        : null;
+
+      const { generatePurchaseReceiptPDF } = await import("@/lib/generate-purchase-receipt");
+      await generatePurchaseReceiptPDF({
+        purchase: p,
+        customer,
+        supplier,
+        product,
+        locationName: getLocationName(p.location_id),
+        generatedAt: new Date().toLocaleString("en-PK"),
+      });
+      toast.success("Receipt downloaded.");
+    } catch (err: any) {
+      console.error("Receipt download error:", err);
+      toast.error(err?.message || "Failed to generate receipt.");
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -1056,6 +1144,7 @@ export default function PurchasesStockPage() {
                           <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Rate</TableHead>
                           <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Value</TableHead>
                           <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Cash Paid</TableHead>
+                          <TableHead className="text-xs uppercase text-slate-500 font-semibold text-center whitespace-nowrap">Bill / Receipt</TableHead>
                           <TableHead className="text-xs uppercase text-slate-500 font-semibold text-center"><span className="sr-only">Delete</span></TableHead>
                         </TableRow>
                       </TableHeader>
@@ -1082,6 +1171,40 @@ export default function PurchasesStockPage() {
                               <TableCell className="text-sm text-slate-700 text-right font-mono">{fmt(p.rate_per_bag)}</TableCell>
                               <TableCell className="text-sm text-slate-900 text-right font-mono font-semibold">{fmt(value)}</TableCell>
                               <TableCell className="text-sm text-slate-700 text-right font-mono">{p.cash_paid > 0 ? fmt(p.cash_paid) : "—"}</TableCell>
+                              <TableCell className="text-center">
+                                <div className="flex items-center justify-center gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleDownloadBill(p)}
+                                    disabled={downloadingId !== null}
+                                    title="Download Bill"
+                                    aria-label="Download Bill"
+                                    className="size-8 text-slate-500 hover:text-amber-700 hover:bg-amber-50"
+                                  >
+                                    {downloadingId === p.id ? (
+                                      <Loader2 className="size-3.5 animate-spin" />
+                                    ) : (
+                                      <FileText className="size-3.5" />
+                                    )}
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleDownloadReceipt(p)}
+                                    disabled={downloadingId !== null}
+                                    title="Download Receipt"
+                                    aria-label="Download Receipt"
+                                    className="size-8 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50"
+                                  >
+                                    {downloadingId === p.id ? (
+                                      <Loader2 className="size-3.5 animate-spin" />
+                                    ) : (
+                                      <ReceiptIcon className="size-3.5" />
+                                    )}
+                                  </Button>
+                                </div>
+                              </TableCell>
                               <TableCell className="text-center">
                                 <Button variant="ghost" size="icon" onClick={() => handleDeletePurchase(p.id)} className="size-8 text-slate-400 hover:text-red-600 hover:bg-red-50">
                                   <Trash2 className="size-3.5" />
