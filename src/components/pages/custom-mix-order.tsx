@@ -20,6 +20,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useMixStore, fetchCached, invalidateCache, apiError } from "@/store";
 import { PageHeader, MetricCard } from "@/components/shared/page-header";
+import { QuickNav } from "@/components/shared/quick-nav";
 import type { MixIngredient, Product } from "@/types";
 import { LocationSelect } from "@/components/shared/location-select";
 import { AvailableStock } from "@/components/shared/available-stock";
@@ -512,8 +513,21 @@ export default function CustomMixOrder() {
               mix order is saved (stockRefreshTrigger bumps). */}
           <AvailableStock refreshTrigger={stockRefreshTrigger} />
 
+          <QuickNav
+            title="Jump to"
+            items={[
+              { id: "section-new-order", label: "New Mix Order", icon: FlaskConical, iconColor: "text-emerald-600" },
+              ...(store.targetWeight ? [
+                { id: "section-metrics", label: "Mix Metrics", icon: Scale },
+                { id: "section-ingredient", label: "Add Ingredient", icon: Plus },
+                { id: "section-current-mix", label: "Current Mix", icon: Receipt },
+              ] : []),
+              { id: "section-past", label: "Past Mix Orders", icon: Receipt, iconColor: "text-slate-600" },
+            ]}
+          />
+
           {/* Start New Order Form */}
-          <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-6 space-y-6">
+          <div id="section-new-order" className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-6 space-y-6 scroll-mt-24">
             <div className="flex items-center gap-2 mb-1">
               <FlaskConical className="w-5 h-5 text-slate-500" />
               <h2 className="text-base font-bold text-slate-800">
@@ -642,6 +656,7 @@ export default function CustomMixOrder() {
           </div>
 
           {/* ── Past Mix Orders ── */}
+          <div id="section-past" className="scroll-mt-24">
           <PastMixOrdersSection
             pastSearchInput={pastSearchInput}
             setPastSearchInput={setPastSearchInput}
@@ -661,6 +676,7 @@ export default function CustomMixOrder() {
             isSearchActive={pastSearchDebounced.trim().length > 0}
             searchQuery={pastSearchDebounced}
           />
+          </div>
         </div>
       </div>
     );
@@ -681,15 +697,24 @@ export default function CustomMixOrder() {
             in the Metrics Row below. */}
         <AvailableStock refreshTrigger={stockRefreshTrigger} hideSummary />
 
+        <QuickNav
+          title="Jump to"
+          items={[
+            { id: "section-metrics", label: "Mix Metrics", icon: Scale },
+            { id: "section-ingredient", label: "Add Ingredient", icon: Plus },
+            { id: "section-current-mix", label: "Current Mix", icon: Receipt },
+          ]}
+        />
+
         {/* ── Metrics Row ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div id="section-metrics" className="grid grid-cols-1 sm:grid-cols-3 gap-4 scroll-mt-24">
           <MetricCard label="Target Weight" value={`${fmtRs(store.targetWeight!)} kg`} color="blue" />
           <MetricCard label="Weight Used So Far" value={`${fmtRs(usedWeight)} kg`} color="purple" />
           <MetricCard label="Remaining to Fill" value={`${fmtRs(Math.max(0, remaining))} kg`} color={remaining <= 0 ? "green" : "orange"} />
         </div>
 
         {/* ── Add Ingredient Form ── */}
-        <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-6 space-y-4">
+        <div id="section-ingredient" className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-6 space-y-4 scroll-mt-24">
           <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
             <Plus className="w-4 h-4 text-slate-400" />
             Add an Ingredient
@@ -755,7 +780,7 @@ export default function CustomMixOrder() {
         </div>
 
         {/* ── Current Mix Table ── */}
-        <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-6 space-y-4">
+        <div id="section-current-mix" className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-6 space-y-4 scroll-mt-24">
           <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
             <Scale className="w-4 h-4 text-slate-400" />
             Current Mix

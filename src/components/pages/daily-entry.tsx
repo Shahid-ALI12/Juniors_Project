@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { useCartStore, fetchCached, invalidateCache, apiError } from "@/store";
 import { PageHeader } from "@/components/shared/page-header";
+import { QuickNav } from "@/components/shared/quick-nav";
 import type { CartItem, Sale, Expense, Product, Customer, ProductStock, Location } from "@/types";
 import { LocationSelect } from "@/components/shared/location-select";
 
@@ -57,6 +58,7 @@ import {
   ChevronRight,
   FileJson,
   Download,
+  CalendarDays,
 } from "lucide-react";
 import { toast } from "sonner";
 import ConfirmAction from "@/components/shared/confirm-action";
@@ -645,7 +647,21 @@ export default function DailyEntryPage() {
         <ConfirmAction open={confirmOpen} onOpenChange={setConfirmOpen} title={confirmTitle} description={confirmDesc} confirmLabel="Haan, Delete Karo" variant="danger" onConfirm={confirmAction ?? (() => {})} loading={confirmLoading} />
         <PageHeader title="Daily Entry" subtitle="Add today's sales and expenses, and see the live cash summary." />
 
-        <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+        <QuickNav
+          title="Jump to"
+          items={[
+            { id: "section-filter", label: "Date / Location", icon: CalendarDays },
+            { id: "section-add-sale", label: "Add a Sale", icon: Plus },
+            { id: "section-cart", label: "Current Cart", icon: ShoppingCart },
+            { id: "section-search-customer", label: "Search Customer", icon: Search },
+            { id: "section-complete-sale", label: "Complete Sale", icon: CheckCircle2 },
+            { id: "section-today-sales", label: "Today's Sales", icon: Receipt },
+            { id: "section-add-expense", label: "Add Expense", icon: TrendingDown },
+            { id: "section-today-expenses", label: "Today's Expenses", icon: TrendingDown, iconColor: "text-orange-500" },
+          ]}
+        />
+
+        <Card id="section-filter" className="rounded-2xl border-slate-200/60 shadow-sm scroll-mt-24">
           <CardContent className="p-4 flex flex-wrap items-end gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs uppercase text-slate-500 font-semibold tracking-wider">Date</Label>
@@ -664,7 +680,7 @@ export default function DailyEntryPage() {
             is bumped (after sale complete / sale delete / mix order delete). */}
         <AvailableStock refreshTrigger={stockRefreshTrigger} />
 
-        <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+        <Card id="section-add-sale" className="rounded-2xl border-slate-200/60 shadow-sm scroll-mt-24">
           <CardHeader className="pb-2">
             <CardTitle className="text-lg flex items-center gap-2">
               <Plus className="size-5 text-slate-600" />
@@ -769,7 +785,7 @@ export default function DailyEntryPage() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+        <Card id="section-cart" className="rounded-2xl border-slate-200/60 shadow-sm scroll-mt-24">
           <CardHeader className="pb-2">
             <CardTitle className="text-lg flex items-center gap-2">
               <ShoppingCart className="size-5 text-slate-600" />
@@ -844,7 +860,7 @@ export default function DailyEntryPage() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+        <Card id="section-search-customer" className="rounded-2xl border-slate-200/60 shadow-sm scroll-mt-24">
           <CardHeader className="pb-2">
             <CardTitle className="text-lg flex items-center gap-2">
               <Search className="size-5 text-slate-600" /> Search Customer
@@ -876,7 +892,7 @@ export default function DailyEntryPage() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+        <Card id="section-complete-sale" className="rounded-2xl border-slate-200/60 shadow-sm scroll-mt-24">
           <CardHeader className="pb-2">
             <CardTitle className="text-lg flex items-center gap-2">
               <CheckCircle2 className="size-5 text-green-600" /> Complete Sale
@@ -970,7 +986,7 @@ export default function DailyEntryPage() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+        <Card id="section-today-sales" className="rounded-2xl border-slate-200/60 shadow-sm scroll-mt-24">
           <CardHeader className="pb-2">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <CardTitle className="text-lg flex items-center gap-2">
@@ -1216,7 +1232,7 @@ export default function DailyEntryPage() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+        <Card id="section-add-expense" className="rounded-2xl border-slate-200/60 shadow-sm scroll-mt-24">
           <CardHeader className="pb-2">
             <CardTitle className="text-lg flex items-center gap-2">
               <TrendingDown className="size-5 text-red-500" /> Add an Expense
@@ -1240,7 +1256,7 @@ export default function DailyEntryPage() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+        <Card id="section-today-expenses" className="rounded-2xl border-slate-200/60 shadow-sm scroll-mt-24">
           <CardHeader className="pb-2">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <CardTitle className="text-lg flex items-center gap-2">

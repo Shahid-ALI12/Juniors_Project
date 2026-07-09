@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
+import { QuickNav } from "@/components/shared/quick-nav";
 import type { Customer } from "@/types";
 import {
   Card,
@@ -462,8 +463,18 @@ export default function ManageCustomersPage() {
         subtitle="Register, edit, deactivate, permanently delete customers — paginated + searchable"
       />
 
+      <QuickNav
+        title="Jump to"
+        items={[
+          { id: "section-summary", label: "Summary & Actions", icon: Users },
+          { id: "section-search", label: "Search", icon: Search },
+          { id: "section-active-customers", label: "Active Customers", icon: UserCheck, iconColor: "text-emerald-600" },
+          ...((inactiveQ.data?.total ?? 0) > 0 || noInactiveMatch ? [{ id: "section-inactive-customers", label: "Inactive Customers", icon: Ban }] : []),
+        ]}
+      />
+
       {/* ─── Summary + Action bar ─── */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div id="section-summary" className="flex flex-wrap items-center justify-between gap-3 scroll-mt-24">
         <div className="flex flex-wrap items-center gap-3">
           <div className="rounded-xl bg-white border border-slate-200/60 px-4 py-2.5 shadow-sm">
             <div className="text-[0.65rem] uppercase tracking-wider text-slate-500 font-semibold">Active Total</div>
@@ -512,7 +523,7 @@ export default function ManageCustomersPage() {
       </div>
 
       {/* ─── Search (server-side, debounced) ─── */}
-      <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+      <Card id="section-search" className="rounded-2xl border-slate-200/60 shadow-sm scroll-mt-24">
         <CardContent className="p-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
@@ -537,7 +548,7 @@ export default function ManageCustomersPage() {
       </Card>
 
       {/* ─── Active Customers ─── */}
-      <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+      <Card id="section-active-customers" className="rounded-2xl border-slate-200/60 shadow-sm scroll-mt-24">
         <CardHeader className="pb-3">
           <CardTitle className="text-base font-semibold flex items-center gap-2">
             <UserCheck className="size-5 text-emerald-600" />
@@ -590,7 +601,7 @@ export default function ManageCustomersPage() {
 
       {/* ─── Inactive Customers ─── */}
       {(inactiveQ.data?.total ?? 0) > 0 || noInactiveMatch ? (
-        <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+        <Card id="section-inactive-customers" className="rounded-2xl border-slate-200/60 shadow-sm scroll-mt-24">
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold flex items-center gap-2">
               <Ban className="size-5 text-slate-500" />

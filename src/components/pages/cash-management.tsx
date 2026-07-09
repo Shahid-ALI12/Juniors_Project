@@ -3,6 +3,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { PageHeader, MetricCard } from "@/components/shared/page-header";
+import { QuickNav } from "@/components/shared/quick-nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -295,8 +296,18 @@ export default function CashManagementPage() {
           subtitle="Track cash in hand vs cash in locker — transfer & correct balances"
         />
 
+        <QuickNav
+          title="Jump to"
+          items={[
+            { id: "section-balances", label: "Balance Overview", icon: Banknote, iconColor: "text-green-600" },
+            { id: "section-transfer", label: "Transfer Cash", icon: ArrowRightLeft },
+            { id: "section-recent", label: "Recent Transfers", icon: BarChart3 },
+            { id: "section-correction", label: "Manual Correction", icon: AlertTriangle, iconColor: "text-amber-500" },
+          ]}
+        />
+
         {/* ── 1. Balance Overview ── */}
-        <section className="mb-8" aria-label="Balance overview">
+        <section id="section-balances" className="mb-8 scroll-mt-24" aria-label="Balance overview">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             {balancesLoading ? (
               <>
@@ -321,7 +332,7 @@ export default function CashManagementPage() {
         </section>
 
         {/* ── 2. Transfer Cash Form ── */}
-        <section className="mb-8 rounded-2xl border border-slate-200/60 bg-white p-6 shadow-sm" aria-label="Transfer cash">
+        <section id="section-transfer" className="mb-8 rounded-2xl border border-slate-200/60 bg-white p-6 shadow-sm scroll-mt-24" aria-label="Transfer cash">
           <h2 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
             <ArrowRightLeft className="size-5 text-slate-500" />
             Transfer Cash
@@ -392,7 +403,7 @@ export default function CashManagementPage() {
         </section>
 
         {/* ── 3. Recent Transfers Table ── */}
-        <section className="mb-8 rounded-2xl border border-slate-200/60 bg-white p-6 shadow-sm" aria-label="Recent transfers">
+        <section id="section-recent" className="mb-8 rounded-2xl border border-slate-200/60 bg-white p-6 shadow-sm scroll-mt-24" aria-label="Recent transfers">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
             <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <BarChart3 className="size-5 text-slate-500" />
@@ -461,7 +472,7 @@ export default function CashManagementPage() {
         </section>
 
         {/* ── 4. Manual Correction (Collapsible) ── */}
-        <section className="rounded-2xl border border-slate-200/60 bg-white shadow-sm" aria-label="Manual correction">
+        <section id="section-correction" className="rounded-2xl border border-slate-200/60 bg-white shadow-sm scroll-mt-24" aria-label="Manual correction">
           <Collapsible open={correctionOpen} onOpenChange={setCorrectionOpen}>
             <CollapsibleTrigger className="flex w-full items-center justify-between p-6 text-left hover:bg-slate-50/60 transition-colors rounded-t-2xl">
               <div>

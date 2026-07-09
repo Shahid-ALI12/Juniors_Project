@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { PageHeader, MetricCard } from "@/components/shared/page-header";
+import { QuickNav } from "@/components/shared/quick-nav";
 import { CREDIT_LIMIT } from "@/types";
 import type { Customer, Sale } from "@/types";
 import {
@@ -311,8 +312,16 @@ export default function CustomerKhataPage() {
         subtitle="Running ledger — balances & transaction history"
       />
 
+      <QuickNav
+        title="Jump to"
+        items={[
+          { id: "section-overview", label: "All Customers", icon: Users },
+          { id: "section-history", label: "Customer History", icon: BookOpen, iconColor: "text-emerald-600" },
+        ]}
+      />
+
       {/* ─── Section 1: All Customers Balance Overview ─── */}
-      <section className="bg-white rounded-2xl border border-slate-200/60 shadow-sm">
+      <section id="section-overview" className="bg-white rounded-2xl border border-slate-200/60 shadow-sm scroll-mt-24">
         <div className="p-4 sm:p-6 border-b border-slate-100">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -485,7 +494,7 @@ export default function CustomerKhataPage() {
       </section>
 
       {/* ─── Section 2: Individual Customer History ─── */}
-      <section className="bg-white rounded-2xl border border-slate-200/60 shadow-sm">
+      <section id="section-history" className="bg-white rounded-2xl border border-slate-200/60 shadow-sm scroll-mt-24">
         <div className="p-4 sm:p-6 border-b border-slate-100">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center gap-2">

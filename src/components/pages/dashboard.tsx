@@ -3,11 +3,13 @@
 import { useMemo, useState, useCallback, useEffect } from "react";
 import {
   FileText, FlaskConical, BookOpen, CheckCircle,
-  Package, Settings, Loader2, ChevronDown, X, Download, AlertTriangle,
+  Package, Settings, Loader2, ChevronDown, ChevronUp, X, Download, AlertTriangle,
   Search, ChevronLeft, ChevronRight,
+  TrendingUp, Receipt, Wallet, Users, AlertCircle, BarChart3,
 } from "lucide-react";
 import { useAppStore } from "@/store";
 import { cn } from "@/lib/utils";
+import { QuickNav } from "@/components/shared/quick-nav";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -362,15 +364,25 @@ export default function Dashboard() {
           </div>
         </div>
 
+        <QuickNav
+          title="Jump to"
+          items={[
+            { id: "section-primary-metrics", label: "Today's Summary", icon: BarChart3 },
+            { id: "section-secondary-metrics", label: "Customers & Khata", icon: Users },
+            { id: "section-detail-panel", label: "Records Detail", icon: Receipt, iconColor: "text-emerald-600" },
+            { id: "section-quick-actions", label: "Quick Actions", icon: FileText },
+          ]}
+        />
+
         {/* ── Primary Metrics ── */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div id="section-primary-metrics" className="grid grid-cols-2 lg:grid-cols-4 gap-4 scroll-mt-24">
           {cards.slice(0, 4).map((card) => (
             <DashboardCard key={card.key} card={card} isActive={activeCard === card.key} onClick={() => fetchDetails(card.key)} />
           ))}
         </div>
 
         {/* ── Secondary Metrics ── */}
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <div id="section-secondary-metrics" className="grid grid-cols-2 lg:grid-cols-3 gap-4 scroll-mt-24">
           {cards.slice(4).map((card) => (
             <DashboardCard key={card.key} card={card} isActive={activeCard === card.key} onClick={() => fetchDetails(card.key)} />
           ))}
@@ -378,7 +390,7 @@ export default function Dashboard() {
 
         {/* ── Detail Panel ── */}
         {activeCard && (
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+          <div id="section-detail-panel" className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 scroll-mt-24">
             {/* Panel Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50/50">
               <div className="flex items-center gap-3">
@@ -553,7 +565,7 @@ export default function Dashboard() {
         )}
 
         {/* ── Quick Links ── */}
-        <section>
+        <section id="section-quick-actions" className="scroll-mt-24">
           <h2 className="text-lg font-bold text-slate-700 mb-4">Quick Actions</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {quickLinks.map((link) => {

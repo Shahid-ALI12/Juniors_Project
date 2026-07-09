@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useRef } from "react";
 import { PageHeader } from "@/components/shared/page-header";
+import { QuickNav } from "@/components/shared/quick-nav";
 import { apiError } from "@/store";
 import type { BackupFilter, RestoreMode } from "@/types";
 
@@ -257,6 +258,19 @@ export default function DatabaseManagementPage() {
           subtitle="Danish Cattle Feed — Backup & Restore"
         />
 
+        <QuickNav
+          title="Jump to"
+          items={[
+            { id: "section-backup-choose", label: "1. Choose Backup", icon: Calendar },
+            { id: "section-backup-inside", label: "2. What's Inside", icon: FileJson },
+            { id: "section-backup-download", label: "3. Download", icon: Download, iconColor: "text-emerald-600" },
+            { id: "section-restore", label: "Restore Section", icon: Upload, iconColor: "text-amber-600" },
+            { id: "section-restore-choose", label: "1. Select File", icon: FileUp },
+            { id: "section-restore-mode", label: "2. Restore Mode", icon: ShieldCheck },
+            { id: "section-restore-script", label: "3. SQL Script", icon: Terminal },
+          ]}
+        />
+
         {/* Info banner — what this is */}
         <Card className="rounded-2xl border-blue-200/60 bg-blue-50/30">
           <CardContent className="pt-6">
@@ -278,7 +292,7 @@ export default function DatabaseManagementPage() {
         </Card>
 
         {/* Filter selection */}
-        <Card className="rounded-2xl border-slate-200/60 shadow-sm bg-white">
+        <Card id="section-backup-choose" className="rounded-2xl border-slate-200/60 shadow-sm bg-white scroll-mt-24">
           <CardHeader className="pb-2">
             <CardTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <Calendar className="size-5 text-slate-600" /> 1. Choose What to Backup
@@ -360,7 +374,7 @@ export default function DatabaseManagementPage() {
         </Card>
 
         {/* What's included */}
-        <Card className="rounded-2xl border-slate-200/60 shadow-sm bg-white">
+        <Card id="section-backup-inside" className="rounded-2xl border-slate-200/60 shadow-sm bg-white scroll-mt-24">
           <CardHeader className="pb-2">
             <CardTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <FileJson className="size-5 text-slate-600" /> 2. What's Inside the Backup
@@ -402,7 +416,7 @@ export default function DatabaseManagementPage() {
         </Card>
 
         {/* Download */}
-        <Card className="rounded-2xl border-slate-200/60 shadow-sm bg-white">
+        <Card id="section-backup-download" className="rounded-2xl border-slate-200/60 shadow-sm bg-white scroll-mt-24">
           <CardHeader className="pb-2">
             <CardTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <Download className="size-5 text-slate-600" /> 3. Download Backup File
@@ -455,7 +469,7 @@ export default function DatabaseManagementPage() {
         {/* RESTORE SECTION                                                */}
         {/* ─────────────────────────────────────────────────────────── */}
 
-        <div className="pt-4 border-t border-slate-200/60">
+        <div id="section-restore" className="pt-4 border-t border-slate-200/60 scroll-mt-24">
           <div className="flex items-center gap-2 mb-4">
             <Upload className="size-5 text-amber-600" />
             <h2 className="text-xl font-bold text-slate-900">Restore from Backup</h2>
@@ -469,7 +483,7 @@ export default function DatabaseManagementPage() {
         </div>
 
         {/* Step 1 — pick file */}
-        <Card className="rounded-2xl border-slate-200/60 shadow-sm bg-white">
+        <Card id="section-restore-choose" className="rounded-2xl border-slate-200/60 shadow-sm bg-white scroll-mt-24">
           <CardHeader className="pb-2">
             <CardTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <FileUp className="size-5 text-slate-600" /> 1. Select Backup File
@@ -513,7 +527,7 @@ export default function DatabaseManagementPage() {
         </Card>
 
         {/* Step 2 — pick mode */}
-        <Card className="rounded-2xl border-slate-200/60 shadow-sm bg-white">
+        <Card id="section-restore-mode" className="rounded-2xl border-slate-200/60 shadow-sm bg-white scroll-mt-24">
           <CardHeader className="pb-2">
             <CardTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <ShieldCheck className="size-5 text-slate-600" /> 2. Choose Restore Mode
@@ -564,7 +578,7 @@ export default function DatabaseManagementPage() {
         </Card>
 
         {/* Step 3 — generate + download SQL */}
-        <Card className="rounded-2xl border-slate-200/60 shadow-sm bg-white">
+        <Card id="section-restore-script" className="rounded-2xl border-slate-200/60 shadow-sm bg-white scroll-mt-24">
           <CardHeader className="pb-2">
             <CardTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <Terminal className="size-5 text-slate-600" /> 3. Generate &amp; Download SQL Script

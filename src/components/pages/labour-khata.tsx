@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { PageHeader, MetricCard } from "@/components/shared/page-header";
+import { QuickNav } from "@/components/shared/quick-nav";
 import { apiError } from "@/store";
 import type {
   Labour,
@@ -50,6 +51,7 @@ import {
   CalendarDays,
   CircleCheck,
   CircleDashed,
+  BarChart3,
 } from "lucide-react";
 import { toast } from "sonner";
 import { pktToday } from "@/lib/pkt-date";
@@ -520,8 +522,19 @@ export default function LabourKhataPage() {
         subtitle="Daily wage entry · Monthly summary · Salary / advance / expense tracking"
       />
 
+      <QuickNav
+        title="Jump to"
+        items={[
+          { id: "section-metrics", label: "Overview", icon: BarChart3 },
+          { id: "section-register", label: "Register New Labour", icon: UserPlus, iconColor: "text-emerald-600" },
+          { id: "section-daily-wage", label: "Daily Wage Entry", icon: CalendarDays, iconColor: "text-blue-600" },
+          { id: "section-add-payment", label: "Add Payment", icon: Wallet, iconColor: "text-amber-600" },
+          { id: "section-history", label: "Payment History", icon: Calendar },
+        ]}
+      />
+
       {/* ─── Metrics row ─── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div id="section-metrics" className="grid grid-cols-2 md:grid-cols-4 gap-3 scroll-mt-24">
         <MetricCard
           label="Total Labours"
           value={labours.length}
@@ -553,7 +566,7 @@ export default function LabourKhataPage() {
       </div>
 
       {/* ─── Section 1: Register new labour ─── */}
-      <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+      <Card id="section-register" className="rounded-2xl border-slate-200/60 shadow-sm scroll-mt-24">
         <CardHeader className="pb-2">
           <CardTitle className="text-lg flex items-center gap-2">
             <UserPlus className="size-5 text-emerald-600" /> Register New Labour
@@ -646,7 +659,7 @@ export default function LabourKhataPage() {
       </Card>
 
       {/* ─── Section 2: Daily Wage Entry (NEW) ─── */}
-      <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+      <Card id="section-daily-wage" className="rounded-2xl border-slate-200/60 shadow-sm scroll-mt-24">
         <CardHeader className="pb-2">
           <CardTitle className="text-lg flex items-center gap-2">
             <CalendarDays className="size-5 text-blue-600" /> Daily Wage Entry
@@ -1009,7 +1022,7 @@ export default function LabourKhataPage() {
       </Card>
 
       {/* ─── Section 4: Add payment ─── */}
-      <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+      <Card id="section-add-payment" className="rounded-2xl border-slate-200/60 shadow-sm scroll-mt-24">
         <CardHeader className="pb-2">
           <CardTitle className="text-lg flex items-center gap-2">
             <Wallet className="size-5 text-amber-600" /> Add Payment / Salary / Advance
@@ -1127,7 +1140,7 @@ export default function LabourKhataPage() {
       </Card>
 
       {/* ─── Section 5: Filter + History ─── */}
-      <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+      <Card id="section-history" className="rounded-2xl border-slate-200/60 shadow-sm scroll-mt-24">
         <CardHeader className="pb-2">
           <CardTitle className="text-lg flex items-center gap-2">
             <Calendar className="size-5 text-slate-600" /> Payment History

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
+import { QuickNav } from "@/components/shared/quick-nav";
 import type { Customer } from "@/types";
 import {
   Select,
@@ -227,10 +228,18 @@ export default function EditCustomerPage() {
         subtitle="Sirf opening balance edit karein — bina sale kiye (sale ki zarurat nahi)"
       />
 
+      <QuickNav
+        title="Jump to"
+        items={[
+          { id: "section-update-ob", label: "Update Opening Balance", icon: UserPen },
+          { id: "section-quick-edit", label: "Quick Edit All", icon: Users, iconColor: "text-emerald-600" },
+        ]}
+      />
+
       {/* ──────────────────────────────────────────────────────── */}
       {/* Section 1: Select customer + edit OB inline             */}
       {/* ──────────────────────────────────────────────────────── */}
-      <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+      <Card id="section-update-ob" className="rounded-2xl border-slate-200/60 shadow-sm scroll-mt-24">
         <CardHeader className="pb-3">
           <CardTitle className="text-lg flex items-center gap-2">
             <UserPen className="size-5 text-slate-600" />
@@ -425,7 +434,7 @@ export default function EditCustomerPage() {
       {/* ──────────────────────────────────────────────────────── */}
       {/* Section 2: All customers quick-OB table                  */}
       {/* ──────────────────────────────────────────────────────── */}
-      <Card className="rounded-2xl border-slate-200/60 shadow-sm">
+      <Card id="section-quick-edit" className="rounded-2xl border-slate-200/60 shadow-sm scroll-mt-24">
         <CardHeader className="pb-3">
           <CardTitle className="text-lg flex items-center gap-2">
             <Users className="size-5 text-slate-600" />

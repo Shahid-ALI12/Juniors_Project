@@ -3,6 +3,7 @@
 import { useMemo, useState, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
+import { QuickNav } from "@/components/shared/quick-nav";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -375,8 +376,20 @@ export default function DayReconciliation() {
           subtitle="End-of-day cash summary for Danish Cattle Feed — Daily Register"
         />
 
+        <QuickNav
+          title="Jump to"
+          items={[
+            { id: "section-period", label: "Select Period", icon: CalendarDays },
+            { id: "section-income", label: "Income Summary", icon: TrendingUp, iconColor: "text-green-600" },
+            { id: "section-breakdown", label: "Credit vs Cash", icon: CreditCard },
+            { id: "section-expenses", label: "Expenses Summary", icon: TrendingDown, iconColor: "text-orange-500" },
+            { id: "section-net", label: "Net Cash Position", icon: Scale },
+            { id: "section-detail", label: "Records Detail", icon: FileText, iconColor: "text-emerald-600" },
+          ]}
+        />
+
         {/* ── 1. Select Period ── */}
-        <section className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-6">
+        <section id="section-period" className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-6 scroll-mt-24">
           <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-4 flex items-center gap-2">
             <CalendarDays className="h-4 w-4" />
             Select Period
@@ -453,7 +466,7 @@ export default function DayReconciliation() {
         ) : (
           <>
             {/* ── 2. Income Summary ── */}
-            <section>
+            <section id="section-income" className="scroll-mt-24">
               <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2">
                 <TrendingUp className="h-4 w-4" />
                 Income Summary
@@ -466,7 +479,7 @@ export default function DayReconciliation() {
             </section>
 
             {/* ── 3. Credit vs Cash Breakdown ── */}
-            <section>
+            <section id="section-breakdown" className="scroll-mt-24">
               <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2">
                 <CreditCard className="h-4 w-4" />
                 Credit vs Cash Breakdown
@@ -479,7 +492,7 @@ export default function DayReconciliation() {
             </section>
 
             {/* ── 4. Expenses Summary ── */}
-            <section>
+            <section id="section-expenses" className="scroll-mt-24">
               <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2">
                 <TrendingDown className="h-4 w-4" />
                 Expenses Summary
@@ -492,7 +505,7 @@ export default function DayReconciliation() {
             </section>
 
             {/* ── 5. Net Cash Position ── */}
-            <section>
+            <section id="section-net" className="scroll-mt-24">
               <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2">
                 <Scale className="h-4 w-4" />
                 Net Cash Position
@@ -518,7 +531,7 @@ export default function DayReconciliation() {
 
             {/* ── Detail Panel (same pattern as Dashboard) ── */}
             {activeCard && (
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+              <div id="section-detail" className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 scroll-mt-24">
                 {/* Panel Header */}
                 <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50/50">
                   <div className="flex items-center gap-3">

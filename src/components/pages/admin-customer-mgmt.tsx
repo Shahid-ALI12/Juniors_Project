@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { AppCustomer, SubscriptionType } from "@/types";
 import { PageHeader, MetricCard } from "@/components/shared/page-header";
+import { QuickNav } from "@/components/shared/quick-nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -218,6 +219,14 @@ export default function AdminCustomerManagement() {
     <div className="space-y-6">
       <PageHeader title="Customer Management" description="Register new customers, edit their details, and manage access" />
 
+      <QuickNav
+        title="Jump to"
+        items={[
+          { id: "section-metrics", label: "Overview", icon: Users },
+          { id: "section-all-customers", label: "All Customers", icon: UserCheck, iconColor: "text-emerald-600" },
+        ]}
+      />
+
       {/* Setup banner — shown when Supabase table doesn't exist */}
       {setupSql && (
         <Card className="border-amber-300 bg-amber-50">
@@ -248,13 +257,13 @@ export default function AdminCustomerManagement() {
         </Card>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div id="section-metrics" className="grid grid-cols-1 sm:grid-cols-3 gap-4 scroll-mt-24">
         <MetricCard title="Total Customers" value={customers.length} icon={Users} color="text-blue-500" />
         <MetricCard title="Active" value={activeCount} icon={ShieldCheck} color="text-emerald-500" />
         <MetricCard title="Blocked/Expired" value={blockedCount} icon={Ban} color="text-red-500" />
       </div>
 
-      <Card>
+      <Card id="section-all-customers" className="scroll-mt-24">
         <CardHeader className="flex flex-row items-center justify-between pb-3">
           <CardTitle className="text-base font-semibold">All Customers</CardTitle>
           <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>

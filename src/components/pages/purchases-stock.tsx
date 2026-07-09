@@ -4,6 +4,7 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { fetchCached, invalidateCache, apiError } from "@/store";
 import { PageHeader } from "@/components/shared/page-header";
+import { QuickNav } from "@/components/shared/quick-nav";
 import type { Product, Customer, Purchase, Supplier, ProductStock } from "@/types";
 import { LocationSelect } from "@/components/shared/location-select";
 
@@ -780,6 +781,15 @@ export default function PurchasesStockPage() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 space-y-8">
         <PageHeader title="Purchases & Stock" subtitle="Danish Cattle Feed — Daily Register" />
 
+        <QuickNav
+          title="Jump to"
+          items={[
+            { id: "section-stock", label: "Current Stock", icon: Package, iconColor: "text-blue-600" },
+            { id: "section-purchase", label: "Record a Purchase", icon: ShoppingBag },
+            { id: "section-today-purchases", label: "Today's Purchases", icon: ShoppingBag, iconColor: "text-emerald-600" },
+          ]}
+        />
+
         {/* Error banner */}
         {loadErrors.length > 0 && (
           <Alert className="border-amber-300 bg-amber-50 text-amber-800 mb-6">
@@ -803,7 +813,7 @@ export default function PurchasesStockPage() {
           </Alert>
         )}
 
-        <Card className="rounded-2xl border-slate-200/60 shadow-sm bg-white">
+        <Card id="section-stock" className="rounded-2xl border-slate-200/60 shadow-sm bg-white scroll-mt-24">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div>
@@ -823,7 +833,7 @@ export default function PurchasesStockPage() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border-slate-200/60 shadow-sm bg-white">
+        <Card id="section-purchase" className="rounded-2xl border-slate-200/60 shadow-sm bg-white scroll-mt-24">
           <CardHeader className="pb-2">
             <CardTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <ShoppingBag className="size-5 text-slate-600" /> Record a Purchase
@@ -996,7 +1006,7 @@ export default function PurchasesStockPage() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border-slate-200/60 shadow-sm bg-white">
+        <Card id="section-today-purchases" className="rounded-2xl border-slate-200/60 shadow-sm bg-white scroll-mt-24">
           <CardHeader className="pb-2">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>

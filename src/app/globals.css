@@ -121,4 +121,18 @@
   }
 }
 
+/* Hide scrollbar but keep scroll behaviour (used by QuickNav horizontal pill bar) */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Smooth in-page anchor jumps */
+html {
+  scroll-behavior: smooth;
+}
+
 

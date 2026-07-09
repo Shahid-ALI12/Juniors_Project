@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
+import { QuickNav } from "@/components/shared/quick-nav";
 import ConfirmAction from "@/components/shared/confirm-action";
 import type { Product, ProductStock } from "@/types";
 import { LocationSelect } from "@/components/shared/location-select";
@@ -350,6 +351,15 @@ export default function ManageProducts() {
 
       <PageHeader title="Manage Products & Rates" subtitle="Add products, set default selling rates, deactivate, or permanently delete." />
 
+      <QuickNav
+        title="Jump to"
+        items={[
+          { id: "section-active", label: "Active Products", icon: BoxesIcon, iconColor: "text-emerald-600" },
+          ...(inactiveProducts.length > 0 ? [{ id: "section-inactive", label: "Inactive Products", icon: Ban }] : []),
+          { id: "section-add-new", label: "Add New Product", icon: PackagePlus },
+        ]}
+      />
+
       {/* ───────────── LOCATION FILTER ───────────── */}
       <div className="flex items-center gap-3 px-4 py-3 bg-white rounded-2xl border border-slate-200/60 shadow-sm">
         <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide whitespace-nowrap">Stock Location:</Label>
@@ -358,7 +368,7 @@ export default function ManageProducts() {
       </div>
 
       {/* ───────────── ACTIVE PRODUCTS ───────────── */}
-      <section className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden" aria-label="Active products">
+      <section id="section-active" className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden scroll-mt-24" aria-label="Active products">
         <div className="px-4 sm:px-6 pt-5 pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center gap-2">
             <BoxesIcon className="size-5 text-emerald-600" />
@@ -468,7 +478,7 @@ export default function ManageProducts() {
 
       {/* ───────────── INACTIVE PRODUCTS ───────────── */}
       {inactiveProducts.length > 0 && (
-        <section className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden" aria-label="Inactive products">
+        <section id="section-inactive" className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden scroll-mt-24" aria-label="Inactive products">
           <div className="px-4 sm:px-6 pt-5 pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex items-center gap-2">
               <Ban className="size-5 text-slate-500" />
@@ -565,7 +575,7 @@ export default function ManageProducts() {
       )}
 
       {/* ───────────── ADD NEW PRODUCT ───────────── */}
-      <section className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-6" aria-label="Add a new product">
+      <section id="section-add-new" className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-6 scroll-mt-24" aria-label="Add a new product">
         <div className="flex items-center gap-2 mb-5">
           <PackagePlus className="size-5 text-slate-700" />
           <h2 className="text-lg font-bold text-slate-900">Add a New Product</h2>

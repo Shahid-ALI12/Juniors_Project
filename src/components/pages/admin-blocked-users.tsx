@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { AppCustomer, SubscriptionType } from "@/types";
 import { PageHeader, MetricCard } from "@/components/shared/page-header";
+import { QuickNav } from "@/components/shared/quick-nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -131,13 +132,21 @@ export default function AdminBlockedUsers() {
         description="View blocked and subscription-expired users. Re-approve with new subscription."
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <QuickNav
+        title="Jump to"
+        items={[
+          { id: "section-metrics", label: "Overview", icon: ShieldOff },
+          { id: "section-action", label: "Users Requiring Action", icon: Ban, iconColor: "text-orange-500" },
+        ]}
+      />
+
+      <div id="section-metrics" className="grid grid-cols-1 sm:grid-cols-3 gap-4 scroll-mt-24">
         <MetricCard title="Total Blocked/Expired" value={blockedCustomers.length} icon={ShieldOff} color="text-red-500" />
         <MetricCard title="Blocked by Admin" value={blockedByAdmin.length} icon={Ban} color="text-orange-500" />
         <MetricCard title="Subscription Expired" value={expiredSubs.length} icon={Clock} color="text-amber-500" />
       </div>
 
-      <Card>
+      <Card id="section-action" className="scroll-mt-24">
         <CardHeader className="pb-3">
           <CardTitle className="text-base font-semibold">Users Requiring Action</CardTitle>
         </CardHeader>
