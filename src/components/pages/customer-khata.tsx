@@ -16,7 +16,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Search,
-  FileJson,
 } from "lucide-react";
 import {
   Select,
@@ -37,7 +36,7 @@ import {
   useCustomerBalance,
   useSalesPaginated,
 } from "@/hooks/queries";
-import { downloadJson, downloadAllJson } from "@/lib/download-json";
+import { downloadExcel } from "@/lib/download-excel";
 
 const fmt = (n: number) => n.toLocaleString("en-PK");
 const PAGE_SIZE = 10;
@@ -237,38 +236,69 @@ export default function CustomerKhataPage() {
     }
   };
 
-  // ── Download ALL customers + balances as JSON ──
-  const handleDownloadAllCustomersJson = async () => {
+  // ── Download ALL customers + balances as Excel ──
+  const handleDownloadAllCustomersExcel = async () => {
     setDownloadingCustomers(true);
     try {
       // Walk all pages of /api/customers (no search filter = all records)
-      const allCustomers = await downloadAllJson(
-        "/api/customers",
-        {},
-        "tmp-customers", // placeholder, we'll re-download merged below
-        "customers",
-      );
-      // Merge with balances
-      const merged = allCustomers.map((c: any) => ({
-        ...c,
-        ...(balances[c.id] ?? {
+      const all: Record<string, any>[] = [];
+      let page = 1;
+      let totalPages = 1;
+      while (page <= totalPages) {
+        const qs = new URLSearchParams({
+          page: String(page),
+          pageSize: "200",
+        });
+        const res = await fetch(`/api/customers?${qs.toString()}`);
+        if (!res.ok) throw new Error("Failed to fetch customers");
+        const body = await res.json();
+        const rows = Array.isArray(body?.customers) ? body.customers : [];
+        all.push(...rows);
+        totalPages = typeof body?.totalPages === "number" ? body.totalPages : 1;
+        if (rows.length === 0) break;
+        page += 1;
+      }
+      if (all.length === 0) {
+        toast.error("No customers to download");
+        return;
+      }
+      // Merge with balances map
+      const merged = all.map((c) => {
+        const b = balances[c.id] ?? {
           opening_balance: c.opening_balance ?? 0,
           total_bill: 0,
           total_cash_paid: 0,
           total_goods_value: 0,
           balance_due: c.opening_balance ?? 0,
-        }),
-      }));
-      downloadJson(
-        {
-          generatedAt: new Date().toISOString(),
-          totalRecords: merged.length,
-          totalOutstanding,
-          customers: merged,
-        },
-        "all-customers-with-balances.json",
-      );
-      toast.success(`Downloaded ${merged.length} customers`);
+        };
+        return {
+          id: c.id,
+          name: c.name,
+          type: c.type,
+          phone: c.phone ?? "",
+          is_active: c.is_active ? "Yes" : "No",
+          opening_balance: b.opening_balance,
+          total_bill: b.total_bill,
+          total_cash_paid: b.total_cash_paid,
+          total_goods_value: b.total_goods_value,
+          balance_due: b.balance_due,
+          created_at: c.created_at,
+        };
+      });
+      await downloadExcel(merged, [
+        { key: "id", label: "ID" },
+        { key: "name", label: "Customer" },
+        { key: "type", label: "Type" },
+        { key: "phone", label: "Phone" },
+        { key: "is_active", label: "Active" },
+        { key: "opening_balance", label: "Opening Balance (Rs.)", align: "right" },
+        { key: "total_bill", label: "Total Billed (Rs.)", align: "right" },
+        { key: "total_cash_paid", label: "Cash Paid (Rs.)", align: "right" },
+        { key: "total_goods_value", label: "Paid in Goods (Rs.)", align: "right" },
+        { key: "balance_due", label: "Balance Due (Rs.)", align: "right" },
+        { key: "created_at", label: "Created At" },
+      ], "all-customers-with-balances");
+      toast.success(`Customers Excel downloaded (${merged.length} records)`);
     } catch (err: any) {
       console.error("Download error:", err);
       toast.error(err?.message || "Failed to download customers");
@@ -277,21 +307,76 @@ export default function CustomerKhataPage() {
     }
   };
 
-  // ── Download ALL sales for selected customer as JSON ──
-  const handleDownloadSalesJson = async () => {
+  // ── Download ALL sales for selected customer as Excel ──
+  const handleDownloadSalesExcel = async () => {
     if (!selectedCustomerId) {
       toast.error("Select a customer first");
       return;
     }
     setDownloadingSales(true);
     try {
-      await downloadAllJson(
-        "/api/sales",
-        { customer_id: selectedCustomerId },
-        `customer-${selectedCustomerId}-sales.json`,
-        "sales",
-      );
-      toast.success("Sales JSON downloaded");
+      // Walk paginated /api/sales for this customer
+      const all: Record<string, any>[] = [];
+      let page = 1;
+      let totalPages = 1;
+      while (page <= totalPages) {
+        const qs = new URLSearchParams({
+          customer_id: selectedCustomerId,
+          page: String(page),
+          pageSize: "200",
+        });
+        const res = await fetch(`/api/sales?${qs.toString()}`);
+        if (!res.ok) throw new Error("Failed to fetch sales");
+        const body = await res.json();
+        const rows = Array.isArray(body?.sales) ? body.sales : [];
+        all.push(...rows);
+        totalPages = typeof body?.totalPages === "number" ? body.totalPages : 1;
+        if (rows.length === 0) break;
+        page += 1;
+      }
+      if (all.length === 0) {
+        toast.error("No sales to download for this customer");
+        return;
+      }
+      await downloadExcel(all, [
+        { key: "sale_date", label: "Date" },
+        {
+          key: "products",
+          label: "Product",
+          fmt: (v: any) => v?.name ?? "—",
+        },
+        { key: "quantity", label: "Qty", align: "right" },
+        { key: "unit_type", label: "Unit" },
+        { key: "rate_per_bag", label: "Rate", align: "right" },
+        { key: "rickshaw_fare", label: "Rickshaw", align: "right" },
+        {
+          key: "_bill",
+          label: "Bill",
+          align: "right",
+          fmt: (_v: any, row: any) =>
+            String(
+              (Number(row.quantity) || 0) * (Number(row.rate_per_bag) || 0) +
+                (Number(row.rickshaw_fare) || 0),
+            ),
+        },
+        { key: "cash_received", label: "Cash", align: "right" },
+        {
+          key: "_remaining",
+          label: "Remaining",
+          align: "right",
+          fmt: (_v: any, row: any) =>
+            String(
+              (Number(row.quantity) || 0) * (Number(row.rate_per_bag) || 0) +
+                (Number(row.rickshaw_fare) || 0) -
+                (Number(row.cash_received) || 0),
+            ),
+        },
+        { key: "mix_order_id", label: "Mix Order ID" },
+        { key: "transaction_group_id", label: "Bill Group" },
+        { key: "entered_by", label: "Entered By" },
+        { key: "created_at", label: "Created At" },
+      ], `customer-${selectedCustomerId}-sales`);
+      toast.success(`Sales Excel downloaded (${all.length} records)`);
     } catch (err: any) {
       console.error("Download error:", err);
       toast.error(err?.message || "Failed to download sales");
@@ -343,16 +428,16 @@ export default function CustomerKhataPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleDownloadAllCustomersJson}
+                onClick={handleDownloadAllCustomersExcel}
                 disabled={downloadingCustomers}
                 className="shrink-0"
               >
                 {downloadingCustomers ? (
                   <Loader2 className="size-4 mr-1.5 animate-spin" />
                 ) : (
-                  <FileJson className="size-4 mr-1.5" />
+                  <Download className="size-4 mr-1.5" />
                 )}
-                {downloadingCustomers ? "Downloading..." : "Download JSON"}
+                {downloadingCustomers ? "Downloading..." : "Download Excel"}
               </Button>
             </div>
           </div>
@@ -525,15 +610,15 @@ export default function CustomerKhataPage() {
                     variant="outline"
                     size="sm"
                     className="shrink-0"
-                    onClick={handleDownloadSalesJson}
+                    onClick={handleDownloadSalesExcel}
                     disabled={downloadingSales}
                   >
                     {downloadingSales ? (
                       <Loader2 className="size-4 mr-1.5 animate-spin" />
                     ) : (
-                      <FileJson className="size-4 mr-1.5" />
+                      <Download className="size-4 mr-1.5" />
                     )}
-                    {downloadingSales ? "Downloading..." : "Download JSON"}
+                    {downloadingSales ? "Downloading..." : "Download Excel"}
                   </Button>
                   <Button
                     variant="outline"

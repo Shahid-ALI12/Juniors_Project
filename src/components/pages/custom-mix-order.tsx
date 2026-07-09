@@ -15,7 +15,6 @@ import {
   Printer,
   ChevronLeft,
   ChevronRight,
-  FileJson,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMixStore, fetchCached, invalidateCache, apiError } from "@/store";
@@ -50,7 +49,7 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { pktToday } from "@/lib/pkt-date";
 import { useMixOrdersPaginated, useInvalidateAfterMutation } from "@/hooks/queries";
-import { downloadJson, downloadAllJson } from "@/lib/download-json";
+import { downloadExcel } from "@/lib/download-excel";
 
 const PAST_PAGE_SIZE = 10;
 
@@ -285,22 +284,88 @@ export default function CustomMixOrder() {
     invalidate.invalidateMixOrders();
   }, [invalidate]);
 
-  // ── Download ALL past mix-orders as JSON ──
-  const [downloadingJson, setDownloadingJson] = useState(false);
-  const handleDownloadPastJson = async () => {
-    setDownloadingJson(true);
+  // ── Download ALL past mix-orders as Excel ──
+  // Walks paginated /api/mix-orders (no search filter = every record)
+  // and produces a single .xlsx workbook with one row per mix order line.
+  const [downloadingPastExcel, setDownloadingPastExcel] = useState(false);
+  const handleDownloadPastExcel = async () => {
+    setDownloadingPastExcel(true);
     try {
-      await downloadAllJson(
-        "/api/mix-orders",
-        {},
-        "all-mix-orders.json",
-        "orders",
-      );
-      toast.success("Mix orders JSON downloaded");
+      const all: Record<string, any>[] = [];
+      let page = 1;
+      let totalPages = 1;
+      while (page <= totalPages) {
+        const qs = new URLSearchParams({
+          page: String(page),
+          pageSize: "200",
+        });
+        const res = await fetch(`/api/mix-orders?${qs.toString()}`);
+        if (!res.ok) throw new Error("Failed to fetch mix orders");
+        const body = await res.json();
+        const orders: any[] = Array.isArray(body?.orders) ? body.orders : [];
+        const salesByMix: Record<string, any[]> = body?.salesByMix ?? {};
+        // Flatten: one row per sale line inside each mix order
+        for (const o of orders) {
+          const lines = salesByMix[o.id] ?? [];
+          if (lines.length === 0) {
+            // Mix order with no sale lines (rare) — emit a single row
+            all.push({
+              order_id: o.id,
+              order_date: o.order_date,
+              customer: o.customers?.name ?? "—",
+              target_weight_kg: o.target_weight_kg ?? "",
+              cash_received: o.cash_received ?? 0,
+              driver_name: o.driver_name ?? "",
+              driver_rent: o.driver_rent ?? 0,
+              product: "—",
+              quantity: "",
+              rate_per_kg: "",
+              line_amount: "",
+            });
+          } else {
+            for (const line of lines) {
+              all.push({
+                order_id: o.id,
+                order_date: o.order_date,
+                customer: o.customers?.name ?? "—",
+                target_weight_kg: o.target_weight_kg ?? "",
+                cash_received: o.cash_received ?? 0,
+                driver_name: o.driver_name ?? "",
+                driver_rent: o.driver_rent ?? 0,
+                product: line.products?.name ?? "—",
+                quantity: line.quantity,
+                rate_per_kg: line.rate_per_bag,
+                line_amount: (Number(line.quantity) || 0) * (Number(line.rate_per_bag) || 0),
+              });
+            }
+          }
+        }
+        totalPages = typeof body?.totalPages === "number" ? body.totalPages : 1;
+        if (orders.length === 0) break;
+        page += 1;
+      }
+      if (all.length === 0) {
+        toast.error("No mix orders to download");
+        return;
+      }
+      await downloadExcel(all, [
+        { key: "order_id", label: "Order ID" },
+        { key: "order_date", label: "Date" },
+        { key: "customer", label: "Customer" },
+        { key: "target_weight_kg", label: "Target Weight (kg)", align: "right" },
+        { key: "product", label: "Ingredient" },
+        { key: "quantity", label: "Qty (kg)", align: "right" },
+        { key: "rate_per_kg", label: "Rate/kg", align: "right" },
+        { key: "line_amount", label: "Line Amount (Rs.)", align: "right" },
+        { key: "cash_received", label: "Cash Received (Rs.)", align: "right" },
+        { key: "driver_name", label: "Driver Name" },
+        { key: "driver_rent", label: "Driver Rent (Rs.)", align: "right" },
+      ], "all-mix-orders");
+      toast.success(`Mix orders Excel downloaded (${all.length} line items)`);
     } catch (e: any) {
-      toast.error(e?.message || "Failed to download JSON");
+      toast.error(e?.message || "Failed to download Excel");
     } finally {
-      setDownloadingJson(false);
+      setDownloadingPastExcel(false);
     }
   };
 
@@ -671,8 +736,8 @@ export default function CustomMixOrder() {
             isLoading={pastQ.isLoading && !pastQ.data}
             onPrev={() => setPastPage((p) => Math.max(1, p - 1))}
             onNext={() => setPastPage((p) => p + 1)}
-            onDownloadJson={handleDownloadPastJson}
-            downloadingJson={downloadingJson}
+            onDownloadExcel={handleDownloadPastExcel}
+            downloadingExcel={downloadingPastExcel}
             isSearchActive={pastSearchDebounced.trim().length > 0}
             searchQuery={pastSearchDebounced}
           />
@@ -929,8 +994,8 @@ export default function CustomMixOrder() {
           isLoading={pastQ.isLoading && !pastQ.data}
           onPrev={() => setPastPage((p) => Math.max(1, p - 1))}
           onNext={() => setPastPage((p) => p + 1)}
-          onDownloadJson={handleDownloadPastJson}
-          downloadingJson={downloadingJson}
+          onDownloadExcel={handleDownloadPastExcel}
+          downloadingExcel={downloadingPastExcel}
           isSearchActive={pastSearchDebounced.trim().length > 0}
           searchQuery={pastSearchDebounced}
         />
@@ -954,8 +1019,8 @@ function PastMixOrdersSection({
   isLoading,
   onPrev,
   onNext,
-  onDownloadJson,
-  downloadingJson,
+  onDownloadExcel,
+  downloadingExcel,
   isSearchActive,
   searchQuery,
 }: {
@@ -972,8 +1037,8 @@ function PastMixOrdersSection({
   isLoading: boolean;
   onPrev: () => void;
   onNext: () => void;
-  onDownloadJson: () => void;
-  downloadingJson: boolean;
+  onDownloadExcel: () => void;
+  downloadingExcel: boolean;
   isSearchActive: boolean;
   searchQuery: string;
 }) {
@@ -985,16 +1050,16 @@ function PastMixOrdersSection({
         <Button
           variant="outline"
           size="sm"
-          onClick={onDownloadJson}
-          disabled={downloadingJson}
+          onClick={onDownloadExcel}
+          disabled={downloadingExcel || total === 0}
           className="border-slate-300 hover:bg-slate-100"
         >
-          {downloadingJson ? (
+          {downloadingExcel ? (
             <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
           ) : (
-            <FileJson className="w-3.5 h-3.5 mr-1" />
+            <Download className="w-3.5 h-3.5 mr-1" />
           )}
-          {downloadingJson ? "Downloading..." : "Download JSON (All)"}
+          {downloadingExcel ? "Downloading..." : "Download Excel (All)"}
         </Button>
       </div>
 

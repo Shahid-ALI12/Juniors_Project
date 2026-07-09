@@ -52,6 +52,7 @@ import {
   CircleCheck,
   CircleDashed,
   BarChart3,
+  Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import { pktToday } from "@/lib/pkt-date";
@@ -125,6 +126,60 @@ export default function LabourKhataPage() {
   const [summaryMonth, setSummaryMonth] = useState<string>(currentMonth());
   const [monthlySummaries, setMonthlySummaries] = useState<Array<LabourMonthlySummary & { labour: Labour }>>([]);
   const [loadingSummary, setLoadingSummary] = useState(true);
+
+  // ─── Excel download state (Payment History) ───
+  const [downloadingPaymentsExcel, setDownloadingPaymentsExcel] = useState(false);
+
+  // ─── Excel download handler (Payment History) ───
+  // Fetches /api/labour-payments with current filters and produces an .xlsx
+  // workbook of every matching record.
+  const handleDownloadPaymentsExcel = useCallback(async () => {
+    setDownloadingPaymentsExcel(true);
+    try {
+      const { downloadExcel } = await import("@/lib/download-excel");
+      const params = new URLSearchParams();
+      if (filterLabourId && filterLabourId !== "all") {
+        params.set("labour_id", filterLabourId);
+      }
+      if (filterFrom) params.set("from", filterFrom);
+      if (filterTo) params.set("to", filterTo);
+      params.set("include_labour", "true");
+      const res = await fetch(`/api/labour-payments?${params.toString()}`);
+      if (!res.ok) throw new Error("Failed to fetch payments");
+      const body = await res.json();
+      const all: Record<string, any>[] = Array.isArray(body?.payments) ? body.payments : [];
+      if (all.length === 0) {
+        toast.error("No payments to download for the current filters");
+        return;
+      }
+      // Build a labour id→name map so we can render the labour name column
+      // even for rows where the API didn't include the joined labours object.
+      const labourNameMap = new Map<number, string>(
+        labours.map((l) => [l.id, l.name]),
+      );
+      await downloadExcel(all, [
+        { key: "payment_date", label: "Date" },
+        {
+          key: "labour_id",
+          label: "Labour",
+          fmt: (_v: any, row: any) =>
+            row.labours?.name ||
+            labourNameMap.get(row.labour_id) ||
+            `#${row.labour_id}`,
+        },
+        { key: "payment_type", label: "Type" },
+        { key: "description", label: "Description" },
+        { key: "amount", label: "Amount (Rs.)", align: "right" },
+        { key: "entered_by", label: "Entered By" },
+        { key: "created_at", label: "Created At" },
+      ], "labour-payments");
+      toast.success(`Labour payments Excel downloaded (${all.length} records)`);
+    } catch (e: any) {
+      toast.error(e?.message || "Excel download failed");
+    } finally {
+      setDownloadingPaymentsExcel(false);
+    }
+  }, [filterLabourId, filterFrom, filterTo, labours]);
 
   // ─── Data loaders ───
 
@@ -1142,13 +1197,31 @@ export default function LabourKhataPage() {
       {/* ─── Section 5: Filter + History ─── */}
       <Card id="section-history" className="rounded-2xl border-slate-200/60 shadow-sm scroll-mt-24">
         <CardHeader className="pb-2">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Calendar className="size-5 text-slate-600" /> Payment History
-          </CardTitle>
-          <CardDescription>
-            Filter by labour and/or date range. Showing {payments.length} payment(s)
-            totalling <span className="font-semibold">Rs. {fmt(grandTotal)}</span>.
-          </CardDescription>
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <div>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Calendar className="size-5 text-slate-600" /> Payment History
+              </CardTitle>
+              <CardDescription className="mt-1">
+                Filter by labour and/or date range. Showing {payments.length} payment(s)
+                totalling <span className="font-semibold">Rs. {fmt(grandTotal)}</span>.
+              </CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDownloadPaymentsExcel}
+              disabled={downloadingPaymentsExcel || payments.length === 0}
+              className="shrink-0 self-start sm:self-auto"
+            >
+              {downloadingPaymentsExcel ? (
+                <Loader2 className="size-4 mr-1.5 animate-spin" />
+              ) : (
+                <Download className="size-4 mr-1.5" />
+              )}
+              {downloadingPaymentsExcel ? "Downloading..." : "Download Excel"}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Filter row */}

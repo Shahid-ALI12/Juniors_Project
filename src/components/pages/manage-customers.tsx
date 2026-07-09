@@ -38,10 +38,10 @@ import ConfirmAction from "@/components/shared/confirm-action";
 import {
   UserPlus, Users, Download, Loader2, Pencil, Ban, RotateCcw,
   Trash2, Search, Phone, UserCheck, Phone as PhoneIcon,
-  ChevronLeft, ChevronRight, FileJson,
+  ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { useCustomersPaginated, useCustomerBalance, useInvalidateAfterMutation } from "@/hooks/queries";
-import { downloadJson, downloadAllJson } from "@/lib/download-json";
+import { downloadAllJson } from "@/lib/download-json";
 
 const fmt = (n: number) => n.toLocaleString("en-PK");
 const PAGE_SIZE = 10;
@@ -140,8 +140,7 @@ export default function ManageCustomersPage() {
   const [confirmLabel, setConfirmLabel] = useState("Confirm");
   const [confirmLoading, setConfirmLoading] = useState(false);
 
-  // ─── JSON download state ───
-  const [downloadingJson, setDownloadingJson] = useState(false);
+  // ─── Excel download state ───
   const [downloadingExcel, setDownloadingExcel] = useState(false);
 
   const askConfirm = (
@@ -411,44 +410,6 @@ export default function ManageCustomersPage() {
     }
   };
 
-  // ──────────────────────────────────────────────────────────
-  // JSON download — fetch ALL customers + balances, single combined file
-  // ──────────────────────────────────────────────────────────
-  const handleDownloadJson = async () => {
-    setDownloadingJson(true);
-    try {
-      const allCustomers = await downloadAllJson(
-        "/api/customers",
-        {},
-        "tmp-customers",
-        "customers",
-      );
-      const merged = allCustomers.map((c: any) => ({
-        ...c,
-        ...(balances[c.id] ?? {
-          opening_balance: c.opening_balance ?? 0,
-          total_bill: 0,
-          total_cash_paid: 0,
-          total_goods_value: 0,
-          balance_due: c.opening_balance ?? 0,
-        }),
-      }));
-      downloadJson(
-        {
-          generatedAt: new Date().toISOString(),
-          totalRecords: merged.length,
-          customers: merged,
-        },
-        "all-customers.json",
-      );
-      toast.success(`Downloaded ${merged.length} customers as JSON`);
-    } catch (e: any) {
-      toast.error(e?.message || "Failed to download JSON");
-    } finally {
-      setDownloadingJson(false);
-    }
-  };
-
   const isSearchActive = searchDebounced.trim().length > 0;
   const noActiveMatch = isSearchActive && (activeQ.data?.customers?.length ?? 0) === 0;
   const noInactiveMatch = isSearchActive && (inactiveQ.data?.customers?.length ?? 0) === 0;
@@ -486,19 +447,6 @@ export default function ManageCustomersPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={handleDownloadJson}
-            disabled={downloadingJson}
-            className="cursor-pointer"
-          >
-            {downloadingJson ? (
-              <Loader2 className="size-4 mr-2 animate-spin" />
-            ) : (
-              <FileJson className="size-4 mr-2" />
-            )}
-            Download JSON
-          </Button>
           <Button
             variant="outline"
             onClick={handleDownloadExcel}
