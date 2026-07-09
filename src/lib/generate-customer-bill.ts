@@ -8,6 +8,12 @@ interface CustomerBillData {
   totalCashPaid: number;
   balanceDue: number;
   generatedAt: string;
+  // Optional mix-order driver info lookup — keyed by mix_order_id.
+  // Mix orders store driver_name/driver_rent on the mix_orders table
+  // (NOT on individual sale rows, where rickshaw_fare = 0).
+  // Without this lookup, mix-order rows in the bill would show Rs. 0 rent
+  // and miss the driver name.
+  mixMeta?: Record<number, { driver_name: string | null; driver_rent: number }>;
 }
 
 /* ─── Farm branding constants ─── */
@@ -199,21 +205,32 @@ export async function generateCustomerBillPDF(bill: CustomerBillData) {
 
       // Gather all ingredients of this mix order
       const ingredients = bill.sales.filter((s) => s.mix_order_id === mixOrderId);
-      const totalBillAmount = ingredients.reduce(
-        (sum, s) => sum + (s.quantity * s.rate_per_bag + s.rickshaw_fare),
-        0
+      // Driver rent for mix orders lives on the mix_orders table — look it up via mixMeta.
+      // Sale rows themselves have rickshaw_fare=0 for mix-order ingredients.
+      const mixMetaEntry = bill.mixMeta?.[Number(mixOrderId)];
+      const driverName = mixMetaEntry?.driver_name ?? sale.rickshaw_driver_name ?? null;
+      const driverRent = mixMetaEntry?.driver_rent ?? 0;
+      const ingredientsTotal = ingredients.reduce(
+        (sum, s) => sum + s.quantity * s.rate_per_bag,
+        0,
       );
-      const totalRickshaw = ingredients.reduce((sum, s) => sum + s.rickshaw_fare, 0);
+      const totalBillAmount = ingredientsTotal + driverRent;
       const totalCashReceived = ingredients.reduce((sum, s) => sum + s.cash_received, 0);
+
+      // Show driver name on a second line in the Product cell so the table
+      // layout doesn't break (autoTable handles \n as a line break).
+      const productCell = driverName
+        ? `Mix Order\n(Driver: ${driverName})`
+        : "Mix Order";
 
       rows.push({
         data: [
           String(rowNum),
           sale.sale_date || "",
-          "Mix Order",
+          productCell,
           "—", // qty varies per ingredient, not meaningful as a single value
           "—", // rate varies per ingredient
-          totalRickshaw > 0 ? `Rs. ${totalRickshaw.toLocaleString("en-PK")}` : "—",
+          driverRent > 0 ? `Rs. ${driverRent.toLocaleString("en-PK")}` : "—",
           `Rs. ${totalBillAmount.toLocaleString("en-PK")}`,
           totalCashReceived > 0 ? `Rs. ${totalCashReceived.toLocaleString("en-PK")}` : "—",
         ],
@@ -225,11 +242,16 @@ export async function generateCustomerBillPDF(bill: CustomerBillData) {
     // ─── Solo sale — render normally ───
     const unitLabel = sale.unit_type === "kg" ? "kg" : "bags";
     const billAmount = sale.quantity * sale.rate_per_bag + sale.rickshaw_fare;
+    // Show driver name on a second line in the Product cell (if present)
+    const productName = sale.products?.name || `Product #${sale.product_id}`;
+    const productCell = sale.rickshaw_driver_name
+      ? `${productName}\n(Driver: ${sale.rickshaw_driver_name})`
+      : productName;
     rows.push({
       data: [
         String(rowNum),
         sale.sale_date || "",
-        sale.products?.name || `Product #${sale.product_id}`,
+        productCell,
         `${sale.quantity.toLocaleString("en-PK")} ${unitLabel}`,
         `Rs. ${sale.rate_per_bag.toLocaleString("en-PK")}`,
         sale.rickshaw_fare > 0 ? `Rs. ${sale.rickshaw_fare.toLocaleString("en-PK")}` : "—",
@@ -258,7 +280,7 @@ export async function generateCustomerBillPDF(bill: CustomerBillData) {
 
   autoTable(doc, {
     startY: y,
-    head: [["#", "Date", "Product", "Qty", "Rate", "Rickshaw", "Bill Amt", "Cash Paid"]],
+    head: [["#", "Date", "Product", "Qty", "Rate", "Driver Rent", "Bill Amt", "Cash Paid"]],
     body: tData,
     foot: [["", "", "", "", "", "TOTAL", totalBillStr, totalCashStr]],
     theme: "grid",

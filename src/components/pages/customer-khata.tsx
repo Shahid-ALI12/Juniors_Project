@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Search,
+  Truck,
 } from "lucide-react";
 import {
   Select,
@@ -35,6 +36,7 @@ import {
   useCustomersPaginated,
   useCustomerBalance,
   useSalesPaginated,
+  useMixOrders,
 } from "@/hooks/queries";
 import { downloadExcel } from "@/lib/download-excel";
 
@@ -99,6 +101,23 @@ export default function CustomerKhataPage() {
     if (!d) return {};
     return typeof d === "object" && !Array.isArray(d) ? (d as Record<number, BalanceRow>) : {};
   }, [balancesQ.data]);
+
+  // ── Mix orders lookup: mix_order_id → { driver_name, driver_rent } ──
+  // Mix orders store their own driver_name/driver_rent (separate from
+  // sales.rickshaw_fare which is 0 for mix-order ingredients). We need
+  // this to render driver info in the customer history table for mix orders.
+  const mixOrdersQ = useMixOrders();
+  const mixMeta: Record<number, { driver_name: string | null; driver_rent: number }> = useMemo(() => {
+    const orders: any[] = mixOrdersQ.data?.orders ?? [];
+    const map: Record<number, { driver_name: string | null; driver_rent: number }> = {};
+    for (const o of orders) {
+      map[Number(o.id)] = {
+        driver_name: o.driver_name ?? null,
+        driver_rent: Number(o.driver_rent) || 0,
+      };
+    }
+    return map;
+  }, [mixOrdersQ.data]);
 
   // ── Section 2: Per-customer sales history (paginated) ──
   const [salesPage, setSalesPage] = useState(1);
@@ -226,6 +245,9 @@ export default function CustomerKhataPage() {
         totalCashPaid: bal.total_cash_paid,
         balanceDue: bal.balance_due,
         generatedAt: new Date().toLocaleString("en-PK"),
+        // Pass mix-order driver info so the bill shows correct driver rent
+        // and driver name for mix-order rows (sale rows have rickshaw_fare=0).
+        mixMeta,
       });
       toast.success("Bill downloaded successfully!");
     } catch (err) {
@@ -338,7 +360,46 @@ export default function CustomerKhataPage() {
         toast.error("No sales to download for this customer");
         return;
       }
-      await downloadExcel(all, [
+
+      // Fetch mix orders to enrich mix-order sale rows with driver info
+      // (mix orders store driver_name/driver_rent on the mix_orders table,
+      // not on individual sale rows).
+      let mixMetaForExcel: Record<number, { driver_name: string | null; driver_rent: number }> = {};
+      try {
+        const moRes = await fetch(`/api/mix-orders`);
+        if (moRes.ok) {
+          const moBody = await moRes.json();
+          const orders: any[] = moBody?.orders ?? [];
+          for (const o of orders) {
+            mixMetaForExcel[Number(o.id)] = {
+              driver_name: o.driver_name ?? null,
+              driver_rent: Number(o.driver_rent) || 0,
+            };
+          }
+        }
+      } catch (moErr) {
+        console.warn("Failed to fetch mix orders for Excel enrichment:", moErr);
+      }
+
+      // Enrich each row with driver_name + driver_rent (solo sales use sale fields,
+      // mix orders use mix_orders table fields via lookup).
+      const enriched = all.map((row) => {
+        const mixId = row.mix_order_id ? Number(row.mix_order_id) : null;
+        const meta = mixId != null ? mixMetaForExcel[mixId] : null;
+        const driverName = mixId != null
+          ? (meta?.driver_name ?? "")
+          : (row.rickshaw_driver_name ?? "");
+        const driverRent = mixId != null
+          ? (meta?.driver_rent ?? 0)
+          : (Number(row.rickshaw_fare) || 0);
+        return {
+          ...row,
+          _driver_name: driverName,
+          _driver_rent: driverRent,
+        };
+      });
+
+      await downloadExcel(enriched, [
         { key: "sale_date", label: "Date" },
         {
           key: "products",
@@ -348,35 +409,44 @@ export default function CustomerKhataPage() {
         { key: "quantity", label: "Qty", align: "right" },
         { key: "unit_type", label: "Unit" },
         { key: "rate_per_bag", label: "Rate", align: "right" },
-        { key: "rickshaw_fare", label: "Rickshaw", align: "right" },
+        { key: "_driver_rent", label: "Driver Rent", align: "right" },
+        { key: "_driver_name", label: "Driver Name" },
         {
           key: "_bill",
           label: "Bill",
           align: "right",
-          fmt: (_v: any, row: any) =>
-            String(
-              (Number(row.quantity) || 0) * (Number(row.rate_per_bag) || 0) +
-                (Number(row.rickshaw_fare) || 0),
-            ),
+          fmt: (_v: any, row: any) => {
+            // Bill = (qty * rate) + driver_rent
+            // For mix orders, rickshaw_fare is 0 in sale rows; we add driver_rent.
+            // For solo sales, rickshaw_fare is the driver rent.
+            const rent = row.mix_order_id
+              ? (Number(row._driver_rent) || 0)
+              : (Number(row.rickshaw_fare) || 0);
+            return String(
+              (Number(row.quantity) || 0) * (Number(row.rate_per_bag) || 0) + rent,
+            );
+          },
         },
         { key: "cash_received", label: "Cash", align: "right" },
         {
           key: "_remaining",
           label: "Remaining",
           align: "right",
-          fmt: (_v: any, row: any) =>
-            String(
-              (Number(row.quantity) || 0) * (Number(row.rate_per_bag) || 0) +
-                (Number(row.rickshaw_fare) || 0) -
-                (Number(row.cash_received) || 0),
-            ),
+          fmt: (_v: any, row: any) => {
+            const rent = row.mix_order_id
+              ? (Number(row._driver_rent) || 0)
+              : (Number(row.rickshaw_fare) || 0);
+            const bill =
+              (Number(row.quantity) || 0) * (Number(row.rate_per_bag) || 0) + rent;
+            return String(bill - (Number(row.cash_received) || 0));
+          },
         },
         { key: "mix_order_id", label: "Mix Order ID" },
         { key: "transaction_group_id", label: "Bill Group" },
         { key: "entered_by", label: "Entered By" },
         { key: "created_at", label: "Created At" },
       ], `customer-${selectedCustomerId}-sales`);
-      toast.success(`Sales Excel downloaded (${all.length} records)`);
+      toast.success(`Sales Excel downloaded (${enriched.length} records)`);
     } catch (err: any) {
       console.error("Download error:", err);
       toast.error(err?.message || "Failed to download sales");
@@ -676,7 +746,8 @@ export default function CustomerKhataPage() {
                       <th className="text-left text-xs uppercase text-slate-500 font-semibold px-3 py-2.5">Product</th>
                       <th className="text-right text-xs uppercase text-slate-500 font-semibold px-3 py-2.5">Qty</th>
                       <th className="text-right text-xs uppercase text-slate-500 font-semibold px-3 py-2.5">Rate</th>
-                      <th className="text-right text-xs uppercase text-slate-500 font-semibold px-3 py-2.5">Rickshaw</th>
+                      <th className="text-right text-xs uppercase text-slate-500 font-semibold px-3 py-2.5">Driver Rent</th>
+                      <th className="text-left text-xs uppercase text-slate-500 font-semibold px-3 py-2.5">Driver Name</th>
                       <th className="text-right text-xs uppercase text-slate-500 font-semibold px-3 py-2.5">Bill Amount</th>
                       <th className="text-right text-xs uppercase text-slate-500 font-semibold px-3 py-2.5">Cash Paid</th>
                     </tr>
@@ -695,6 +766,7 @@ export default function CustomerKhataPage() {
                         <td className="px-3 py-2.5 text-right tabular-nums text-amber-700">—</td>
                         <td className="px-3 py-2.5 text-right tabular-nums text-amber-700">—</td>
                         <td className="px-3 py-2.5 text-right tabular-nums text-amber-700">—</td>
+                        <td className="px-3 py-2.5 text-amber-700">—</td>
                         <td className="px-3 py-2.5 text-right">
                           <span className="inline-flex flex-col items-end">
                             <span className="tabular-nums font-bold text-amber-800">Rs. {fmt(selectedBalance.opening_balance)}</span>
@@ -712,12 +784,17 @@ export default function CustomerKhataPage() {
                       // ─── Mix Order: collapsed summary row + expandable sub-rows ───
                       if (isMixOrder) {
                         const mixOrderId = String(firstSale.mix_order_id);
+                        const mixOrderIdNum = Number(mixOrderId);
                         const isExpanded = expandedMixOrders.has(mixOrderId);
-                        const totalRickshaw = group.sales.reduce((sum, s) => sum + s.rickshaw_fare, 0);
+                        // Mix orders store rickshaw_fare=0 on individual sale rows;
+                        // the actual driver rent lives on the mix_orders table.
+                        // Look it up via mixMeta (fetched from /api/mix-orders).
+                        const mixDriverName = mixMeta[mixOrderIdNum]?.driver_name ?? firstSale.rickshaw_driver_name ?? null;
+                        const mixDriverRent = mixMeta[mixOrderIdNum]?.driver_rent ?? 0;
                         const totalBillAmount = group.sales.reduce(
-                          (sum, s) => sum + (s.quantity * s.rate_per_bag + s.rickshaw_fare),
+                          (sum, s) => sum + (s.quantity * s.rate_per_bag),
                           0,
-                        );
+                        ) + mixDriverRent;
                         const totalCashReceived = group.sales.reduce((sum, s) => sum + s.cash_received, 0);
                         return (
                           <Fragment key={group.groupId}>
@@ -747,7 +824,17 @@ export default function CustomerKhataPage() {
                               <td className="px-3 py-2.5 text-right tabular-nums text-slate-400">—</td>
                               <td className="px-3 py-2.5 text-right tabular-nums text-slate-400">—</td>
                               <td className="px-3 py-2.5 text-right tabular-nums">
-                                {totalRickshaw > 0 ? fmt(totalRickshaw) : "—"}
+                                {mixDriverRent > 0 ? fmt(mixDriverRent) : "—"}
+                              </td>
+                              <td className="px-3 py-2.5 text-slate-700">
+                                {mixDriverName ? (
+                                  <span className="inline-flex items-center gap-1 text-xs">
+                                    <Truck className="size-3.5 text-slate-400" />
+                                    <span className="truncate max-w-[140px]">{mixDriverName}</span>
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-300">—</span>
+                                )}
                               </td>
                               <td className="px-3 py-2.5 text-right">
                                 <AmountWithWords amount={totalBillAmount} className="items-end" />
@@ -762,7 +849,7 @@ export default function CustomerKhataPage() {
                             </tr>
                             {isExpanded &&
                               group.sales.map((sale) => {
-                                const billAmount = sale.quantity * sale.rate_per_bag + sale.rickshaw_fare;
+                                const billAmount = sale.quantity * sale.rate_per_bag;
                                 const unitLabel = sale.unit_type === "kg" ? "kg" : "bags";
                                 return (
                                   <tr key={sale.id} className="border-b border-slate-50 bg-slate-50/40">
@@ -780,9 +867,8 @@ export default function CustomerKhataPage() {
                                     <td className="px-3 py-2 text-right tabular-nums text-slate-600">
                                       {fmt(sale.rate_per_bag)}
                                     </td>
-                                    <td className="px-3 py-2 text-right tabular-nums text-slate-600">
-                                      {sale.rickshaw_fare > 0 ? fmt(sale.rickshaw_fare) : "—"}
-                                    </td>
+                                    <td className="px-3 py-2 text-right tabular-nums text-slate-400">—</td>
+                                    <td className="px-3 py-2 text-slate-400">—</td>
                                     <td className="px-3 py-2 text-right">
                                       <AmountWithWords amount={billAmount} className="items-end" />
                                     </td>
@@ -819,6 +905,16 @@ export default function CustomerKhataPage() {
                           </td>
                           <td className="px-3 py-2.5 text-right tabular-nums">
                             {sale.rickshaw_fare > 0 ? fmt(sale.rickshaw_fare) : "—"}
+                          </td>
+                          <td className="px-3 py-2.5 text-slate-700">
+                            {sale.rickshaw_driver_name ? (
+                              <span className="inline-flex items-center gap-1 text-xs">
+                                <Truck className="size-3.5 text-slate-400" />
+                                <span className="truncate max-w-[140px]">{sale.rickshaw_driver_name}</span>
+                              </span>
+                            ) : (
+                              <span className="text-slate-300">—</span>
+                            )}
                           </td>
                           <td className="px-3 py-2.5 text-right">
                             <AmountWithWords amount={billAmount} className="items-end" />
