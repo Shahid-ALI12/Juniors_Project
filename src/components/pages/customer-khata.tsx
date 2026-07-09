@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { PageHeader, MetricCard } from "@/components/shared/page-header";
 import { QuickNav } from "@/components/shared/quick-nav";
 import { CREDIT_LIMIT } from "@/types";
-import type { Customer, Sale } from "@/types";
+import type { Customer, Sale, Purchase, Location } from "@/types";
 import {
   AlertTriangle,
   Download,
@@ -17,6 +17,7 @@ import {
   ChevronRight,
   Search,
   Truck,
+  ShoppingBag,
 } from "lucide-react";
 import {
   Select,
@@ -129,6 +130,55 @@ export default function CustomerKhataPage() {
     salesPage,
     PAGE_SIZE,
   );
+
+  // ── Buy-Product records (goods we bought FROM this customer) ──
+  // Fetched unpaginated — the per-customer list is usually short.
+  const [selectedPurchases, setSelectedPurchases] = useState<Purchase[]>([]);
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [loadingPurchases, setLoadingPurchases] = useState(false);
+
+  // Load locations (Farmhouse / Shop) once for the purchases table display
+  useEffect(() => {
+    (async () => {
+      try {
+        const locRes = await fetch("/api/locations", { cache: "no-store" });
+        if (locRes.ok) {
+          const locData = await locRes.json();
+          setLocations(locData.locations ?? []);
+        }
+      } catch { /* silent */ }
+    })();
+  }, []);
+
+  // Fetch purchases-from-customer whenever the selected customer changes
+  useEffect(() => {
+    if (!selectedCustomerId) {
+      setSelectedPurchases([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setLoadingPurchases(true);
+      try {
+        const purRaw = await fetch(
+          `/api/purchases?from_customers_only=true&customer_id=${selectedCustomerId}&page=1&page_size=10000`,
+          { cache: "no-store" },
+        );
+        if (cancelled) return;
+        if (purRaw.ok) {
+          const purRes = await purRaw.json();
+          setSelectedPurchases(purRes.rows ?? []);
+        } else {
+          setSelectedPurchases([]);
+        }
+      } catch {
+        if (!cancelled) setSelectedPurchases([]);
+      } finally {
+        if (!cancelled) setLoadingPurchases(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedCustomerId]);
 
   const [downloadingBill, setDownloadingBill] = useState(false);
   const [downloadingCustomers, setDownloadingCustomers] = useState(false);
@@ -988,20 +1038,89 @@ export default function CustomerKhataPage() {
               )}
             </div>
 
-            {/* Paid in Goods */}
+            {/* Bought From Customer — individual purchase records (goods we bought FROM this customer) */}
             <div>
-              <h3 className="text-sm font-bold text-slate-700 mb-3 uppercase tracking-wider">
-                Paid in Goods (reduces their tab)
-              </h3>
-              <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-6 text-center text-slate-400 text-sm">
-                {selectedBalance && selectedBalance.total_goods_value > 0 ? (
-                  <div className="flex flex-col items-center">
-                    <span className="text-slate-700 font-medium">Rs. {fmt(selectedBalance.total_goods_value)} in goods settlements recorded.</span>
-                    <span className="text-[0.65rem] text-slate-400 capitalize mt-0.5">{numberToWords(selectedBalance.total_goods_value)}</span>
-                  </div>
-                ) : (
-                  "No goods settlements recorded."
-                )}
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <ShoppingBag className="size-3.5 text-amber-600" />
+                  Bought From Customer (reduces their tab)
+                </h3>
+                <span className="text-xs text-slate-500">
+                  Total: <span className="font-bold text-amber-700">Rs. {fmt(selectedBalance?.total_goods_value ?? 0)}</span>
+                </span>
+              </div>
+              <div className="overflow-x-auto rounded-lg border border-slate-100">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-amber-50 border-b border-amber-200">
+                      <th className="text-left text-xs uppercase text-amber-700 font-semibold px-3 py-2.5">#</th>
+                      <th className="text-left text-xs uppercase text-amber-700 font-semibold px-3 py-2.5">Date</th>
+                      <th className="text-left text-xs uppercase text-amber-700 font-semibold px-3 py-2.5">Product</th>
+                      <th className="text-right text-xs uppercase text-amber-700 font-semibold px-3 py-2.5">Bags</th>
+                      <th className="text-right text-xs uppercase text-amber-700 font-semibold px-3 py-2.5">Rate / Bag</th>
+                      <th className="text-right text-xs uppercase text-amber-700 font-semibold px-3 py-2.5">Total Amount</th>
+                      <th className="text-center text-xs uppercase text-amber-700 font-semibold px-3 py-2.5">Location</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loadingPurchases ? (
+                      <tr>
+                        <td colSpan={7} className="px-3 py-8 text-center">
+                          <Loader2 className="size-5 animate-spin text-slate-400 mx-auto" />
+                        </td>
+                      </tr>
+                    ) : selectedPurchases.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="px-3 py-8 text-center text-slate-400 text-sm">
+                          No purchases recorded from this customer.
+                        </td>
+                      </tr>
+                    ) : (
+                      selectedPurchases.map((pur, idx) => {
+                        const total = (Number(pur.quantity) ?? 0) * (Number(pur.rate_per_bag) ?? 0);
+                        const locName = locations.find((l) => l.id === pur.location_id)?.name ?? "—";
+                        return (
+                          <tr key={pur.id} className="border-b border-slate-50 last:border-b-0 hover:bg-amber-50/30">
+                            <td className="px-3 py-2.5 text-slate-500 font-medium">{idx + 1}</td>
+                            <td className="px-3 py-2.5 text-slate-600">{pur.purchase_date}</td>
+                            <td className="px-3 py-2.5 text-slate-800">
+                              {pur.products?.name ?? `Product #${pur.product_id}`}
+                            </td>
+                            <td className="px-3 py-2.5 text-right tabular-nums">
+                              {Number(pur.quantity).toLocaleString("en-PK")}
+                            </td>
+                            <td className="px-3 py-2.5 text-right tabular-nums">
+                              Rs. {Number(pur.rate_per_bag).toLocaleString("en-PK")}
+                            </td>
+                            <td className="px-3 py-2.5 text-right">
+                              <span className="inline-flex flex-col items-end">
+                                <span className="tabular-nums font-bold text-amber-800">Rs. {fmt(total)}</span>
+                                <span className="text-[0.6rem] text-slate-400 capitalize">{numberToWords(total)}</span>
+                              </span>
+                            </td>
+                            <td className="px-3 py-2.5 text-center text-xs text-slate-600">{locName}</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                  {selectedPurchases.length > 0 && (
+                    <tfoot>
+                      <tr className="bg-amber-50 border-t-2 border-amber-200">
+                        <td colSpan={5} className="px-3 py-3 text-right text-xs uppercase font-bold text-amber-700">
+                          Total Bought From Customer
+                        </td>
+                        <td className="px-3 py-3 text-right">
+                          <span className="inline-flex flex-col items-end">
+                            <span className="tabular-nums font-extrabold text-amber-900">Rs. {fmt(selectedBalance?.total_goods_value ?? 0)}</span>
+                            <span className="text-[0.6rem] text-amber-700 capitalize">{numberToWords(selectedBalance?.total_goods_value ?? 0)}</span>
+                          </span>
+                        </td>
+                        <td></td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
               </div>
             </div>
 

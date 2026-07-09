@@ -199,3 +199,81 @@ export async function getGoodsSettlementsForCustomer(customerId: number): Promis
   if (error) throw error;
   return (data || []).reduce((sum, r) => sum + (r.quantity as number) * (r.rate_per_bag as number), 0);
 }
+
+// ─────────────────────────────────────────────────────────────
+// Buy-Product History (purchases FROM customers)
+// ─────────────────────────────────────────────────────────────
+// A "Buy Product" record is a purchases row where settled_by_customer_id
+// IS NOT NULL — i.e., we bought goods from a customer (the customer is
+// acting as our supplier) and we owe them money for it.
+//
+// These records flow into the customer khata as "Paid in Goods" (which
+// reduces their balance_due) and also appear individually on the
+// Buy Product history panel on the Manage Products page.
+
+export async function getBuyProductHistoryPaginated(filters: {
+  purchase_date_gte?: string;
+  purchase_date_lte?: string;
+  customer_id?: number;
+  product_id?: number;
+  location_id?: number;
+  page: number;       // 1-indexed
+  pageSize: number;   // rows per page (clamped to 200)
+}): Promise<{
+  rows: PurchaseRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}> {
+  const { page, pageSize, ...rest } = filters;
+  const safePage = Math.max(1, page);
+  const safePageSize = Math.min(Math.max(1, pageSize), 200);
+  const from = (safePage - 1) * safePageSize;
+  const to = from + safePageSize - 1;
+
+  let q = admin
+    .from("purchases")
+    .select(
+      "id, purchase_date, product_id, quantity, rate_per_bag, supplier_id, settled_by_customer_id, cash_paid, location_id, notes, entered_by, unit_type, bag_weight_kg, created_at, products(id,name), suppliers(id,name), customers(id,name,type,phone)",
+      { count: "exact" },
+    )
+    .not("settled_by_customer_id", "is", null)
+    .order("created_at", { ascending: false })
+    .range(from, to);
+
+  if (rest.purchase_date_gte) q = q.gte("purchase_date", rest.purchase_date_gte);
+  if (rest.purchase_date_lte) q = q.lte("purchase_date", rest.purchase_date_lte);
+  if (rest.customer_id) q = q.eq("settled_by_customer_id", rest.customer_id);
+  if (rest.product_id) q = q.eq("product_id", rest.product_id);
+  if (rest.location_id !== undefined && rest.location_id !== null) {
+    q = q.eq("location_id", rest.location_id);
+  }
+
+  const { data, error, count } = await q;
+  if (error) throw error;
+  const total = count ?? 0;
+  return {
+    rows: (data || []) as unknown as PurchaseRow[],
+    total,
+    page: safePage,
+    pageSize: safePageSize,
+    totalPages: Math.max(1, Math.ceil(total / safePageSize)),
+  };
+}
+
+// Fetch all buy-product records for a single customer (no pagination —
+// used by Customer Khata to render the full per-customer purchase list).
+export async function getBuyProductHistoryForCustomer(
+  customerId: number,
+): Promise<PurchaseRow[]> {
+  const { data, error } = await admin
+    .from("purchases")
+    .select(
+      "id, purchase_date, product_id, quantity, rate_per_bag, supplier_id, settled_by_customer_id, cash_paid, location_id, notes, entered_by, unit_type, bag_weight_kg, created_at, products(id,name), suppliers(id,name), customers(id,name,type,phone)",
+    )
+    .eq("settled_by_customer_id", customerId)
+    .order("purchase_date", { ascending: true });
+  if (error) throw error;
+  return (data || []) as unknown as PurchaseRow[];
+}
