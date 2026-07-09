@@ -82,7 +82,13 @@ alter table customer_payments enable row level security;
 -- 3. Update get_all_customer_balances() RPC to subtract advance_payment
 --    from balance_due.
 --    New formula: opening_balance + total_bill - cash_paid - goods_value - advance_payment
+--
+--    ⚠️ PostgreSQL forbids CREATE OR REPLACE when the OUT params
+--    (return type) change. We must DROP the old function first.
+--    DROP IF EXISTS makes this safe to re-run.
 -- ────────────────────────────────────────────────────────────
+DROP FUNCTION IF EXISTS public.get_all_customer_balances();
+
 CREATE OR REPLACE FUNCTION public.get_all_customer_balances()
 RETURNS TABLE (
   customer_id       bigint,
@@ -147,6 +153,13 @@ GRANT EXECUTE ON FUNCTION public.get_all_customer_balances() TO authenticated, a
 --      4. Update customer row in same transaction
 --      5. Insert customer_payments row with full snapshot
 -- ────────────────────────────────────────────────────────────
+-- ⚠️ Note: RETURNS TABLE(id bigint) declares an OUT column named `id`.
+--    Inside the body, ALL references to customer/payment IDs MUST be
+--    table-qualified (customers.id, customer_payments.id) to avoid
+--    "column reference 'id' is ambiguous" errors — PostgreSQL would
+--    otherwise see the OUT param `id` as a candidate.
+DROP FUNCTION IF EXISTS public.record_customer_payment(bigint, numeric, date, text, text);
+
 CREATE OR REPLACE FUNCTION public.record_customer_payment(
   p_customer_id   bigint,
   p_amount        numeric,
@@ -176,8 +189,8 @@ BEGIN
     RAISE EXCEPTION 'Payment amount must be greater than 0';
   END IF;
 
-  -- Lock + fetch the customer row
-  SELECT * INTO v_cust FROM customers WHERE id = p_customer_id FOR UPDATE;
+  -- Lock + fetch the customer row (QUALIFY id to avoid OUT param clash)
+  SELECT * INTO v_cust FROM customers WHERE customers.id = p_customer_id FOR UPDATE;
   IF v_cust.id IS NULL THEN
     RAISE EXCEPTION 'Customer % not found', p_customer_id;
   END IF;
@@ -190,12 +203,12 @@ BEGIN
     COALESCE(SUM(quantity * rate_per_bag + rickshaw_fare), 0),
     COALESCE(SUM(cash_received), 0)
   INTO v_total_bill, v_total_cash
-  FROM sales WHERE customer_id = p_customer_id;
+  FROM sales WHERE sales.customer_id = p_customer_id;
 
   -- Goods settlements (purchases settled by this customer)
   SELECT COALESCE(SUM(quantity * rate_per_bag), 0)
   INTO v_goods_value
-  FROM purchases WHERE settled_by_customer_id = p_customer_id;
+  FROM purchases WHERE purchases.settled_by_customer_id = p_customer_id;
 
   -- Current balance_due using the OLD (pre-payment) formula:
   --   opening + bill - cash - goods - advance
@@ -213,11 +226,11 @@ BEGIN
   v_new_opening := GREATEST(v_old_opening - v_credit_offset, 0);
   v_new_advance := v_old_advance + v_remainder;
 
-  -- Update customer row
+  -- Update customer row (QUALIFY id)
   UPDATE customers
     SET opening_balance = v_new_opening,
         advance_payment = v_new_advance
-    WHERE id = p_customer_id;
+    WHERE customers.id = p_customer_id;
 
   -- Insert payment history row
   INSERT INTO customer_payments (
