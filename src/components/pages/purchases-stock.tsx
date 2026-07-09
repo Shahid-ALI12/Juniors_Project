@@ -52,6 +52,8 @@ import {
   CheckCircle2,
   PackagePlus,
   X,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { pktToday } from "@/lib/pkt-date";
@@ -85,6 +87,10 @@ export default function PurchasesStockPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [stockData, setStockData] = useState<ProductStock[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
+
+  // Purchase History pagination (10 records per page)
+  const [historyPage, setHistoryPage] = useState(1);
+  const historyPageSize = 10;
 
   // Section 1: Stock state — single unified table (no more Farm/Shop tabs)
   // (Now per-location: filter by selected location)
@@ -169,9 +175,9 @@ export default function PurchasesStockPage() {
       errors.push("Stock: " + (e.message || "unknown error"));
     }
 
-    // Purchases (date-specific, always fetch fresh)
+    // Purchases (ALL records for history — always fetch fresh)
     try {
-      const puRes = await fetch(`/api/purchases?purchase_date_gte=${today}&purchase_date_lte=${today}`);
+      const puRes = await fetch(`/api/purchases`);
       if (puRes.ok) {
         const puData = await puRes.json();
         setPurchases(puData.purchases ?? []);
@@ -189,7 +195,7 @@ export default function PurchasesStockPage() {
     } else if (errors.length >= 6) {
       toast.error("All data sources failed — check your connection");
     }
-  }, [today]);
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -511,6 +517,17 @@ export default function PurchasesStockPage() {
 
   const getPurchaseValue = (p: Purchase) => p.quantity * p.rate_per_bag;
 
+  // ── Purchase History pagination (client-side, 10 per page) ──
+  const historyTotalPages = Math.max(1, Math.ceil(purchases.length / historyPageSize));
+
+  // Clamp current page if purchases shrank (e.g. after delete)
+  const safeHistoryPage = Math.min(historyPage, historyTotalPages);
+
+  const pagedPurchases = useMemo(() => {
+    const from = (safeHistoryPage - 1) * historyPageSize;
+    return purchases.slice(from, from + historyPageSize);
+  }, [purchases, safeHistoryPage, historyPageSize]);
+
   const handleDownloadExcel = async () => {
     try {
       toast.loading("Generating Excel…", { id: "excel-dl" });
@@ -786,7 +803,7 @@ export default function PurchasesStockPage() {
           items={[
             { id: "section-stock", label: "Current Stock", icon: Package, iconColor: "text-blue-600" },
             { id: "section-purchase", label: "Record a Purchase", icon: ShoppingBag },
-            { id: "section-today-purchases", label: "Today's Purchases", icon: ShoppingBag, iconColor: "text-emerald-600" },
+            { id: "section-today-purchases", label: "Purchase History", icon: ShoppingBag, iconColor: "text-emerald-600" },
           ]}
         />
 
@@ -1011,25 +1028,28 @@ export default function PurchasesStockPage() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <CardTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <ShoppingBag className="size-5 text-slate-600" /> Today&apos;s Purchases
+                  <ShoppingBag className="size-5 text-slate-600" /> Purchase History
                 </CardTitle>
-                <CardDescription>{purchases.length} purchase{purchases.length !== 1 && "s"} recorded today</CardDescription>
+                <CardDescription>
+                  {purchases.length} purchase{purchases.length !== 1 && "s"} recorded • Showing {pagedPurchases.length} of {purchases.length}
+                </CardDescription>
               </div>
-              <Button onClick={handleDownloadExcel} variant="outline" className="gap-2 border-slate-300 text-slate-700 hover:bg-slate-100">
-                <Download className="size-4" /> Download Excel (All Purchases)
+              <Button onClick={handleDownloadExcel} variant="outline" className="gap-2 border-slate-300 text-slate-700 hover:bg-slate-100" disabled={purchases.length === 0}>
+                <Download className="size-4" /> Download Excel
               </Button>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
             {purchases.length === 0 ? (
-              <div className="py-12 text-center text-slate-400 text-sm">No purchases recorded yet today.</div>
+              <div className="py-12 text-center text-slate-400 text-sm">No purchases recorded yet.</div>
             ) : (
               <>
                 <div className="rounded-xl border border-slate-200/60 overflow-hidden">
-                  <div className="max-h-[400px] overflow-y-auto">
+                  <div className="max-h-[460px] overflow-y-auto">
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-slate-50/80 hover:bg-slate-50/80">
+                          <TableHead className="text-xs uppercase text-slate-500 font-semibold whitespace-nowrap">Date</TableHead>
                           <TableHead className="text-xs uppercase text-slate-500 font-semibold">Source</TableHead>
                           <TableHead className="text-xs uppercase text-slate-500 font-semibold">Product</TableHead>
                           <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Qty</TableHead>
@@ -1040,7 +1060,7 @@ export default function PurchasesStockPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {purchases.map((p) => {
+                        {pagedPurchases.map((p) => {
                           const source = p.settled_by_customer_id
                             ? p.customers?.name ?? "—"
                             : p.suppliers?.name ?? "—";
@@ -1048,6 +1068,7 @@ export default function PurchasesStockPage() {
                           const value = getPurchaseValue(p);
                           return (
                             <TableRow key={p.id}>
+                              <TableCell className="text-sm text-slate-600 whitespace-nowrap">{p.purchase_date}</TableCell>
                               <TableCell>
                                 <div className="flex flex-col">
                                   <span className="text-sm font-medium text-slate-800">{source}</span>
@@ -1073,6 +1094,36 @@ export default function PurchasesStockPage() {
                     </Table>
                   </div>
                 </div>
+
+                {/* Pagination — Prev / Next + page indicator */}
+                {historyTotalPages > 1 && (
+                  <div className="flex items-center justify-between gap-3 px-1">
+                    <span className="text-xs text-slate-500">
+                      Page {safeHistoryPage} of {historyTotalPages} • {purchases.length} total records
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
+                        disabled={safeHistoryPage <= 1}
+                        className="gap-1.5 text-xs font-semibold"
+                      >
+                        <ChevronLeft className="size-3.5" /> Prev
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setHistoryPage((p) => Math.min(historyTotalPages, p + 1))}
+                        disabled={safeHistoryPage >= historyTotalPages}
+                        className="gap-1.5 text-xs font-semibold"
+                      >
+                        Next <ChevronRight className="size-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-3">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="flex items-center justify-between rounded-xl bg-slate-100/80 px-5 py-3.5 border border-slate-200/60">
@@ -1080,7 +1131,7 @@ export default function PurchasesStockPage() {
                       <span className="text-xl font-extrabold text-slate-900">Rs. {fmt(totalPurchaseValue)}</span>
                     </div>
                     <div className="flex items-center justify-between rounded-xl bg-emerald-50/80 px-5 py-3.5 border border-emerald-200/60">
-                      <span className="text-sm font-bold text-emerald-700 uppercase tracking-wide">Total Cash Paid Today</span>
+                      <span className="text-sm font-bold text-emerald-700 uppercase tracking-wide">Total Cash Paid</span>
                       <span className="text-xl font-extrabold text-emerald-800">Rs. {fmt(totalCashPaid)}</span>
                     </div>
                   </div>
