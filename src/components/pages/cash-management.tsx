@@ -38,6 +38,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   Loader2,
+  Search as SearchIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { pktToday } from "@/lib/pkt-date";
@@ -78,6 +79,14 @@ export default function CashManagementPage() {
   // Table filter
   const [dateFilter, setDateFilter] = useState("");
 
+  // Recent Transfers search (client-side, debounced)
+  const [transferSearchInput, setTransferSearchInput] = useState("");
+  const [transferSearchDebounced, setTransferSearchDebounced] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setTransferSearchDebounced(transferSearchInput), 350);
+    return () => clearTimeout(t);
+  }, [transferSearchInput]);
+
   // Correction state
   const [correctionOpen, setCorrectionOpen] = useState(false);
   const [correctionAccount, setCorrectionAccount] = useState<string>(HAND_ACCOUNT_NAME);
@@ -100,6 +109,14 @@ export default function CashManagementPage() {
   }
   const [corrections, setCorrections] = useState<CorrectionRow[]>([]);
   const [loadingCorrections, setLoadingCorrections] = useState(false);
+
+  // Correction History search (client-side, debounced)
+  const [corrSearchInput, setCorrSearchInput] = useState("");
+  const [corrSearchDebounced, setCorrSearchDebounced] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setCorrSearchDebounced(corrSearchInput), 350);
+    return () => clearTimeout(t);
+  }, [corrSearchInput]);
 
   // Fetch corrections when the correction section is opened (lazy load)
   useEffect(() => {
@@ -129,9 +146,40 @@ export default function CashManagementPage() {
   const totalCash = handBalance + lockerBalance;
 
   const filteredTransfers = useMemo(() => {
-    if (!dateFilter) return transfers;
-    return transfers.filter((t) => t.transfer_date === dateFilter);
-  }, [transfers, dateFilter]);
+    let list = transfers;
+    if (dateFilter) list = list.filter((t) => t.transfer_date === dateFilter);
+    if (transferSearchDebounced.trim()) {
+      const q = transferSearchDebounced.trim().toLowerCase();
+      list = list.filter((t) => {
+        const fromName = t.from_account?.name ?? "";
+        const toName = t.to_account?.name ?? "";
+        return [
+          fromName,
+          toName,
+          t.transfer_date ?? "",
+          t.notes ?? "",
+          String(t.amount),
+        ].some((s) => s.toLowerCase().includes(q));
+      });
+    }
+    return list;
+  }, [transfers, dateFilter, transferSearchDebounced]);
+
+  // Filtered corrections (by account name / reason / entered_by / date)
+  const filteredCorrections = useMemo(() => {
+    if (!corrSearchDebounced.trim()) return corrections;
+    const q = corrSearchDebounced.trim().toLowerCase();
+    return corrections.filter((c) =>
+      [
+        c.account_name ?? "",
+        c.description ?? "",
+        c.entered_by ?? "",
+        c.entry_date ?? "",
+        c.direction ?? "",
+        String(c.amount),
+      ].some((s) => s.toLowerCase().includes(q)),
+    );
+  }, [corrections, corrSearchDebounced]);
 
   const accountIdByName = (name: string) => accounts.find((a) => a.name === name)?.id;
 
@@ -409,9 +457,30 @@ export default function CashManagementPage() {
               <BarChart3 className="size-5 text-slate-500" />
               Recent Transfers
             </h2>
-            <div className="space-y-1">
-              <Label htmlFor="date-filter" className="sr-only">Filter by date</Label>
-              <Input id="date-filter" type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} placeholder="Filter by date" className="w-full sm:w-auto" />
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="relative">
+                <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+                <Input
+                  value={transferSearchInput}
+                  onChange={(e) => setTransferSearchInput(e.target.value)}
+                  placeholder="Search by account / notes / date..."
+                  className="pl-8 w-full sm:w-64 h-9"
+                />
+                {transferSearchInput && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 h-7 px-2 text-slate-400"
+                    onClick={() => setTransferSearchInput("")}
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="date-filter" className="sr-only">Filter by date</Label>
+                <Input id="date-filter" type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} placeholder="Filter by date" className="w-full sm:w-auto h-9" />
+              </div>
             </div>
           </div>
 
@@ -423,7 +492,9 @@ export default function CashManagementPage() {
             </div>
           ) : filteredTransfers.length === 0 ? (
             <div className="py-10 text-center text-sm text-slate-400">
-              No transfers found for the selected date.
+              {transferSearchDebounced.trim()
+                ? `No transfers found for "${transferSearchDebounced.trim()}"${dateFilter ? ` on ${dateFilter}` : ""}.`
+                : "No transfers found for the selected date."}
             </div>
           ) : (
             <div className="max-h-96 overflow-y-auto rounded-lg border border-slate-100">
@@ -576,13 +647,36 @@ export default function CashManagementPage() {
 
                 {/* ── Correction History (below the form) ── */}
                 <div className="mt-8 border-t border-slate-100 pt-6">
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
                     <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wider">
                       Correction History
                     </h3>
-                    <span className="text-xs text-slate-400">
-                      {corrections.length > 0 ? `${corrections.length} record${corrections.length === 1 ? "" : "s"}` : ""}
-                    </span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-slate-400">
+                        {corrSearchDebounced.trim()
+                          ? `${filteredCorrections.length} of ${corrections.length} record${filteredCorrections.length !== 1 ? "s" : ""}`
+                          : (corrections.length > 0 ? `${corrections.length} record${corrections.length === 1 ? "" : "s"}` : "")}
+                      </span>
+                      <div className="relative">
+                        <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+                        <Input
+                          value={corrSearchInput}
+                          onChange={(e) => setCorrSearchInput(e.target.value)}
+                          placeholder="Search by account / reason / by..."
+                          className="pl-8 w-full sm:w-64 h-9"
+                        />
+                        {corrSearchInput && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="absolute right-1 top-1/2 -translate-y-1/2 h-7 px-2 text-slate-400"
+                            onClick={() => setCorrSearchInput("")}
+                          >
+                            Clear
+                          </Button>
+                        )}
+                      </div>
+                    </div>
                   </div>
 
                   {loadingCorrections ? (
@@ -595,6 +689,10 @@ export default function CashManagementPage() {
                     <div className="text-center py-8 text-sm text-slate-400">
                       <AlertTriangle className="size-8 mx-auto mb-2 opacity-30" />
                       No corrections recorded yet.
+                    </div>
+                  ) : filteredCorrections.length === 0 ? (
+                    <div className="text-center py-8 text-sm text-slate-400">
+                      No record found for &quot;{corrSearchDebounced.trim()}&quot;.
                     </div>
                   ) : (
                     <div className="overflow-x-auto rounded-lg border border-slate-100">
@@ -611,7 +709,7 @@ export default function CashManagementPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {corrections.map((c) => (
+                          {filteredCorrections.map((c) => (
                             <tr key={c.id} className="border-b border-slate-50 last:border-b-0 hover:bg-slate-50/60">
                               <td className="px-3 py-2.5 text-slate-600 tabular-nums whitespace-nowrap">{c.entry_date}</td>
                               <td className="px-3 py-2.5">

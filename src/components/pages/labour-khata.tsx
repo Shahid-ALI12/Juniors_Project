@@ -53,6 +53,7 @@ import {
   CircleDashed,
   BarChart3,
   Download,
+  Search as SearchIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { pktToday } from "@/lib/pkt-date";
@@ -113,6 +114,14 @@ export default function LabourKhataPage() {
   const [filterLabourId, setFilterLabourId] = useState<string>("all");
   const [filterFrom, setFilterFrom] = useState<string>("");
   const [filterTo, setFilterTo] = useState<string>("");
+
+  // ─── Payment History text search (client-side, debounced) ───
+  const [paymentSearchInput, setPaymentSearchInput] = useState("");
+  const [paymentSearchDebounced, setPaymentSearchDebounced] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setPaymentSearchDebounced(paymentSearchInput), 350);
+    return () => clearTimeout(t);
+  }, [paymentSearchInput]);
 
   // ─── Daily wage entry state ───
   const [wageEntryDate, setWageEntryDate] = useState<string>(today);
@@ -330,6 +339,28 @@ export default function LabourKhataPage() {
   const grandTotal = useMemo(
     () => payments.reduce((sum, p) => sum + Number(p.amount), 0),
     [payments]
+  );
+
+  // ── Filtered payments (text search across labour name / description / type / date) ──
+  const filteredPayments = useMemo(() => {
+    if (!paymentSearchDebounced.trim()) return payments;
+    const q = paymentSearchDebounced.trim().toLowerCase();
+    return payments.filter((p) => {
+      const labourName = p.labours?.name || laboursById.get(p.labour_id)?.name || "";
+      return [
+        labourName,
+        p.payment_date ?? "",
+        p.payment_type ?? "",
+        p.description ?? "",
+        p.entered_by ?? "",
+        String(p.amount),
+      ].some((s) => s.toLowerCase().includes(q));
+    });
+  }, [payments, paymentSearchDebounced, laboursById]);
+
+  const filteredGrandTotal = useMemo(
+    () => filteredPayments.reduce((sum, p) => sum + Number(p.amount), 0),
+    [filteredPayments]
   );
 
   const todaysTotal = useMemo(
@@ -1203,8 +1234,9 @@ export default function LabourKhataPage() {
                 <Calendar className="size-5 text-slate-600" /> Payment History
               </CardTitle>
               <CardDescription className="mt-1">
-                Filter by labour and/or date range. Showing {payments.length} payment(s)
-                totalling <span className="font-semibold">Rs. {fmt(grandTotal)}</span>.
+                {paymentSearchDebounced.trim()
+                  ? `${filteredPayments.length} of ${payments.length} payment(s) match "${paymentSearchDebounced.trim()}" • Total Rs. ${fmt(filteredGrandTotal)}`
+                  : `Filter by labour and/or date range. Showing ${payments.length} payment(s) totalling Rs. ${fmt(grandTotal)}.`}
               </CardDescription>
             </div>
             <Button
@@ -1225,7 +1257,7 @@ export default function LabourKhataPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Filter row */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 rounded-xl bg-slate-50/60 border border-slate-200/60">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 p-3 rounded-xl bg-slate-50/60 border border-slate-200/60">
             <div className="space-y-1.5">
               <Label className="text-xs uppercase text-slate-500 font-semibold">
                 Labour
@@ -1267,6 +1299,30 @@ export default function LabourKhataPage() {
                 max={today}
               />
             </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase text-slate-500 font-semibold">
+                Search
+              </Label>
+              <div className="relative">
+                <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+                <Input
+                  value={paymentSearchInput}
+                  onChange={(e) => setPaymentSearchInput(e.target.value)}
+                  placeholder="Name / description / type..."
+                  className="pl-8 h-9"
+                />
+                {paymentSearchInput && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 h-7 px-2 text-slate-400"
+                    onClick={() => setPaymentSearchInput("")}
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Payments table */}
@@ -1287,6 +1343,10 @@ export default function LabourKhataPage() {
             <div className="p-8 text-center text-slate-500 text-sm">
               No payments found. Adjust filters or record a payment above.
             </div>
+          ) : filteredPayments.length === 0 ? (
+            <div className="p-8 text-center text-slate-500 text-sm">
+              No record found for &quot;{paymentSearchDebounced.trim()}&quot;.
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -1301,7 +1361,7 @@ export default function LabourKhataPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {payments.map((p) => {
+                  {filteredPayments.map((p) => {
                     const badge = typeBadge(p.payment_type);
                     const labourName =
                       p.labours?.name || laboursById.get(p.labour_id)?.name || `#${p.labour_id}`;
@@ -1343,10 +1403,10 @@ export default function LabourKhataPage() {
                 <tfoot className="bg-slate-50/80 border-t-2 border-slate-200">
                   <tr>
                     <td colSpan={4} className="px-4 py-3 text-right text-xs uppercase text-slate-500 font-semibold">
-                      Total
+                      {paymentSearchDebounced.trim() ? `Total (filtered)` : `Total`}
                     </td>
                     <td className="px-4 py-3 text-right font-mono font-extrabold text-slate-900">
-                      Rs. {fmt(grandTotal)}
+                      Rs. {fmt(paymentSearchDebounced.trim() ? filteredGrandTotal : grandTotal)}
                     </td>
                     <td />
                   </tr>

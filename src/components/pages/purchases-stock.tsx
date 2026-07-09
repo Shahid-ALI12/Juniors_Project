@@ -56,6 +56,7 @@ import {
   ChevronRight,
   FileText,
   Receipt as ReceiptIcon,
+  Search as SearchIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { pktToday } from "@/lib/pkt-date";
@@ -95,6 +96,10 @@ export default function PurchasesStockPage() {
   // Purchase History pagination (10 records per page)
   const [historyPage, setHistoryPage] = useState(1);
   const historyPageSize = 10;
+
+  // Purchase History search (client-side, debounced)
+  const [historySearchInput, setHistorySearchInput] = useState("");
+  const [historySearchDebounced, setHistorySearchDebounced] = useState("");
 
   // Section 1: Stock state — single unified table (no more Farm/Shop tabs)
   // (Now per-location: filter by selected location)
@@ -606,15 +611,42 @@ export default function PurchasesStockPage() {
   const getPurchaseValue = (p: Purchase) => p.quantity * p.rate_per_bag;
 
   // ── Purchase History pagination (client-side, 10 per page) ──
-  const historyTotalPages = Math.max(1, Math.ceil(purchases.length / historyPageSize));
+  // Filter by search query first (across product / customer / supplier / notes / date)
+  const filteredPurchases = useMemo(() => {
+    if (!historySearchDebounced.trim()) return purchases;
+    const q = historySearchDebounced.trim().toLowerCase();
+    return purchases.filter((p) => {
+      const source = p.settled_by_customer_id
+        ? p.customers?.name ?? ""
+        : p.suppliers?.name ?? "";
+      return [
+        p.products?.name ?? "",
+        source,
+        p.purchase_date ?? "",
+        p.notes ?? "",
+        String(p.id),
+      ].some((s) => s.toLowerCase().includes(q));
+    });
+  }, [purchases, historySearchDebounced]);
 
-  // Clamp current page if purchases shrank (e.g. after delete)
+  const historyTotalPages = Math.max(1, Math.ceil(filteredPurchases.length / historyPageSize));
+
+  // Clamp current page if filtered list shrank (e.g. after delete or new search)
   const safeHistoryPage = Math.min(historyPage, historyTotalPages);
 
   const pagedPurchases = useMemo(() => {
     const from = (safeHistoryPage - 1) * historyPageSize;
-    return purchases.slice(from, from + historyPageSize);
-  }, [purchases, safeHistoryPage, historyPageSize]);
+    return filteredPurchases.slice(from, from + historyPageSize);
+  }, [filteredPurchases, safeHistoryPage, historyPageSize]);
+
+  // Debounce search input + reset to page 1 on new query
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setHistorySearchDebounced(historySearchInput);
+      setHistoryPage(1);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [historySearchInput]);
 
   const handleDownloadExcel = async () => {
     try {
@@ -1119,17 +1151,42 @@ export default function PurchasesStockPage() {
                   <ShoppingBag className="size-5 text-slate-600" /> Purchase History
                 </CardTitle>
                 <CardDescription>
-                  {purchases.length} purchase{purchases.length !== 1 && "s"} recorded • Showing {pagedPurchases.length} of {purchases.length}
+                  {historySearchDebounced.trim()
+                    ? `${filteredPurchases.length} match${filteredPurchases.length !== 1 ? "es" : ""} for "${historySearchDebounced.trim()}" • Showing ${pagedPurchases.length} of ${filteredPurchases.length}`
+                    : `${purchases.length} purchase${purchases.length !== 1 && "s"} recorded • Showing ${pagedPurchases.length} of ${purchases.length}`}
                 </CardDescription>
               </div>
               <Button onClick={handleDownloadExcel} variant="outline" className="gap-2 border-slate-300 text-slate-700 hover:bg-slate-100" disabled={purchases.length === 0}>
                 <Download className="size-4" /> Download Excel
               </Button>
+              <div className="relative">
+                <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+                <Input
+                  value={historySearchInput}
+                  onChange={(e) => setHistorySearchInput(e.target.value)}
+                  placeholder="Search by product / supplier / customer / date..."
+                  className="pl-8 w-full sm:w-72 h-9"
+                />
+                {historySearchInput && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 h-7 px-2 text-slate-400"
+                    onClick={() => setHistorySearchInput("")}
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
             {purchases.length === 0 ? (
               <div className="py-12 text-center text-slate-400 text-sm">No purchases recorded yet.</div>
+            ) : filteredPurchases.length === 0 ? (
+              <div className="py-12 text-center text-slate-400 text-sm">
+                No record found for &quot;{historySearchDebounced.trim()}&quot;.
+              </div>
             ) : (
               <>
                 <div className="rounded-xl border border-slate-200/60 overflow-hidden">
@@ -1222,7 +1279,7 @@ export default function PurchasesStockPage() {
                 {historyTotalPages > 1 && (
                   <div className="flex items-center justify-between gap-3 px-1">
                     <span className="text-xs text-slate-500">
-                      Page {safeHistoryPage} of {historyTotalPages} • {purchases.length} total records
+                      Page {safeHistoryPage} of {historyTotalPages} • {filteredPurchases.length} record{filteredPurchases.length !== 1 && "s"}{historySearchDebounced.trim() && " (filtered)"}
                     </span>
                     <div className="flex items-center gap-2">
                       <Button
