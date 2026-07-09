@@ -24,8 +24,11 @@ interface CustomerBillData {
 /* ─── Farm branding constants ─── */
 const FARM_NAME = "DANISH CATTLE FEED";
 const FARM_TAGLINE = "Cattle Feed Supplier";
-const FARM_ADDRESS = "Main Road, Tehsil & District Kasur, Punjab";
-const FARM_PHONE = "0300-0000000";
+// Two physical addresses — shown together on every bill.
+// Farm (where cattle feed is produced/stored) + Shop (where retail sale happens).
+const FARM_ADDRESS = "Farm: Dry port phatak Faisalabad";
+const SHOP_ADDRESS = "Shop: Madni kholoni shamsabad jhumra road";
+const FARM_PHONE = "0300-3966715";
 const DEV_LINE1 = "Software By: Shahid ALI";
 const DEV_LINE2 = "Contact: 03271487858";
 
@@ -95,41 +98,44 @@ export async function generateCustomerBillPDF(bill: CustomerBillData) {
   /* ════════════════════════════════════════════════════════
    *  HEADER — Clean letterhead style
    * ════════════════════════════════════════════════════════ */
-  const headerH = 36;
+  // Header height increased from 36 → 42 to fit both Farm + Shop addresses
+  // (previously only one address line + phone).
+  const headerH = 42;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(22);
   doc.setTextColor(...C_GREEN);
-  doc.text(FARM_NAME, m, 14);
+  doc.text(FARM_NAME, m, 13);
 
   doc.setFont("helvetica", "italic");
   doc.setFontSize(9.5);
   doc.setTextColor(...C_GRAY);
-  doc.text(FARM_TAGLINE, m, 20);
+  doc.text(FARM_TAGLINE, m, 19);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
   doc.setTextColor(120, 130, 140);
-  doc.text(FARM_ADDRESS, m, 26);
-  doc.text(`Phone: ${FARM_PHONE}`, m, 30);
+  doc.text(FARM_ADDRESS, m, 25);
+  doc.text(SHOP_ADDRESS, m, 29);
+  doc.text(`Phone: ${FARM_PHONE}`, m, 33);
 
   // Right: LEDGER STATEMENT label
   doc.setFont("helvetica", "bold");
   doc.setFontSize(18);
   doc.setTextColor(...C_GREEN);
-  doc.text("LEDGER", pw - m, 14, { align: "right" });
+  doc.text("LEDGER", pw - m, 13, { align: "right" });
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(...C_GRAY);
-  doc.text("Customer Statement", pw - m, 20, { align: "right" });
+  doc.text("Customer Statement", pw - m, 19, { align: "right" });
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
   doc.setTextColor(...C_DARK);
-  doc.text(`Customer #${bill.customer.id}`, pw - m, 27, { align: "right" });
+  doc.text(`Customer #${bill.customer.id}`, pw - m, 25, { align: "right" });
   doc.setFont("helvetica", "normal");
   doc.setTextColor(...C_GRAY);
-  doc.text(`Generated: ${bill.generatedAt}`, pw - m, 31, { align: "right" });
+  doc.text(`Generated: ${bill.generatedAt}`, pw - m, 29, { align: "right" });
 
   // Gold + green divider
   doc.setDrawColor(...C_GOLD);
@@ -479,7 +485,7 @@ export async function generateCustomerBillPDF(bill: CustomerBillData) {
   doc.setTextColor(...C_GRAY);
   doc.text("1. This is a computer-generated statement based on recorded transactions.", m, tcY + 8);
   doc.text("2. Please verify balances and report discrepancies within 7 days.", m, tcY + 11.5);
-  doc.text("3. All disputes are subject to Kasur jurisdiction.", m, tcY + 15);
+  doc.text("3. All disputes are subject to Faisalabad jurisdiction.", m, tcY + 15);
 
   /* ════════════════════════════════════════════════════════
    *  SIGNATURE SECTION
@@ -512,7 +518,7 @@ export async function generateCustomerBillPDF(bill: CustomerBillData) {
   doc.text("CATTLE FEED", m + 14, sigY - 1.5, { align: "center" });
   doc.setFontSize(4.5);
   doc.setTextColor(...C_GOLD);
-  doc.text("★ KASUR ★", m + 14, sigY + 2, { align: "center" });
+  doc.text("★ FSD ★", m + 14, sigY + 2, { align: "center" });
 
   /* ════════════════════════════════════════════════════════
    *  FOOTER BAND

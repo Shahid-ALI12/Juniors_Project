@@ -131,7 +131,7 @@ function printMixBill(order: { id: string | number; customer: string; date: stri
     <div class="farm-banner">
       <h1>DANISH CATTLE FEED</h1>
       <div class="tag">Cattle Feed Supplier</div>
-      <div class="addr">Main Road, Kasur, Punjab &nbsp;|&nbsp; 0300-0000000</div>
+      <div class="addr">Farm: Dry port phatak Faisalabad &nbsp;|&nbsp; Shop: Madni kholoni shamsabad jhumra road &nbsp;|&nbsp; 0300-3966715</div>
     </div>
     <div class="inv-label">MIX ORDER INVOICE</div>
     <div class="meta-grid">
@@ -162,12 +162,12 @@ function printMixBill(order: { id: string | number; customer: string; date: stri
       <div class="tc-title">TERMS &amp; CONDITIONS</div>
       <div class="tc-list">
         1. Goods once sold will not be returned or exchanged.<br/>
-        2. All disputes subject to Kasur jurisdiction.<br/>
+        2. All disputes subject to Faisalabad jurisdiction.<br/>
         3. Please verify bill details at the time of delivery.
       </div>
     </div>
     <div class="sig">
-      <div class="stamp"><span>DANISH</span><span>CATTLE FEED</span><span>★ KASUR ★</span></div>
+      <div class="stamp"><span>DANISH</span><span>CATTLE FEED</span><span>★ FSD ★</span></div>
       <div class="sig-line">For Danish Cattle Feed<br/>Authorised Signatory</div>
     </div>
     <div class="footer">

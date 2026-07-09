@@ -26,8 +26,10 @@ interface BillData {
 /* ─── Farm branding constants ─── */
 const FARM_NAME = "DANISH CATTLE FEED";
 const FARM_TAGLINE = "Cattle Feed Supplier";
-const FARM_ADDRESS = "Main Road, Tehsil & District Kasur, Punjab";
-const FARM_PHONE = "0300-0000000";
+// Two physical addresses — shown together on every bill.
+const FARM_ADDRESS = "Farm: Dry port phatak Faisalabad";
+const SHOP_ADDRESS = "Shop: Madni kholoni shamsabad jhumra road";
+const FARM_PHONE = "0300-3966715";
 const DEV_LINE1 = "Software By: Shahid ALI";
 const DEV_LINE2 = "Contact: 03271487858";
 
@@ -61,43 +63,45 @@ export async function generateMixBillPDF(bill: BillData) {
   /* ════════════════════════════════════════════════════════
    *  HEADER — Clean letterhead style (white bg, green text)
    * ════════════════════════════════════════════════════════ */
-  const headerH = 36;
+  // Header height increased from 36 → 42 to fit both Farm + Shop addresses.
+  const headerH = 42;
   // Left: Farm name block
   doc.setFont("helvetica", "bold");
   doc.setFontSize(22);
   doc.setTextColor(...C_GREEN);
-  doc.text(FARM_NAME, m, 14);
+  doc.text(FARM_NAME, m, 13);
 
   doc.setFont("helvetica", "italic");
   doc.setFontSize(9.5);
   doc.setTextColor(...C_GRAY);
-  doc.text(FARM_TAGLINE, m, 20);
+  doc.text(FARM_TAGLINE, m, 19);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
   doc.setTextColor(120, 130, 140);
-  doc.text(FARM_ADDRESS, m, 26);
-  doc.text(`Phone: ${FARM_PHONE}`, m, 30);
+  doc.text(FARM_ADDRESS, m, 25);
+  doc.text(SHOP_ADDRESS, m, 29);
+  doc.text(`Phone: ${FARM_PHONE}`, m, 33);
 
   // Right: INVOICE label
   doc.setFont("helvetica", "bold");
   doc.setFontSize(20);
   doc.setTextColor(...C_GREEN);
-  doc.text("INVOICE", pw - m, 14, { align: "right" });
+  doc.text("INVOICE", pw - m, 13, { align: "right" });
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(...C_GRAY);
-  doc.text("Mix Order", pw - m, 20, { align: "right" });
+  doc.text("Mix Order", pw - m, 19, { align: "right" });
 
   // Bill No + Date on right
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
   doc.setTextColor(...C_DARK);
-  doc.text(`Bill No: #${bill.orderId}`, pw - m, 27, { align: "right" });
+  doc.text(`Bill No: #${bill.orderId}`, pw - m, 25, { align: "right" });
   doc.setFont("helvetica", "normal");
   doc.setTextColor(...C_GRAY);
-  doc.text(`Date: ${bill.orderDate}`, pw - m, 31, { align: "right" });
+  doc.text(`Date: ${bill.orderDate}`, pw - m, 29, { align: "right" });
 
   // Horizontal divider line (gold)
   doc.setDrawColor(...C_GOLD);
@@ -397,7 +401,7 @@ export async function generateMixBillPDF(bill: BillData) {
   doc.setFontSize(7);
   doc.setTextColor(80, 90, 100);
   doc.text("1. Goods once sold will not be returned or exchanged.", m + 5, tcY + 10);
-  doc.text("2. All disputes are subject to Kasur jurisdiction.", m + 5, tcY + 14);
+  doc.text("2. All disputes are subject to Faisalabad jurisdiction.", m + 5, tcY + 14);
   doc.text("3. Please verify bill details at the time of delivery.", m + 5, tcY + 18);
 
   /* ════════════════════════════════════════════════════════
@@ -432,7 +436,7 @@ export async function generateMixBillPDF(bill: BillData) {
   doc.text("CATTLE FEED", m + 14, sigY - 1.5, { align: "center" });
   doc.setFontSize(4.5);
   doc.setTextColor(...C_GOLD);
-  doc.text("★ KASUR ★", m + 14, sigY + 2, { align: "center" });
+  doc.text("★ FSD ★", m + 14, sigY + 2, { align: "center" });
 
   /* ════════════════════════════════════════════════════════
    *  FOOTER BAND — Software By credit
