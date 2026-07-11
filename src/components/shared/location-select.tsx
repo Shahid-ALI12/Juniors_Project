@@ -10,6 +10,10 @@ import {
 } from "@/components/ui/select";
 import { Location } from "@/types";
 
+// Project-wide default: Shop (id=2). Kept in sync with
+// src/lib/data/locations.ts → DEFAULT_LOCATION_ID.
+const DEFAULT_LOCATION_ID = 2;
+
 interface LocationSelectProps {
   value: number | null;
   onChange: (locationId: number) => void;
@@ -21,7 +25,7 @@ interface LocationSelectProps {
 }
 
 /**
- * Reusable location selector (Farmhouse / Shop).
+ * Reusable location selector (Shop / Farmhouse).
  * Fetches locations from /api/locations on mount.
  *
  * Usage:
@@ -47,9 +51,12 @@ export function LocationSelect({
         const data = await res.json();
         if (mounted && Array.isArray(data.locations)) {
           setLocations(data.locations);
-          // If no value set, default to first location (Farmhouse id=1)
+          // If no value set, default to the project default (Shop, id=2).
+          // Fall back to the first available location only if Shop isn't
+          // in the list (defensive — should never happen in practice).
           if (!value && data.locations.length > 0) {
-            onChange(data.locations[0].id);
+            const shop = data.locations.find((l: Location) => l.id === DEFAULT_LOCATION_ID);
+            onChange(shop ? shop.id : data.locations[0].id);
           }
         }
       } catch (err) {

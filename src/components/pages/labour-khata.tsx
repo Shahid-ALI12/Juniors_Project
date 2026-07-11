@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { PageHeader, MetricCard } from "@/components/shared/page-header";
 import { QuickNav } from "@/components/shared/quick-nav";
+import { LocationSelect } from "@/components/shared/location-select";
 import { apiError } from "@/store";
 import type {
   Labour,
@@ -11,6 +12,7 @@ import type {
   LabourDailyWage,
   LabourMonthlySummary,
   LabourPaymentStatus,
+  Location,
 } from "@/types";
 
 import { Button } from "@/components/ui/button";
@@ -31,6 +33,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -54,6 +64,8 @@ import {
   BarChart3,
   Download,
   Search as SearchIcon,
+  Pencil,
+  MapPin,
 } from "lucide-react";
 import { toast } from "sonner";
 import { pktToday } from "@/lib/pkt-date";
@@ -68,6 +80,10 @@ const PAYMENT_TYPES: { value: LabourPaymentType; label: string; color: string }[
 ];
 
 const ROLE_PRESETS = ["Mazdoor", "Driver", "Loader", "Packing", "Guard", "Other"];
+
+// Project-wide default location = Shop (id=2). Kept in sync with
+// src/lib/data/locations.ts → DEFAULT_LOCATION_ID.
+const DEFAULT_LOCATION_ID = 2;
 
 // ─── Helpers ───
 
@@ -87,6 +103,10 @@ const currentMonth = (): string => monthOf(pktToday());
 export default function LabourKhataPage() {
   const today = pktToday();
 
+  // ─── Locations state ───
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [locationsLoading, setLocationsLoading] = useState(true);
+
   // ─── Labours state ───
   const [labours, setLabours] = useState<Labour[]>([]);
   const [loadingLabours, setLoadingLabours] = useState(true);
@@ -96,7 +116,21 @@ export default function LabourKhataPage() {
   const [newPhone, setNewPhone] = useState("");
   const [newRole, setNewRole] = useState("");
   const [newWage, setNewWage] = useState("");
+  // Default to Shop (project-wide default). Pre-set here so the
+  // location select shows the right value on first paint.
+  const [newLocationId, setNewLocationId] = useState<number>(DEFAULT_LOCATION_ID);
   const [savingLabour, setSavingLabour] = useState(false);
+
+  // ─── Edit labour dialog ───
+  const [editOpen, setEditOpen] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editRole, setEditRole] = useState("");
+  const [editWage, setEditWage] = useState("");
+  const [editLocationId, setEditLocationId] = useState<number>(DEFAULT_LOCATION_ID);
+  const [editActive, setEditActive] = useState(true);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   // ─── Payment form ───
   const [payLabourId, setPayLabourId] = useState<string>("");
@@ -114,6 +148,33 @@ export default function LabourKhataPage() {
   const [filterLabourId, setFilterLabourId] = useState<string>("all");
   const [filterFrom, setFilterFrom] = useState<string>("");
   const [filterTo, setFilterTo] = useState<string>("");
+  // Labours list filter — 0 means "All Locations"
+  const [filterLocationId, setFilterLocationId] = useState<number>(0);
+  // Payments history location filter — 0 means "All Locations"
+  const [filterPaymentLocationId, setFilterPaymentLocationId] = useState<number>(0);
+
+  // ─── Locations loader ───
+  const loadLocations = useCallback(async () => {
+    setLocationsLoading(true);
+    try {
+      const res = await fetch("/api/locations", { cache: "no-store" });
+      if (!res.ok) {
+        const detail = await apiError(res, "Failed to load locations");
+        throw new Error(detail);
+      }
+      const data = await res.json();
+      const locs: Location[] = data.locations || [];
+      setLocations(locs);
+      // Make sure the new-labour default matches a real location id.
+      if (locs.length > 0 && !locs.some((l) => l.id === newLocationId)) {
+        setNewLocationId(locs[0].id);
+      }
+    } catch (e: any) {
+      toast.error(e.message || "Failed to load locations");
+    } finally {
+      setLocationsLoading(false);
+    }
+  }, []);
 
   // ─── Payment History text search (client-side, debounced) ───
   const [paymentSearchInput, setPaymentSearchInput] = useState("");
@@ -195,7 +256,14 @@ export default function LabourKhataPage() {
   const loadLabours = useCallback(async () => {
     setLoadingLabours(true);
     try {
-      const res = await fetch("/api/labours");
+      // Always include location join so the table can render the
+      // location column without an extra round-trip.
+      const params = new URLSearchParams();
+      params.set("include_location", "true");
+      if (filterLocationId && filterLocationId > 0) {
+        params.set("location_id", String(filterLocationId));
+      }
+      const res = await fetch(`/api/labours?${params.toString()}`, { cache: "no-store" });
       if (!res.ok) {
         const detail = await apiError(res, "Failed to load labours");
         throw new Error(detail);
@@ -207,7 +275,7 @@ export default function LabourKhataPage() {
     } finally {
       setLoadingLabours(false);
     }
-  }, []);
+  }, [filterLocationId]);
 
   const loadPayments = useCallback(async () => {
     setLoadingPayments(true);
@@ -218,9 +286,12 @@ export default function LabourKhataPage() {
       }
       if (filterFrom) params.set("from", filterFrom);
       if (filterTo)   params.set("to", filterTo);
+      if (filterPaymentLocationId && filterPaymentLocationId > 0) {
+        params.set("location_id", String(filterPaymentLocationId));
+      }
       params.set("include_labour", "true");
 
-      const res = await fetch(`/api/labour-payments?${params.toString()}`);
+      const res = await fetch(`/api/labour-payments?${params.toString()}`, { cache: "no-store" });
       if (!res.ok) {
         const detail = await apiError(res, "Failed to load payments");
         throw new Error(detail);
@@ -232,7 +303,11 @@ export default function LabourKhataPage() {
     } finally {
       setLoadingPayments(false);
     }
-  }, [filterLabourId, filterFrom, filterTo]);
+  }, [filterLabourId, filterFrom, filterTo, filterPaymentLocationId]);
+
+  useEffect(() => {
+    loadLocations();
+  }, [loadLocations]);
 
   /**
    * Load any existing daily-wage entries for the selected wage entry date.
@@ -336,6 +411,28 @@ export default function LabourKhataPage() {
     return m;
   }, [payments]);
 
+  // Map location_id → location name (for cheap lookups in render)
+  const locationsById = useMemo(() => {
+    const m = new Map<number, Location>();
+    locations.forEach((l) => m.set(l.id, l));
+    return m;
+  }, [locations]);
+
+  // Resolve a labour's location name from either the joined row or the
+  // locations map. Returns "—" if no location is set.
+  const labourLocationName = useCallback(
+    (labour: Labour | undefined | null): string => {
+      if (!labour) return "—";
+      // Prefer the joined row from the API
+      if (labour.locations?.name) return labour.locations.name;
+      if (labour.location_id != null) {
+        return locationsById.get(labour.location_id)?.name || "—";
+      }
+      return "—";
+    },
+    [locationsById]
+  );
+
   const grandTotal = useMemo(
     () => payments.reduce((sum, p) => sum + Number(p.amount), 0),
     [payments]
@@ -397,6 +494,10 @@ export default function LabourKhataPage() {
       toast.error("Daily wage must be a non-negative number");
       return;
     }
+    if (!newLocationId || newLocationId <= 0) {
+      toast.error("Please select a location (Shop / Farmhouse)");
+      return;
+    }
     setSavingLabour(true);
     try {
       const res = await fetch("/api/labours", {
@@ -407,6 +508,7 @@ export default function LabourKhataPage() {
           phone: newPhone.trim() || null,
           role: newRole.trim() || null,
           daily_wage: wage,
+          location_id: newLocationId,
         }),
       });
       if (!res.ok) {
@@ -418,12 +520,70 @@ export default function LabourKhataPage() {
       setNewPhone("");
       setNewRole("");
       setNewWage("");
+      // Keep newLocationId as-is so the user can quickly register
+      // another labour at the same location.
       await loadLabours();
       await loadMonthlySummary(summaryMonth);
     } catch (e: any) {
       toast.error(e.message || "Failed to register labour");
     } finally {
       setSavingLabour(false);
+    }
+  };
+
+  // Open the edit dialog pre-filled with the labour's current values.
+  const openEdit = (labour: Labour) => {
+    setEditId(labour.id);
+    setEditName(labour.name || "");
+    setEditPhone(labour.phone || "");
+    setEditRole(labour.role || "");
+    setEditWage(labour.daily_wage != null ? String(labour.daily_wage) : "");
+    setEditLocationId(labour.location_id ?? DEFAULT_LOCATION_ID);
+    setEditActive(!!labour.is_active);
+    setEditOpen(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (editId == null) return;
+    if (!editName.trim()) {
+      toast.error("Labour name is required");
+      return;
+    }
+    const wage = editWage ? Number(editWage) : 0;
+    if (editWage && (!Number.isFinite(wage) || wage < 0)) {
+      toast.error("Daily wage must be a non-negative number");
+      return;
+    }
+    if (!editLocationId || editLocationId <= 0) {
+      toast.error("Please select a location (Shop / Farmhouse)");
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      const res = await fetch("/api/labours", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editId,
+          name: editName.trim(),
+          phone: editPhone.trim() || null,
+          role: editRole.trim() || null,
+          daily_wage: wage,
+          location_id: editLocationId,
+          is_active: editActive,
+        }),
+      });
+      if (!res.ok) {
+        const detail = await apiError(res, "Failed to update labour");
+        throw new Error(detail);
+      }
+      toast.success(`Updated: ${editName.trim()}`);
+      setEditOpen(false);
+      await loadLabours();
+    } catch (e: any) {
+      toast.error(e.message || "Failed to update labour");
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -658,11 +818,13 @@ export default function LabourKhataPage() {
             <UserPlus className="size-5 text-emerald-600" /> Register New Labour
           </CardTitle>
           <CardDescription>
-            Add a new labour to your khata. Once registered, you can record daily wages and payments for them.
+            Add a new labour to your khata. Pick the location (Shop / Farmhouse)
+            this labour works at — you can change it later via Edit. Once
+            registered, you can record daily wages and payments for them.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs uppercase text-slate-500 font-semibold">
                 Name <span className="text-red-500">*</span>
@@ -722,6 +884,16 @@ export default function LabourKhataPage() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleAddLabour();
                 }}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase text-slate-500 font-semibold">
+                Location <span className="text-red-500">*</span>
+              </Label>
+              <LocationSelect
+                value={newLocationId}
+                onChange={setNewLocationId}
+                className="w-full"
               />
             </div>
           </div>
@@ -948,6 +1120,37 @@ export default function LabourKhataPage() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
+          {/* Location filter row */}
+          <div className="flex flex-wrap items-end gap-3 px-4 py-3 border-b border-slate-100 bg-slate-50/40">
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase text-slate-500 font-semibold">
+                Filter by Location
+              </Label>
+              <LocationSelect
+                value={filterLocationId}
+                onChange={(v) => setFilterLocationId(v)}
+                showAllOption
+                className="w-48"
+              />
+            </div>
+            {filterLocationId !== 0 && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 text-xs"
+                onClick={() => setFilterLocationId(0)}
+              >
+                Clear
+              </Button>
+            )}
+            <div className="ml-auto text-xs text-slate-500">
+              Showing {labours.length} labour{labours.length === 1 ? "" : "s"}
+              {filterLocationId !== 0 && locationsById.get(filterLocationId)
+                ? ` at ${locationsById.get(filterLocationId)?.name}`
+                : " (all locations)"}
+            </div>
+          </div>
+
           {loadingLabours || loadingSummary ? (
             <div className="p-4 space-y-3">
               {[0, 1, 2, 3, 4].map((i) => (
@@ -964,7 +1167,9 @@ export default function LabourKhataPage() {
             </div>
           ) : labours.length === 0 ? (
             <div className="p-8 text-center text-slate-500 text-sm">
-              No labours registered yet. Use the form above to add your first labour.
+              No labours registered yet
+              {filterLocationId !== 0 ? " at this location." : "."} Use the form
+              above to add your first labour.
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -972,6 +1177,7 @@ export default function LabourKhataPage() {
                 <thead className="bg-slate-50/80 border-y border-slate-100">
                   <tr className="text-left text-xs uppercase text-slate-500 font-semibold">
                     <th className="px-4 py-3">Name</th>
+                    <th className="px-4 py-3">Location</th>
                     <th className="px-4 py-3 text-right">Daily Wage</th>
                     <th className="px-4 py-3 text-right">Earned ({summaryMonth})</th>
                     <th className="px-4 py-3 text-right">Paid ({summaryMonth})</th>
@@ -989,6 +1195,9 @@ export default function LabourKhataPage() {
                     const balance = summary?.balance_due ?? 0;
                     const status: LabourPaymentStatus = summary?.status ?? "not_paid";
                     const isActive = l.is_active;
+                    const total = totalPaidByLabour.get(l.id) || 0;
+                    const locName = labourLocationName(l);
+                    const hasLocation = locName !== "—";
                     return (
                       <tr
                         key={l.id}
@@ -1009,6 +1218,23 @@ export default function LabourKhataPage() {
                                 </>
                               )}
                             </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          {hasLocation ? (
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "border",
+                                locName.toLowerCase() === "shop"
+                                  ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                                  : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              )}
+                            >
+                              <MapPin className="size-3 mr-1" /> {locName}
+                            </Badge>
+                          ) : (
+                            <span className="text-slate-400">—</span>
                           )}
                         </td>
                         <td className="px-4 py-3 text-right font-mono text-slate-700">
@@ -1070,14 +1296,24 @@ export default function LabourKhataPage() {
                           )}
                         </td>
                         <td className="px-4 py-3 text-center">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 text-xs"
-                            onClick={() => handleToggleActive(l)}
-                          >
-                            {isActive ? "Deactivate" : "Re-activate"}
-                          </Button>
+                          <div className="inline-flex items-center gap-1">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 text-xs"
+                              onClick={() => openEdit(l)}
+                            >
+                              <Pencil className="size-3.5 mr-1" /> Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 text-xs"
+                              onClick={() => handleToggleActive(l)}
+                            >
+                              {isActive ? "Deactivate" : "Re-activate"}
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1271,10 +1507,22 @@ export default function LabourKhataPage() {
                   {labours.map((l) => (
                     <SelectItem key={l.id} value={String(l.id)}>
                       {l.name}
+                      {l.locations?.name ? ` · ${l.locations.name}` : ""}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase text-slate-500 font-semibold">
+                Location
+              </Label>
+              <LocationSelect
+                value={filterPaymentLocationId}
+                onChange={(v) => setFilterPaymentLocationId(v)}
+                showAllOption
+                className="w-full"
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs uppercase text-slate-500 font-semibold">
@@ -1354,6 +1602,7 @@ export default function LabourKhataPage() {
                   <tr className="text-left text-xs uppercase text-slate-500 font-semibold">
                     <th className="px-4 py-3">Date</th>
                     <th className="px-4 py-3">Labour</th>
+                    <th className="px-4 py-3">Location</th>
                     <th className="px-4 py-3">Type</th>
                     <th className="px-4 py-3">Description</th>
                     <th className="px-4 py-3 text-right">Amount</th>
@@ -1363,8 +1612,10 @@ export default function LabourKhataPage() {
                 <tbody className="divide-y divide-slate-100">
                   {filteredPayments.map((p) => {
                     const badge = typeBadge(p.payment_type);
-                    const labourName =
-                      p.labours?.name || laboursById.get(p.labour_id)?.name || `#${p.labour_id}`;
+                    const labour = p.labours || laboursById.get(p.labour_id);
+                    const labourName = labour?.name || `#${p.labour_id}`;
+                    const locName = labourLocationName(labour);
+                    const hasLocation = locName !== "—";
                     return (
                       <tr key={p.id} className="hover:bg-slate-50/50">
                         <td className="px-4 py-3 font-mono text-slate-700">
@@ -1372,6 +1623,23 @@ export default function LabourKhataPage() {
                         </td>
                         <td className="px-4 py-3 font-medium text-slate-800">
                           {labourName}
+                        </td>
+                        <td className="px-4 py-3">
+                          {hasLocation ? (
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "border",
+                                locName.toLowerCase() === "shop"
+                                  ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                                  : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              )}
+                            >
+                              <MapPin className="size-3 mr-1" /> {locName}
+                            </Badge>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           <Badge className={cn("border", badge.color)}>
@@ -1402,7 +1670,7 @@ export default function LabourKhataPage() {
                 </tbody>
                 <tfoot className="bg-slate-50/80 border-t-2 border-slate-200">
                   <tr>
-                    <td colSpan={4} className="px-4 py-3 text-right text-xs uppercase text-slate-500 font-semibold">
+                    <td colSpan={5} className="px-4 py-3 text-right text-xs uppercase text-slate-500 font-semibold">
                       {paymentSearchDebounced.trim() ? `Total (filtered)` : `Total`}
                     </td>
                     <td className="px-4 py-3 text-right font-mono font-extrabold text-slate-900">
@@ -1416,6 +1684,125 @@ export default function LabourKhataPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* ─── Edit Labour dialog ─── */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="size-5 text-slate-600" /> Edit Labour
+            </DialogTitle>
+            <DialogDescription>
+              Update this labour&apos;s details, including the location (Shop / Farmhouse)
+              they work at. Changes save immediately on Save.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase text-slate-500 font-semibold">
+                Name <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase text-slate-500 font-semibold">
+                Phone
+              </Label>
+              <Input
+                value={editPhone}
+                onChange={(e) => setEditPhone(e.target.value)}
+                placeholder="03xx-xxxxxxx"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase text-slate-500 font-semibold">
+                Role / Skill
+              </Label>
+              <Input
+                value={editRole}
+                onChange={(e) => setEditRole(e.target.value)}
+                list="role-presets-edit"
+              />
+              <datalist id="role-presets-edit">
+                {ROLE_PRESETS.map((r) => (
+                  <option key={r} value={r} />
+                ))}
+              </datalist>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase text-slate-500 font-semibold">
+                Daily Wage (Rs.)
+              </Label>
+              <Input
+                type="number"
+                min="0"
+                step="50"
+                value={editWage}
+                onChange={(e) => setEditWage(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label className="text-xs uppercase text-slate-500 font-semibold">
+                Location <span className="text-red-500">*</span>
+              </Label>
+              <LocationSelect
+                value={editLocationId}
+                onChange={setEditLocationId}
+                className="w-full"
+              />
+            </div>
+            <div className="space-y-1.5 sm:col-span-2 flex items-center gap-3">
+              <Label className="text-xs uppercase text-slate-500 font-semibold">
+                Status
+              </Label>
+              <Select
+                value={editActive ? "active" : "inactive"}
+                onValueChange={(v) => setEditActive(v === "active")}
+              >
+                <SelectTrigger className="w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="text-xs text-slate-500">
+                Inactive labours cannot receive new payments.
+              </span>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setEditOpen(false)}
+              disabled={savingEdit}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveEdit}
+              disabled={savingEdit}
+              className="gap-2 bg-emerald-600 hover:bg-emerald-700"
+            >
+              {savingEdit ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" /> Saving…
+                </>
+              ) : (
+                <>
+                  <Plus className="size-4" /> Save Changes
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

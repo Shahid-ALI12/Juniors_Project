@@ -15,16 +15,16 @@ export const dynamic = "force-dynamic";
 const LABOURS_TTL = 60_000;
 
 /**
- * GET /api/labours?active=true
- *   Returns all labours (or only active ones if ?active=true).
+ * GET /api/labours?active=true&location_id=<n>&include_location=true
+ *   Returns all labours (optionally filtered by active / location).
  *   Response: { labours: [...] }
  *
  * POST /api/labours
- *   Body: { name, phone?, role?, daily_wage? }
+ *   Body: { name, phone?, role?, daily_wage?, location_id? }
  *   Response: { labour: {...} } with status 201
  *
  * PATCH /api/labours
- *   Body: { id, name?, phone?, role?, daily_wage?, is_active? }
+ *   Body: { id, name?, phone?, role?, daily_wage?, is_active?, location_id? }
  *   Response: { labour: {...} }
  *
  * DELETE /api/labours?id=<id>
@@ -38,13 +38,29 @@ export async function GET(request: NextRequest) {
   try {
     const url = new URL(request.url);
     const activeOnly = url.searchParams.get("active") === "true";
-    const suffix = activeOnly ? "active" : "all";
+    const includeLocation = url.searchParams.get("include_location") === "true";
+    const locStr = url.searchParams.get("location_id");
+    let location_id: number | null | undefined = undefined;
+    if (locStr !== null) {
+      const n = Number(locStr);
+      // Accept "0" or "all" as "no filter"
+      if (Number.isFinite(n) && n > 0) location_id = n;
+      else location_id = null;
+    }
+
+    // Cache key suffix must distinguish every filter combination so
+    // different location filters don't share a cached response.
+    const suffix = [
+      activeOnly ? "active" : "all",
+      includeLocation ? "withloc" : "noloc",
+      location_id == null ? "all-loc" : `loc-${location_id}`,
+    ].join(":");
 
     const labours = await cachedGet(
       userKey(auth.user.id, "labours", suffix),
       [userTag(auth.user.id, "labours")],
       LABOURS_TTL,
-      () => getAllLabours(activeOnly),
+      () => getAllLabours(activeOnly, { location_id, includeLocation }),
     );
     return NextResponse.json({ labours });
   } catch (err) {
@@ -81,11 +97,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // location_id (optional). Accept null / 0 / undefined → null.
+    // Otherwise must be a positive integer referencing locations.id.
+    let location_id: number | null = null;
+    if (body.location_id != null && body.location_id !== "") {
+      const locN = Number(body.location_id);
+      if (!Number.isFinite(locN) || locN <= 0) {
+        return NextResponse.json(
+          { error: "location_id must be a positive number (or null)" },
+          { status: 400 }
+        );
+      }
+      location_id = locN;
+    }
+
     const labour = await createLabour({
       name: body.name,
       phone: body.phone ?? null,
       role: body.role ?? null,
       daily_wage: dailyWage,
+      location_id,
     });
 
     invalidateByTag(userTag(auth.user.id, "labours"));
@@ -136,6 +167,22 @@ export async function PATCH(request: NextRequest) {
       updates.daily_wage = w;
     }
     if (body.is_active != null) updates.is_active = Boolean(body.is_active);
+
+    // location_id (optional in PATCH). Explicitly accepts null to clear.
+    if (body.location_id !== undefined) {
+      if (body.location_id === null || body.location_id === "") {
+        updates.location_id = null;
+      } else {
+        const locN = Number(body.location_id);
+        if (!Number.isFinite(locN) || locN <= 0) {
+          return NextResponse.json(
+            { error: "location_id must be a positive number (or null)" },
+            { status: 400 }
+          );
+        }
+        updates.location_id = locN;
+      }
+    }
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json(

@@ -25,6 +25,7 @@ const PAYMENTS_TTL = 5_000;
  *     to=<YYYY-MM-DD>       (alias: payment_date_lte)
  *     type=<salary|advance|expense>
  *     include_labour=true
+ *     location_id=<number>  (filters via labour.location_id)
  *   Response: { payments: [...] }
  *
  * POST /api/labour-payments
@@ -58,9 +59,18 @@ export async function GET(request: NextRequest) {
     const payment_type    = typeParam && VALID_TYPES.includes(typeParam) ? typeParam : undefined;
     const includeLabour   = sp.get("include_labour") === "true";
 
+    // Optional location filter (filters payments by the labour's location).
+    // "0" / "all" / unset → no filter.
+    const locStr = sp.get("location_id");
+    let location_id: number | null | undefined = undefined;
+    if (locStr !== null) {
+      const n = Number(locStr);
+      location_id = Number.isFinite(n) && n > 0 ? n : null;
+    }
+
     // Build cache key from filter combination
     const filterKey = JSON.stringify({
-      labour_id, payment_date, payment_date_gte, payment_date_lte, payment_type, includeLabour,
+      labour_id, payment_date, payment_date_gte, payment_date_lte, payment_type, includeLabour, location_id,
     });
 
     const payments = await cachedGet(
@@ -74,6 +84,7 @@ export async function GET(request: NextRequest) {
         payment_date_lte,
         payment_type,
         includeLabour,
+        location_id,
       }),
     );
 

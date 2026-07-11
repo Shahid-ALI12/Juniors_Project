@@ -124,7 +124,7 @@ export async function createMixOrderRPC(params: {
     // as a JSON string scalar instead of a JSON array.
     const { data, error } = await admin.rpc("create_mix_order", {
       p_customer_id: params.customer_id,
-      p_location_id: params.location_id ?? 1, // default to Farmhouse
+      p_location_id: params.location_id ?? 2, // default to Shop
       p_order_date: params.order_date,
       p_target_weight_kg: params.target_weight_kg,
       p_cash_received: params.cash_received,
@@ -188,7 +188,7 @@ async function createMixOrderFallback(params: {
     .from("mix_orders")
     .insert({
       customer_id: params.customer_id,
-      location_id: params.location_id ?? 1,
+      location_id: params.location_id ?? 2,
       order_date: params.order_date,
       target_weight_kg: params.target_weight_kg,
       cash_received: params.cash_received,
@@ -208,7 +208,7 @@ async function createMixOrderFallback(params: {
   const saleRows = params.items.map((item) => ({
     customer_id: params.customer_id,
     product_id: item.product_id,
-    location_id: params.location_id ?? 1,
+    location_id: params.location_id ?? 2,
     quantity: item.quantity,
     rate_per_bag: item.rate_per_kg,
     rickshaw_fare: 0,

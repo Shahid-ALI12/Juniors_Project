@@ -38,7 +38,7 @@ export default function ManageProducts() {
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState<Product[]>([]);
   const [stockData, setStockData] = useState<ProductStock[]>([]);
-  const [locationId, setLocationId] = useState<number>(1); // default Farmhouse
+  const [locationId, setLocationId] = useState<number>(2); // default Shop
   const [editedRates, setEditedRates] = useState<Record<number, string>>({});
   const [updatedIds, setUpdatedIds] = useState<Set<number>>(new Set());
   const [updating, setUpdating] = useState<Set<number>>(new Set());

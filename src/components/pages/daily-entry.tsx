@@ -75,7 +75,7 @@ export default function DailyEntryPage() {
   const { items: cartItems, addItem, removeItem, clearCart, getTotal: getCartTotal } = useCartStore();
 
   const [date, setDate] = useState(today);
-  const [locationId, setLocationId] = useState<number>(1); // default to Farmhouse
+  const [locationId, setLocationId] = useState<number>(2); // default to Shop
   const [unitChoice, setUnitChoice] = useState<"bags" | "kg">("bags");
   const [productId, setProductId] = useState<string>("");
   const [quantity, setQuantity] = useState<string>("");

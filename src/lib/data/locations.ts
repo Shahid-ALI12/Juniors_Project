@@ -7,7 +7,7 @@ export interface LocationRow {
 }
 
 /**
- * Fetch all locations (e.g. Farmhouse, Shop).
+ * Fetch all locations (e.g. Shop, Farmhouse).
  * Used by the LocationSelect component.
  */
 export async function getAllLocations(): Promise<LocationRow[]> {
@@ -20,10 +20,15 @@ export async function getAllLocations(): Promise<LocationRow[]> {
 }
 
 /**
- * Default location ID (Farmhouse = 1).
- * Used as fallback when no location is selected.
+ * Default location ID (Shop = 2).
+ *
+ * Project-wide policy: Shop is the default location shown across
+ * the app (stock view, daily sale, mix order, sale flow). The
+ * Farmhouse (id=1) is the secondary location.
+ *
+ * Used as fallback when no location is explicitly selected.
  */
-export const DEFAULT_LOCATION_ID = 1;
+export const DEFAULT_LOCATION_ID = 2;
 
 /**
  * Find a location by name (case-insensitive).

@@ -131,7 +131,7 @@ async function recordPurchaseFallback(params: {
   // Handle both 'bags' and 'kg' units: convert kg → bags using bag_weight_kg.
   // We reuse decrement_stock_fallback with NEGATIVE qty (it clamps via GREATEST,
   // so adding works too: GREATEST(0 + qty, 0) = qty).
-  const locId = params.location_id ?? 1; // default to Farmhouse if missing
+  const locId = params.location_id ?? 2; // default to Shop if missing
   try {
     const bw = params.bag_weight_kg ?? 50;
     const qtyBags = params.unit_type === "kg"

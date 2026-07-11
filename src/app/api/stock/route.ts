@@ -40,10 +40,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "product_id is required" }, { status: 400 });
     }
 
-    // location_id defaults to Farmhouse (id=1) if not provided
+    // location_id defaults to Shop (id=2) if not provided
     const locId =
       location_id === null || location_id === undefined || location_id === ""
-        ? 1 // default to Farmhouse
+        ? 2 // default to Shop
         : Number(location_id);
 
     const stock = await upsertStock({

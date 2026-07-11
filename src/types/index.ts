@@ -149,6 +149,12 @@ export interface Labour {
   daily_wage: number;
   is_active: boolean;
   created_at: string;
+  // Which location this labour works at (Shop / Farmhouse).
+  // Nullable so the column can be added to existing tables without
+  // breaking historical rows; new inserts default to Shop (id=2).
+  location_id: number | null;
+  // Joined (optional — only present when API includes it)
+  locations?: Location;
 }
 
 export interface LabourPayment {

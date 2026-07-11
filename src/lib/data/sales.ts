@@ -284,7 +284,7 @@ async function createSaleFallback(params: {
 
   // Always decrement stock at the specified location.
   // Handle both 'bags' and 'kg' units: convert kg → bags using bag_weight_kg.
-  const locId = params.location_id ?? 1; // default to Farmhouse if missing
+  const locId = params.location_id ?? 2; // default to Shop if missing
   for (const item of params.items) {
     try {
       const bw = item.bag_weight_kg ?? 50;

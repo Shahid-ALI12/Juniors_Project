@@ -215,7 +215,7 @@ export default function CustomMixOrder() {
   const [s1Type, setS1Type] = useState<"credit" | "cash">("credit");
   const [s1Date, setS1Date] = useState(today);
   const [s1Target, setS1Target] = useState("");
-  const [s1LocationId, setS1LocationId] = useState<number>(1); // default Farmhouse
+  const [s1LocationId, setS1LocationId] = useState<number>(2); // default Shop
   // Driver fields (optional) — order level
   const [s1DriverName, setS1DriverName] = useState("");
   const [s1DriverRent, setS1DriverRent] = useState("");

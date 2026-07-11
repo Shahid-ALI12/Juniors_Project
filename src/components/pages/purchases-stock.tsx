@@ -103,8 +103,8 @@ export default function PurchasesStockPage() {
 
   // Section 1: Stock state — single unified table (no more Farm/Shop tabs)
   // (Now per-location: filter by selected location)
-  const [stockLocationId, setStockLocationId] = useState<number>(1); // default Farmhouse
-  const [purchaseLocationId, setPurchaseLocationId] = useState<number>(1); // default Farmhouse
+  const [stockLocationId, setStockLocationId] = useState<number>(2); // default Shop
+  const [purchaseLocationId, setPurchaseLocationId] = useState<number>(2); // default Shop
   const [allStock, setAllStock] = useState<StockRow[]>([]);
   const [savedAllStock, setSavedAllStock] = useState<boolean>(false);
   const [stockSavedAt, setStockSavedAt] = useState<Date | null>(null);
