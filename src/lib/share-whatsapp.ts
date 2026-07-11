@@ -238,6 +238,13 @@ export function shareBillOnWhatsApp(info: BillShareInfo): ShareBillResult {
   const prepared = prepareNativeShareData(info);
   if (prepared.data) {
     console.log("[share-whatsapp] Web Share API available — firing navigator.share()");
+    console.log("[share-whatsapp] share data:", {
+      fileCount: prepared.data.files?.length,
+      fileName: prepared.data.files?.[0]?.name,
+      fileSize: prepared.data.files?.[0]?.size,
+      fileType: prepared.data.files?.[0]?.type,
+      captionLength: prepared.data.text?.length,
+    });
     // Capture the promise so the caller can react to the actual
     // outcome (resolved / rejected with AbortError / rejected with
     // NotAllowedError etc.). We do NOT await it here because that
@@ -246,26 +253,54 @@ export function shareBillOnWhatsApp(info: BillShareInfo): ShareBillResult {
     let sharePromise: Promise<void>;
     try {
       sharePromise = navigator.share(prepared.data);
+      console.log("[share-whatsapp] navigator.share() returned a promise — awaiting silently");
     } catch (err: any) {
       // Synchronous throw (very rare — usually it returns a promise).
       console.error("[share-whatsapp] navigator.share threw synchronously:", err);
       sharePromise = Promise.reject(err);
     }
-    // Attach a silent logger — the toast helper will handle the
-    // user-facing side. We still log here so the error is visible
-    // in the browser console regardless of who consumes the result.
-    sharePromise.catch((err: any) => {
-      if (err?.name !== "AbortError") {
-        console.warn("[share-whatsapp] navigator.share rejected:", err?.name, err?.message, err);
-      }
-    });
+
+    // Wrap the share promise with a 4-second timeout. Some Android
+    // Chrome versions silently hang navigator.share() when the file
+    // is rejected by the OS share system — the promise neither
+    // resolves nor rejects. Without a timeout the user would stare
+    // at "Opening..." forever. If we hit the timeout, treat it as
+    // a failure so the toast helper can show the manual fallback.
+    const sharePromiseWithTimeout = Promise.race([
+      sharePromise.then(
+        (v) => {
+          console.log("[share-whatsapp] navigator.share() RESOLVED — sheet opened & dismissed normally");
+          return v;
+        },
+        (err: any) => {
+          // Log EVERY rejection, including AbortError — silent
+          // AbortError without a share sheet appearing is the
+          // signature of the file-share bug on Android.
+          console.warn(
+            "[share-whatsapp] navigator.share() REJECTED:",
+            "name=", err?.name,
+            "message=", err?.message,
+            "code=", err?.code,
+            err,
+          );
+          throw err;
+        },
+      ),
+      new Promise<void>((_, reject) =>
+        setTimeout(() => {
+          console.warn("[share-whatsapp] navigator.share() TIMEOUT — promise hung for 4s, treating as failure");
+          reject(new DOMException("Share sheet timeout — browser did not open the share UI", "TimeoutError"));
+        }, 4000),
+      ),
+    ]);
+
     return {
       triggered: true,
       url: `https://wa.me/${CLIENT_WHATSAPP_NUMBER}`,
       method: "native",
       fileAttached: true,
       reason: "native-share",
-      sharePromise,
+      sharePromise: sharePromiseWithTimeout,
     };
   }
 

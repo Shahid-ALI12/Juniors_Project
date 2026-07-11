@@ -78,29 +78,87 @@ export function showWhatsAppShareToast(result: ShareBillResult): void {
       (err: any) => {
         toast.dismiss(openingId);
 
-        // AbortError = user explicitly cancelled (tapped "Close" on
-        // the share sheet). Don't show an error — they meant to.
-        if (err?.name === "AbortError") {
-          console.log("[share-whatsapp] user cancelled share sheet");
-          return;
-        }
-
-        // Any other rejection = browser blocked the share.
-        // Most common: NotAllowedError (user gesture lost), or
-        // NotSupportedError (file type refused).
         const errName = err?.name || "UnknownError";
         const errMsg = err?.message || "no message";
         console.error("[share-whatsapp] share sheet failed to open:", errName, errMsg);
 
+        // AbortError = normally "user cancelled", BUT on Android
+        // Chrome this is also what's thrown when the file is
+        // silently rejected by the share system. If the user
+        // never saw a sheet, this is a silent failure — treat
+        // it as an error and show the fallback.
+        if (errName === "AbortError") {
+          console.log("[share-whatsapp] AbortError — assuming silent file-share failure (Android bug)");
+          toast.error("Share sheet open nahi ho saki (AbortError)", {
+            description: (
+              <span className="text-xs leading-relaxed">
+                Ye Android Chrome ka known issue hai — jab PDF file
+                share system reject kar deta hai, to share sheet
+                open nahi hoti aur <code>AbortError</code> throw
+                ho jata hai.
+                <br />
+                <br />
+                <strong>Manual tarika:</strong> Neeche link par
+                click karein → WhatsApp chat khul jayegi → upar{" "}
+                <strong>📎 attachment icon</strong> par tap karein
+                → <strong>Document</strong> chunein → apni Downloads
+                folder mein se bill PDF select karein → Send.
+                <br />
+                <br />
+                <a
+                  href={result.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:text-blue-800 underline font-medium"
+                >
+                  Open WhatsApp Chat →
+                </a>
+              </span>
+            ),
+            duration: 60000,
+          });
+          return;
+        }
+
+        if (errName === "TimeoutError") {
+          toast.error("Share sheet open nahi ho saki (Timeout)", {
+            description: (
+              <span className="text-xs leading-relaxed">
+                Browser 4 second tak share sheet open nahi kar saka.
+                Ye usually is liye hota hai ke OS ne PDF file share
+                system ke through reject kar diya.
+                <br />
+                <br />
+                <strong>Manual tarika:</strong> Neeche link par
+                click karein → WhatsApp chat mein{" "}
+                <strong>📎 → Document →</strong> Downloads se bill
+                PDF select karein → Send.
+                <br />
+                <br />
+                <a
+                  href={result.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:text-blue-800 underline font-medium"
+                >
+                  Open WhatsApp Chat →
+                </a>
+              </span>
+            ),
+            duration: 60000,
+          });
+          return;
+        }
+
+        // Any other rejection = browser blocked the share.
         toast.error("Share sheet open nahi ho saki", {
           description: (
             <span className="text-xs leading-relaxed">
-              <strong>Error:</strong> {errName}
+              <strong>Error:</strong> {errName} — {errMsg}
               <br />
-              Browser ne share block kar diya (usually user-gesture
-              issue hota hai). Neeche link par click karein — PDF
-              Downloads folder mein hai, chat mein manually attach
-              karein (📎 → Document).
+              Browser ne share block kar diya. Neeche link par
+              click karein — PDF Downloads folder mein hai, chat
+              mein manually attach karein (📎 → Document).
               <br />
               <br />
               <a
