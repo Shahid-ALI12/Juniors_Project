@@ -266,13 +266,26 @@ export function shareBillOnWhatsApp(info: BillShareInfo): ShareBillResult {
     // resolves nor rejects. Without a timeout the user would stare
     // at "Opening..." forever. If we hit the timeout, treat it as
     // a failure so the toast helper can show the manual fallback.
-    const sharePromiseWithTimeout = Promise.race([
+    //
+    // CRITICAL: we must clear the timeout when the share promise
+    // settles first, otherwise both callbacks fire (the resolve
+    // handler AND the setTimeout), producing contradictory logs
+    // like "RESOLVED" followed by "TIMEOUT".
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const sharePromiseWithTimeout = new Promise<void>((resolve, reject) => {
+      timeoutId = setTimeout(() => {
+        console.warn("[share-whatsapp] navigator.share() TIMEOUT — promise hung for 4s, treating as failure");
+        reject(new DOMException("Share sheet timeout — browser did not open the share UI", "TimeoutError"));
+      }, 4000);
+
       sharePromise.then(
         (v) => {
+          if (timeoutId) clearTimeout(timeoutId);
           console.log("[share-whatsapp] navigator.share() RESOLVED — sheet opened & dismissed normally");
-          return v;
+          resolve(v);
         },
         (err: any) => {
+          if (timeoutId) clearTimeout(timeoutId);
           // Log EVERY rejection, including AbortError — silent
           // AbortError without a share sheet appearing is the
           // signature of the file-share bug on Android.
@@ -283,16 +296,10 @@ export function shareBillOnWhatsApp(info: BillShareInfo): ShareBillResult {
             "code=", err?.code,
             err,
           );
-          throw err;
+          reject(err);
         },
-      ),
-      new Promise<void>((_, reject) =>
-        setTimeout(() => {
-          console.warn("[share-whatsapp] navigator.share() TIMEOUT — promise hung for 4s, treating as failure");
-          reject(new DOMException("Share sheet timeout — browser did not open the share UI", "TimeoutError"));
-        }, 4000),
-      ),
-    ]);
+      );
+    });
 
     return {
       triggered: true,

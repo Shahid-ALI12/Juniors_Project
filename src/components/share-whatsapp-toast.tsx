@@ -64,15 +64,35 @@ export function showWhatsAppShareToast(result: ShareBillResult): void {
       () => {
         // Share sheet opened & user dismissed it normally (either
         // picked an app and sent, or just closed the sheet).
+        // BUT: on Android Chrome the promise can resolve WITHOUT
+        // the sheet ever appearing visually (silent resolve). So
+        // instead of assuming success, we ask the user to confirm.
         toast.dismiss(openingId);
-        toast.success("Bill PDF share sheet khul gayi!", {
+        toast.success("Share sheet call successful — kya aap ko sheet dikh'i?", {
           description: (
             <span className="text-xs leading-relaxed">
-              Share sheet mein se WhatsApp chunein → client ki chat
-              chunein → Send. PDF bil attached hai.
+              Agar aap ke phone par share sheet (WhatsApp / Messages
+              / etc. options) open hui, to WhatsApp chunein → client
+              ki chat → Send. PDF attached hai.
+              <br />
+              <br />
+              <strong>Agar sheet open nahi hui:</strong> Yahan se
+              manual chat open karein, PDF Downloads folder mein
+              hai, chat mein <strong>📎 → Document</strong> se
+              attach karein.
+              <br />
+              <br />
+              <a
+                href={result.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:text-blue-800 underline font-medium"
+              >
+                Open WhatsApp Chat Manually →
+              </a>
             </span>
           ),
-          duration: 15000,
+          duration: 30000,
         });
       },
       (err: any) => {
