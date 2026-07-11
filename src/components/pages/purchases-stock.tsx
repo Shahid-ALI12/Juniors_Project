@@ -59,6 +59,7 @@ import {
   Search as SearchIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { shareBillOnWhatsApp } from "@/lib/share-whatsapp";
 import { pktToday } from "@/lib/pkt-date";
 
 const DEFAULT_BAG_WEIGHT = 50;
@@ -568,9 +569,7 @@ export default function PurchasesStockPage() {
         action: {
           label: "Share on WhatsApp",
           onClick: () => {
-            import("@/lib/share-whatsapp").then(({ shareBillOnWhatsApp }) =>
-              shareBillOnWhatsApp(billResult),
-            );
+            shareBillOnWhatsApp(billResult);
           },
         },
         duration: 12000,
@@ -610,9 +609,7 @@ export default function PurchasesStockPage() {
         action: {
           label: "Share on WhatsApp",
           onClick: () => {
-            import("@/lib/share-whatsapp").then(({ shareBillOnWhatsApp }) =>
-              shareBillOnWhatsApp(receiptResult),
-            );
+            shareBillOnWhatsApp(receiptResult);
           },
         },
         duration: 12000,

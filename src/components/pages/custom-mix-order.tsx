@@ -47,6 +47,7 @@ import {
 } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
+import { shareBillOnWhatsApp } from "@/lib/share-whatsapp";
 import { pktToday } from "@/lib/pkt-date";
 import { useMixOrdersPaginated, useInvalidateAfterMutation } from "@/hooks/queries";
 import { downloadExcel } from "@/lib/download-excel";
@@ -525,9 +526,7 @@ export default function CustomMixOrder() {
             action: {
               label: "Share on WhatsApp",
               onClick: () => {
-                import("@/lib/share-whatsapp").then(({ shareBillOnWhatsApp }) =>
-                  shareBillOnWhatsApp(billResult),
-                );
+                shareBillOnWhatsApp(billResult);
               },
             },
             duration: 12000,
@@ -1215,9 +1214,7 @@ function PastMixOrdersSection({
                           action: {
                             label: "Share on WhatsApp",
                             onClick: () => {
-                              import("@/lib/share-whatsapp").then(({ shareBillOnWhatsApp }) =>
-                                shareBillOnWhatsApp(billResult),
-                              );
+                              shareBillOnWhatsApp(billResult);
                             },
                           },
                           duration: 12000,

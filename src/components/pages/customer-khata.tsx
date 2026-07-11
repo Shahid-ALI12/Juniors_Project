@@ -31,6 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { shareBillOnWhatsApp } from "@/lib/share-whatsapp";
 import { numberToWords } from "@/lib/number-to-words";
 import {
   useCustomers,
@@ -314,9 +315,7 @@ export default function CustomerKhataPage() {
         action: {
           label: "Share on WhatsApp",
           onClick: () => {
-            import("@/lib/share-whatsapp").then(({ shareBillOnWhatsApp }) =>
-              shareBillOnWhatsApp(billResult),
-            );
+            shareBillOnWhatsApp(billResult);
           },
         },
         duration: 12000,
