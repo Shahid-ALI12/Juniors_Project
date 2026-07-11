@@ -1,3 +1,6 @@
+import type { BillShareInfo } from "@/lib/share-whatsapp";
+import { buildMixBillCaption } from "@/lib/share-whatsapp";
+
 interface BillItem {
   product: string;
   weight_kg: number;
@@ -43,7 +46,7 @@ const C_GRAY: [number, number, number] = [110, 120, 130];
 const C_GRAY_LIGHT: [number, number, number] = [218, 222, 220];
 const C_WHITE: [number, number, number] = [255, 255, 255];
 
-export async function generateMixBillPDF(bill: BillData) {
+export async function generateMixBillPDF(bill: BillData): Promise<BillShareInfo> {
   const { default: jsPDF } = await import("jspdf");
   const { default: autoTable } = await import("jspdf-autotable");
   const { numberToRupeeWords } = await import("@/lib/number-to-words");
@@ -467,5 +470,22 @@ export async function generateMixBillPDF(bill: BillData) {
   doc.setFillColor(...C_GOLD);
   doc.rect(0, ph - 1.5, pw, 1.5, "F");
 
-  doc.save(`Mix-Bill-${bill.orderId}-${bill.customerName.replace(/\s+/g, "-")}.pdf`);
+  const fileName = `Mix-Bill-${bill.orderId}-${bill.customerName.replace(/\s+/g, "-")}.pdf`;
+  doc.save(fileName);
+
+  // Return blob + caption so callers can offer WhatsApp sharing.
+  // grandTotal was computed above (subtotal + driver rent).
+  const caption = buildMixBillCaption({
+    orderId: bill.orderId,
+    customerName: bill.customerName,
+    orderDate: bill.orderDate,
+    grandTotal,
+    cashReceived: bill.cashReceived,
+    driverName: bill.driverName ?? null,
+  });
+  return {
+    blob: doc.output("blob"),
+    fileName,
+    caption,
+  };
 }

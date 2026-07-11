@@ -290,7 +290,7 @@ export default function CustomerKhataPage() {
         advance_payment: selectedCustomer?.advance_payment ?? 0,
         balance_due: (selectedCustomer?.opening_balance ?? 0) - (selectedCustomer?.advance_payment ?? 0),
       };
-      await generateCustomerBillPDF({
+      const billResult = await generateCustomerBillPDF({
         customer: selectedCustomer,
         sales: allSales,
         openingBalance: bal.opening_balance,
@@ -309,7 +309,18 @@ export default function CustomerKhataPage() {
         // mix-order driver rents that the DB's total_bill field may not).
         totalGoodsValue: bal.total_goods_value,
       });
-      toast.success("Bill downloaded successfully!");
+      toast.success("Bill downloaded successfully!", {
+        description: "Share on WhatsApp with the client?",
+        action: {
+          label: "Share on WhatsApp",
+          onClick: () => {
+            import("@/lib/share-whatsapp").then(({ shareBillOnWhatsApp }) =>
+              shareBillOnWhatsApp(billResult),
+            );
+          },
+        },
+        duration: 12000,
+      });
     } catch (err) {
       console.error("Bill download error:", err);
       toast.error("Failed to generate bill. Try again.");

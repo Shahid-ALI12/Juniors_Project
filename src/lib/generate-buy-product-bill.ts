@@ -1,4 +1,6 @@
 import type { Purchase, Customer, Product } from "@/types";
+import type { BillShareInfo } from "@/lib/share-whatsapp";
+import { buildPurchaseBillCaption } from "@/lib/share-whatsapp";
 
 /* ─── Farm branding constants (matches generate-customer-bill.ts) ─── */
 const FARM_NAME = "DANISH FARMHOUSE";
@@ -46,7 +48,7 @@ export async function generateBuyProductBillPDF(params: {
   product?: Product | null;
   locationName?: string | null;
   generatedAt: string;
-}) {
+}): Promise<BillShareInfo> {
   const { purchase, customer, product, locationName, generatedAt } = params;
   const { default: jsPDF } = await import("jspdf");
   const { default: autoTable } = await import("jspdf-autotable");
@@ -300,4 +302,30 @@ export async function generateBuyProductBillPDF(params: {
   // Save
   const fileName = `buy-bill-${purchase.id}-${(customer?.name ?? "customer").replace(/\s+/g, "_")}.pdf`;
   doc.save(fileName);
+
+  // Return blob + caption so callers can offer WhatsApp sharing.
+  const cashPaid = Number(purchase.cash_paid ?? 0);
+  const pending = Math.max(0, totalAmount - cashPaid);
+  const status: "Fully Paid" | "Partially Paid" | "Unpaid" =
+    cashPaid >= totalAmount && totalAmount > 0
+      ? "Fully Paid"
+      : cashPaid > 0
+        ? "Partially Paid"
+        : "Unpaid";
+  const caption = buildPurchaseBillCaption({
+    billId: purchase.id,
+    counterpartyName: customer?.name ?? "N/A",
+    counterpartyType: customer?.type === "credit" ? "Credit Customer" : "Cash Customer",
+    date: purchase.purchase_date || generatedAt,
+    totalAmount,
+    cashPaid,
+    pending,
+    status,
+    productName: product?.name,
+  });
+  return {
+    blob: doc.output("blob"),
+    fileName,
+    caption,
+  };
 }

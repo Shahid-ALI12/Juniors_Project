@@ -1,4 +1,15 @@
 import type { Sale, Customer } from "@/types";
+import type { BillShareInfo } from "@/lib/share-whatsapp";
+import { buildCustomerBillCaption } from "@/lib/share-whatsapp";
+
+export interface CustomerBillResult extends BillShareInfo {
+  /** Computed total bill (includes mix-order driver rents). */
+  totalBill: number;
+  /** Computed total cash paid. */
+  totalCashPaid: number;
+  /** Computed balance due. */
+  balanceDue: number;
+}
 
 interface CustomerBillData {
   customer: Pick<Customer, "id" | "name" | "type" | "phone">;
@@ -46,7 +57,7 @@ const C_GRAY: [number, number, number] = [110, 120, 130];
 const C_GRAY_LIGHT: [number, number, number] = [218, 222, 220];
 const C_WHITE: [number, number, number] = [255, 255, 255];
 
-export async function generateCustomerBillPDF(bill: CustomerBillData) {
+export async function generateCustomerBillPDF(bill: CustomerBillData): Promise<CustomerBillResult> {
   const { default: jsPDF } = await import("jspdf");
   const { default: autoTable } = await import("jspdf-autotable");
   const { numberToRupeeWords } = await import("@/lib/number-to-words");
@@ -577,5 +588,24 @@ export async function generateCustomerBillPDF(bill: CustomerBillData) {
   doc.setFillColor(...C_GOLD);
   doc.rect(0, ph - 1.5, pw, 1.5, "F");
 
-  doc.save(`Khata-Bill-${bill.customer.name.replace(/\s+/g, "-")}-${bill.customer.id}.pdf`);
+  const fileName = `Khata-Bill-${bill.customer.name.replace(/\s+/g, "-")}-${bill.customer.id}.pdf`;
+  doc.save(fileName);
+
+  // Return blob + caption so callers can offer WhatsApp sharing.
+  const caption = buildCustomerBillCaption({
+    customerName: bill.customer.name ?? "N/A",
+    generatedAt: bill.generatedAt,
+    totalBill: effectiveTotalBill,
+    cashPaid: effectiveTotalCash,
+    balanceDue: effectiveBalanceDue,
+    advancePayment,
+  });
+  return {
+    blob: doc.output("blob"),
+    fileName,
+    caption,
+    totalBill: effectiveTotalBill,
+    totalCashPaid: effectiveTotalCash,
+    balanceDue: effectiveBalanceDue,
+  };
 }

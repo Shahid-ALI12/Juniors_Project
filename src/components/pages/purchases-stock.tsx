@@ -555,7 +555,7 @@ export default function PurchasesStockPage() {
         : null;
 
       const { generatePurchaseBillPDF } = await import("@/lib/generate-purchase-bill");
-      await generatePurchaseBillPDF({
+      const billResult = await generatePurchaseBillPDF({
         purchase: p,
         customer,
         supplier,
@@ -563,7 +563,18 @@ export default function PurchasesStockPage() {
         locationName: getLocationName(p.location_id),
         generatedAt: new Date().toLocaleString("en-PK"),
       });
-      toast.success("Bill downloaded.");
+      toast.success("Bill downloaded.", {
+        description: "Share on WhatsApp with the client?",
+        action: {
+          label: "Share on WhatsApp",
+          onClick: () => {
+            import("@/lib/share-whatsapp").then(({ shareBillOnWhatsApp }) =>
+              shareBillOnWhatsApp(billResult),
+            );
+          },
+        },
+        duration: 12000,
+      });
     } catch (err: any) {
       console.error("Bill download error:", err);
       toast.error(err?.message || "Failed to generate bill.");
@@ -586,7 +597,7 @@ export default function PurchasesStockPage() {
         : null;
 
       const { generatePurchaseReceiptPDF } = await import("@/lib/generate-purchase-receipt");
-      await generatePurchaseReceiptPDF({
+      const receiptResult = await generatePurchaseReceiptPDF({
         purchase: p,
         customer,
         supplier,
@@ -594,7 +605,18 @@ export default function PurchasesStockPage() {
         locationName: getLocationName(p.location_id),
         generatedAt: new Date().toLocaleString("en-PK"),
       });
-      toast.success("Receipt downloaded.");
+      toast.success("Receipt downloaded.", {
+        description: "Share on WhatsApp with the client?",
+        action: {
+          label: "Share on WhatsApp",
+          onClick: () => {
+            import("@/lib/share-whatsapp").then(({ shareBillOnWhatsApp }) =>
+              shareBillOnWhatsApp(receiptResult),
+            );
+          },
+        },
+        duration: 12000,
+      });
     } catch (err: any) {
       console.error("Receipt download error:", err);
       toast.error(err?.message || "Failed to generate receipt.");

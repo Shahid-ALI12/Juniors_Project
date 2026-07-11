@@ -1,4 +1,6 @@
 import type { Purchase, Customer, Supplier, Product } from "@/types";
+import type { BillShareInfo } from "@/lib/share-whatsapp";
+import { buildPurchaseBillCaption } from "@/lib/share-whatsapp";
 
 /* ─── Farm branding constants (matches generate-customer-bill.ts) ─── */
 const FARM_NAME = "DANISH FARMHOUSE";
@@ -55,7 +57,7 @@ export async function generatePurchaseBillPDF(params: {
   product?: Product | null;
   locationName?: string | null;
   generatedAt: string;
-}) {
+}): Promise<BillShareInfo> {
   const { purchase, customer, supplier, product, locationName, generatedAt } = params;
   const { default: jsPDF } = await import("jspdf");
   const { default: autoTable } = await import("jspdf-autotable");
@@ -386,4 +388,22 @@ export async function generatePurchaseBillPDF(params: {
   const safeName = counterpartyName.replace(/\s+/g, "_").replace(/[^A-Za-z0-9_]/g, "");
   const fileName = `purchase-bill-${purchase.id}-${safeName}.pdf`;
   doc.save(fileName);
+
+  // Return blob + caption so callers can offer WhatsApp sharing.
+  const caption = buildPurchaseBillCaption({
+    billId: purchase.id,
+    counterpartyName,
+    counterpartyType: counterpartyType,
+    date: purchase.purchase_date || generatedAt,
+    totalAmount,
+    cashPaid,
+    pending,
+    status,
+    productName: product?.name,
+  });
+  return {
+    blob: doc.output("blob"),
+    fileName,
+    caption,
+  };
 }

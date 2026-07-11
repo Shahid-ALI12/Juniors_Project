@@ -518,7 +518,22 @@ export default function CustomMixOrder() {
         driverRent: store.driverRent || 0,
       };
       store.reset();
-      generateMixBillPDF(billData).catch(() => toast.error("PDF bill generate nahi ho saki"));
+      generateMixBillPDF(billData)
+        .then((billResult) => {
+          toast.success("Order finished! Bill PDF download ho rahi hai.", {
+            description: "Share on WhatsApp with the client?",
+            action: {
+              label: "Share on WhatsApp",
+              onClick: () => {
+                import("@/lib/share-whatsapp").then(({ shareBillOnWhatsApp }) =>
+                  shareBillOnWhatsApp(billResult),
+                );
+              },
+            },
+            duration: 12000,
+          });
+        })
+        .catch(() => toast.error("PDF bill generate nahi ho saki"));
       setCashReceived("");
       setAddProduct("");
       setAddWeight("");
@@ -531,7 +546,6 @@ export default function CustomMixOrder() {
       setS1Target("");
       setS1DriverName("");
       setS1DriverRent("");
-      toast.success("Order finished! Bill PDF download ho rahi hai.");
       invalidateCache("stock");
       // Bump the trigger so the <AvailableStock> panel refetches stock
       // and the displayed values reflect the just-saved mix order.
@@ -1195,7 +1209,20 @@ function PastMixOrdersSection({
                         totalAmount: billTotalAmount,
                         driverName: selectedPast.driverName || null,
                         driverRent: selectedPast.driverRent || 0,
-                      }).then(() => toast.success("Bill PDF download ho rahi hai!"))
+                      }).then((billResult) => {
+                        toast.success("Bill PDF download ho rahi hai!", {
+                          description: "Share on WhatsApp with the client?",
+                          action: {
+                            label: "Share on WhatsApp",
+                            onClick: () => {
+                              import("@/lib/share-whatsapp").then(({ shareBillOnWhatsApp }) =>
+                                shareBillOnWhatsApp(billResult),
+                              );
+                            },
+                          },
+                          duration: 12000,
+                        });
+                      })
                       .catch(() => toast.error("PDF bill generate nahi ho saki"));
                     }}
                   >
