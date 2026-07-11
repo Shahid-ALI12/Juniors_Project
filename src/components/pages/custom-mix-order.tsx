@@ -48,6 +48,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { shareBillOnWhatsApp } from "@/lib/share-whatsapp";
+import { showWhatsAppShareToast } from "@/components/share-whatsapp-toast";
 import { pktToday } from "@/lib/pkt-date";
 import { useMixOrdersPaginated, useInvalidateAfterMutation } from "@/hooks/queries";
 import { downloadExcel } from "@/lib/download-excel";
@@ -527,22 +528,7 @@ export default function CustomMixOrder() {
               label: "Share on WhatsApp",
               onClick: () => {
                 const result = shareBillOnWhatsApp(billResult);
-                toast.info("Opening WhatsApp chat with client (0300-3966715)...", {
-                  description: (
-                    <span className="text-xs">
-                      Agar WhatsApp auto-open nahi hua, to yahan click karein:{" "}
-                      <a
-                        href={result.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:text-blue-800 underline font-medium"
-                      >
-                        Open WhatsApp Chat →
-                      </a>
-                    </span>
-                  ),
-                  duration: 30000,
-                });
+                showWhatsAppShareToast(result);
               },
             },
             duration: 12000,
@@ -1231,22 +1217,7 @@ function PastMixOrdersSection({
                             label: "Share on WhatsApp",
                             onClick: () => {
                               const result = shareBillOnWhatsApp(billResult);
-                              toast.info("Opening WhatsApp chat with client (0300-3966715)...", {
-                                description: (
-                                  <span className="text-xs">
-                                    Agar WhatsApp auto-open nahi hua, to yahan click karein:{" "}
-                                    <a
-                                      href={result.url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-blue-600 hover:text-blue-800 underline font-medium"
-                                    >
-                                      Open WhatsApp Chat →
-                                    </a>
-                                  </span>
-                                ),
-                                duration: 30000,
-                              });
+                              showWhatsAppShareToast(result);
                             },
                           },
                           duration: 12000,

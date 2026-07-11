@@ -122,10 +122,26 @@ function openWhatsAppChat(caption: string): { url: string; opened: boolean } {
  * Synchronously check whether the Web Share API is available AND
  * can share files. Returns the prepared ShareData if yes, or null
  * if not. This is sync so the caller doesn't lose the user gesture.
+ *
+ * Also returns a `reason` so the caller can explain to the user
+ * WHY the PDF won't be auto-attached (the most common cause is
+ * accessing the app over plain HTTP from a phone — the Web Share
+ * API is only available in secure contexts: HTTPS or localhost).
  */
-function prepareNativeShareData(info: BillShareInfo): ShareData | null {
-  if (typeof navigator === "undefined") return null;
-  if (!navigator.share || !navigator.canShare) return null;
+function prepareNativeShareData(
+  info: BillShareInfo,
+): { data: ShareData } | { data: null; reason: ShareBillResult["reason"] } {
+  if (typeof navigator === "undefined") {
+    return { data: null, reason: "no-share-api" };
+  }
+  if (!navigator.share || !navigator.canShare) {
+    // Distinguish "insecure context" (HTTP from a remote device) from
+    // "browser simply has no share API" (old / desktop browser).
+    if (typeof window !== "undefined" && window.isSecureContext === false) {
+      return { data: null, reason: "insecure-context" };
+    }
+    return { data: null, reason: "no-share-api" };
+  }
   try {
     const file = new File([info.blob], info.fileName, {
       type: "application/pdf",
@@ -135,10 +151,12 @@ function prepareNativeShareData(info: BillShareInfo): ShareData | null {
       text: info.caption,
       title: "Bill from DANISH CATTLE FEED",
     };
-    if (!navigator.canShare(shareData)) return null;
-    return shareData;
+    if (!navigator.canShare(shareData)) {
+      return { data: null, reason: "cannot-share-files" };
+    }
+    return { data: shareData };
   } catch {
-    return null;
+    return { data: null, reason: "cannot-share-files" };
   }
 }
 
@@ -155,6 +173,19 @@ export interface ShareBillResult {
   /** "native" if Web Share API was used, "link" if anchor/window.open
    *  was used, "failed" if all mechanisms failed. */
   method: "native" | "link" | "failed";
+  /** true ONLY if the PDF file was actually attached to the share
+   *  (i.e. the native Web Share API path was taken). false on the
+   *  desktop/link path because wa.me URLs cannot carry files. */
+  fileAttached: boolean;
+  /** Short machine-readable reason explaining the outcome — callers
+   *  can use it to pick a message. See getShareHelpText(). */
+  reason:
+    | "native-share"        // PDF attached via Web Share API
+    | "insecure-context"    // not HTTPS & not localhost → API unavailable
+    | "no-share-api"        // browser has no navigator.share at all
+    | "cannot-share-files"  // API present but canShare(files) returned false
+    | "link-fallback"       // opened wa.me with text only
+    | "all-failed";         // every mechanism failed
 }
 
 /**
@@ -185,16 +216,18 @@ export function shareBillOnWhatsApp(info: BillShareInfo): ShareBillResult {
     hasBlob: !!info.blob,
     fileName: info.fileName,
     captionLength: info.caption?.length ?? 0,
+    isSecureContext:
+      typeof window !== "undefined" ? window.isSecureContext : "n/a",
   });
 
   // Mobile path — prepare the share data synchronously so we
   // don't lose the user gesture.
-  const shareData = prepareNativeShareData(info);
-  if (shareData) {
+  const prepared = prepareNativeShareData(info);
+  if (prepared.data) {
     console.log("[share-whatsapp] Web Share API available — firing navigator.share()");
     // Fire-and-forget. navigator.share returns a promise that
     // resolves when the user dismisses the share sheet.
-    navigator.share(shareData).catch((err: any) => {
+    navigator.share(prepared.data).catch((err: any) => {
       // AbortError = user cancelled the share sheet — no action needed.
       if (err?.name !== "AbortError") {
         console.warn("[share-whatsapp] navigator.share failed:", err);
@@ -204,16 +237,39 @@ export function shareBillOnWhatsApp(info: BillShareInfo): ShareBillResult {
       triggered: true,
       url: `https://wa.me/${CLIENT_WHATSAPP_NUMBER}`,
       method: "native",
+      fileAttached: true,
+      reason: "native-share",
     };
   }
 
-  // Desktop path — synchronous, preserves user gesture.
-  console.log("[share-whatsapp] Web Share API not available — using anchor click");
+  // Desktop / no-file-share path — synchronous, preserves user gesture.
+  console.log(
+    "[share-whatsapp] Web Share API not available (reason:",
+    prepared.reason,
+    ") — using anchor click",
+  );
   const result = openWhatsAppChat(info.caption);
+  if (result.opened) {
+    return {
+      triggered: true,
+      url: result.url,
+      method: "link",
+      fileAttached: false,
+      reason: prepared.reason === "no-share-api"
+        ? "no-share-api"
+        : prepared.reason === "insecure-context"
+          ? "insecure-context"
+          : prepared.reason === "cannot-share-files"
+            ? "cannot-share-files"
+            : "link-fallback",
+    };
+  }
   return {
-    triggered: result.opened,
+    triggered: false,
     url: result.url,
-    method: result.opened ? "link" : "failed",
+    method: "failed",
+    fileAttached: false,
+    reason: "all-failed",
   };
 }
 
@@ -326,4 +382,72 @@ export function buildPurchaseReceiptCaption(params: {
   lines.push(`Status: *${status}*`);
   lines.push("\n(PDF receipt attached 👆)");
   return lines.join("\n");
+}
+
+/* ── User-facing share-status helpers ──────────────────────
+ * Translates the machine-readable ShareBillResult into a short,
+ * human-friendly message (Roman Urdu + English mix matching the
+ * rest of the app's UI copy). Used by the shared toast helper
+ * in src/components/share-whatsapp-toast.tsx.
+ */
+
+export interface ShareHelpText {
+  /** One-line toast title. */
+  title: string;
+  /** Longer description explaining what happened and what to do. */
+  description: string;
+  /** Toast variant — "success" only when the PDF was actually
+   *  attached; "info" for the text-only fallback; "error" when
+   *  every mechanism failed. */
+  variant: "success" | "info" | "error";
+}
+
+export function getShareHelpText(result: ShareBillResult): ShareHelpText {
+  if (result.reason === "native-share") {
+    return {
+      title: "Bill PDF share sheet khul gayi!",
+      description:
+        "Share sheet mein se WhatsApp chunein → client ki chat chunein → Send. PDF bil attached hai.",
+      variant: "success",
+    };
+  }
+  if (result.reason === "insecure-context") {
+    return {
+      title: "WhatsApp chat open hua, lekin PDF attach nahi hua",
+      description:
+        "App abhi HTTP par chal raha hai. PDF auto-attach karne ke liye app ko HTTPS se open karein: browser mein https://21.0.3.252:3000 likhein, certificate warning ko 'Advanced → Proceed' karke accept karein, phir dobara Share dabayein. Tab PDF bhi saath jayegi.",
+      variant: "info",
+    };
+  }
+  if (result.reason === "cannot-share-files") {
+    return {
+      title: "WhatsApp chat open hua, lekin PDF attach nahi hua",
+      description:
+        "Is browser mein file-share support nahi hai. PDF abhi Downloads folder mein save ho chuki hai — WhatsApp chat mein manually attach karein (📎 icon → Document → bill PDF).",
+      variant: "info",
+    };
+  }
+  if (result.reason === "no-share-api") {
+    return {
+      title: "WhatsApp chat open hua, lekin PDF attach nahi hua",
+      description:
+        "Ye browser Web Share API support nahi karta (desktop browser). PDF Downloads folder mein hai — chat mein manually attach karein (📎 icon → Document).",
+      variant: "info",
+    };
+  }
+  if (result.reason === "link-fallback") {
+    return {
+      title: "WhatsApp chat open hua (text caption ke saath)",
+      description:
+        "PDF auto-attach nahi hua. Downloads folder se manually attach karein (📎 → Document).",
+      variant: "info",
+    };
+  }
+  // all-failed
+  return {
+    title: "WhatsApp auto-open nahi ho saka",
+    description:
+      "Popup blocker ne block kar diya. Niche diye link par click karein:",
+    variant: "error",
+  };
 }

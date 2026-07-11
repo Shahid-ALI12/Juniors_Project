@@ -60,6 +60,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { shareBillOnWhatsApp } from "@/lib/share-whatsapp";
+import { showWhatsAppShareToast } from "@/components/share-whatsapp-toast";
 import { pktToday } from "@/lib/pkt-date";
 
 const DEFAULT_BAG_WEIGHT = 50;
@@ -570,22 +571,7 @@ export default function PurchasesStockPage() {
           label: "Share on WhatsApp",
           onClick: () => {
             const result = shareBillOnWhatsApp(billResult);
-            toast.info("Opening WhatsApp chat with client (0300-3966715)...", {
-              description: (
-                <span className="text-xs">
-                  Agar WhatsApp auto-open nahi hua, to yahan click karein:{" "}
-                  <a
-                    href={result.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:text-blue-800 underline font-medium"
-                  >
-                    Open WhatsApp Chat →
-                  </a>
-                </span>
-              ),
-              duration: 30000,
-            });
+            showWhatsAppShareToast(result);
           },
         },
         duration: 12000,
@@ -626,22 +612,7 @@ export default function PurchasesStockPage() {
           label: "Share on WhatsApp",
           onClick: () => {
             const result = shareBillOnWhatsApp(receiptResult);
-            toast.info("Opening WhatsApp chat with client (0300-3966715)...", {
-              description: (
-                <span className="text-xs">
-                  Agar WhatsApp auto-open nahi hua, to yahan click karein:{" "}
-                  <a
-                    href={result.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:text-blue-800 underline font-medium"
-                  >
-                    Open WhatsApp Chat →
-                  </a>
-                </span>
-              ),
-              duration: 30000,
-            });
+            showWhatsAppShareToast(result);
           },
         },
         duration: 12000,
