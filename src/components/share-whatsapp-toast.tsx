@@ -15,24 +15,38 @@
  *
  *     const result = shareBillOnWhatsApp(billResult);
  *     showWhatsAppShareToast(result);
+ *
+ * ── Native-share promise handling ──
+ * The Web Share API path is special: shareBillOnWhatsApp() returns
+ * immediately with reason="native-share", but navigator.share()
+ * itself is async. We must await it to know whether the share
+ * sheet actually opened or whether the browser blocked it (the
+ * most common cause of "toast appeared but nothing opened" is
+ * NotAllowedError — the user gesture was lost between the click
+ * on sonner's toast action button and the navigator.share() call,
+ * so Chrome silently rejects the share).
+ *
+ * To handle this we show an intermediate "Opening share sheet..."
+ * toast, then react to the promise:
+ *   - resolved → success toast (sheet opened, user picked app)
+ *   - rejected AbortError → user dismissed silently, no toast
+ *   - rejected other → error toast with manual wa.me fallback link
  */
 import { toast } from "sonner";
 import { getShareHelpText, type ShareBillResult } from "@/lib/share-whatsapp";
 
 export function showWhatsAppShareToast(result: ShareBillResult): void {
-  const help = getShareHelpText(result);
-
-  const description = (
-    <span className="text-xs leading-relaxed">
-      {help.description}
-      {/* Manual fallback link — shown on every path except the
-          successful native-share path (where the share sheet is
-          already open with the PDF attached, so a link is noise). */}
-      {result.reason !== "native-share" && (
-        <>
+  // ── Native share path — must await the share promise ──
+  if (result.sharePromise) {
+    // Show an intermediate toast — DO NOT claim success yet.
+    const openingId = toast.info("WhatsApp share sheet open ho rahi hai...", {
+      description: (
+        <span className="text-xs leading-relaxed">
+          Agar share sheet 5 second mein open na ho, to browser ne
+          usay block kar diya hai. Neeche link par click karein
+          (lekin PDF manually attach karni padegi):
           <br />
           <br />
-          Agar WhatsApp auto-open nahi hua, to yahan click karein:{" "}
           <a
             href={result.url}
             target="_blank"
@@ -41,8 +55,90 @@ export function showWhatsAppShareToast(result: ShareBillResult): void {
           >
             Open WhatsApp Chat →
           </a>
-        </>
-      )}
+        </span>
+      ),
+      duration: 30000,
+    });
+
+    result.sharePromise.then(
+      () => {
+        // Share sheet opened & user dismissed it normally (either
+        // picked an app and sent, or just closed the sheet).
+        toast.dismiss(openingId);
+        toast.success("Bill PDF share sheet khul gayi!", {
+          description: (
+            <span className="text-xs leading-relaxed">
+              Share sheet mein se WhatsApp chunein → client ki chat
+              chunein → Send. PDF bil attached hai.
+            </span>
+          ),
+          duration: 15000,
+        });
+      },
+      (err: any) => {
+        toast.dismiss(openingId);
+
+        // AbortError = user explicitly cancelled (tapped "Close" on
+        // the share sheet). Don't show an error — they meant to.
+        if (err?.name === "AbortError") {
+          console.log("[share-whatsapp] user cancelled share sheet");
+          return;
+        }
+
+        // Any other rejection = browser blocked the share.
+        // Most common: NotAllowedError (user gesture lost), or
+        // NotSupportedError (file type refused).
+        const errName = err?.name || "UnknownError";
+        const errMsg = err?.message || "no message";
+        console.error("[share-whatsapp] share sheet failed to open:", errName, errMsg);
+
+        toast.error("Share sheet open nahi ho saki", {
+          description: (
+            <span className="text-xs leading-relaxed">
+              <strong>Error:</strong> {errName}
+              <br />
+              Browser ne share block kar diya (usually user-gesture
+              issue hota hai). Neeche link par click karein — PDF
+              Downloads folder mein hai, chat mein manually attach
+              karein (📎 → Document).
+              <br />
+              <br />
+              <a
+                href={result.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:text-blue-800 underline font-medium"
+              >
+                Open WhatsApp Chat →
+              </a>
+            </span>
+          ),
+          duration: 60000,
+        });
+      },
+    );
+    return;
+  }
+
+  // ── Non-native paths — show appropriate message immediately ──
+  const help = getShareHelpText(result);
+
+  const description = (
+    <span className="text-xs leading-relaxed">
+      {help.description}
+      {/* Manual fallback link — always shown on non-native paths
+          (where PDF auto-attach wasn't possible). */}
+      <br />
+      <br />
+      Agar WhatsApp auto-open nahi hua, to yahan click karein:{" "}
+      <a
+        href={result.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-blue-600 hover:text-blue-800 underline font-medium"
+      >
+        Open WhatsApp Chat →
+      </a>
     </span>
   );
 

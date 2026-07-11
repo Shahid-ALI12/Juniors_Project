@@ -186,6 +186,19 @@ export interface ShareBillResult {
     | "cannot-share-files"  // API present but canShare(files) returned false
     | "link-fallback"       // opened wa.me with text only
     | "all-failed";         // every mechanism failed
+  /** ONLY set on the native-share path: the promise returned by
+   *  navigator.share(). Callers (specifically the toast helper)
+   *  can await this to know whether the share sheet actually
+   *  succeeded or was rejected by the browser (e.g. NotAllowedError
+   *  when the user gesture is lost between the click on the toast
+   *  action button and the navigator.share() call).
+   *
+   *  - Resolves → user picked an app / dismissed the sheet normally
+   *  - Rejects with AbortError → user explicitly cancelled
+   *  - Rejects with anything else → browser blocked the share
+   *    (NotAllowedError, NotSupportedError, etc.) — caller should
+   *    show a manual fallback link. */
+  sharePromise?: Promise<void>;
 }
 
 /**
@@ -225,12 +238,25 @@ export function shareBillOnWhatsApp(info: BillShareInfo): ShareBillResult {
   const prepared = prepareNativeShareData(info);
   if (prepared.data) {
     console.log("[share-whatsapp] Web Share API available — firing navigator.share()");
-    // Fire-and-forget. navigator.share returns a promise that
-    // resolves when the user dismisses the share sheet.
-    navigator.share(prepared.data).catch((err: any) => {
-      // AbortError = user cancelled the share sheet — no action needed.
+    // Capture the promise so the caller can react to the actual
+    // outcome (resolved / rejected with AbortError / rejected with
+    // NotAllowedError etc.). We do NOT await it here because that
+    // would lose the user gesture on devices where share needs
+    // a real activation event.
+    let sharePromise: Promise<void>;
+    try {
+      sharePromise = navigator.share(prepared.data);
+    } catch (err: any) {
+      // Synchronous throw (very rare — usually it returns a promise).
+      console.error("[share-whatsapp] navigator.share threw synchronously:", err);
+      sharePromise = Promise.reject(err);
+    }
+    // Attach a silent logger — the toast helper will handle the
+    // user-facing side. We still log here so the error is visible
+    // in the browser console regardless of who consumes the result.
+    sharePromise.catch((err: any) => {
       if (err?.name !== "AbortError") {
-        console.warn("[share-whatsapp] navigator.share failed:", err);
+        console.warn("[share-whatsapp] navigator.share rejected:", err?.name, err?.message, err);
       }
     });
     return {
@@ -239,6 +265,7 @@ export function shareBillOnWhatsApp(info: BillShareInfo): ShareBillResult {
       method: "native",
       fileAttached: true,
       reason: "native-share",
+      sharePromise,
     };
   }
 
