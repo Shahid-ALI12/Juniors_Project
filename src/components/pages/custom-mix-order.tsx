@@ -526,7 +526,23 @@ export default function CustomMixOrder() {
             action: {
               label: "Share on WhatsApp",
               onClick: () => {
-                shareBillOnWhatsApp(billResult);
+                const result = shareBillOnWhatsApp(billResult);
+                toast.info("Opening WhatsApp chat with client (0300-3966715)...", {
+                  description: (
+                    <span className="text-xs">
+                      Agar WhatsApp auto-open nahi hua, to yahan click karein:{" "}
+                      <a
+                        href={result.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 underline font-medium"
+                      >
+                        Open WhatsApp Chat →
+                      </a>
+                    </span>
+                  ),
+                  duration: 30000,
+                });
               },
             },
             duration: 12000,
@@ -1214,7 +1230,23 @@ function PastMixOrdersSection({
                           action: {
                             label: "Share on WhatsApp",
                             onClick: () => {
-                              shareBillOnWhatsApp(billResult);
+                              const result = shareBillOnWhatsApp(billResult);
+                              toast.info("Opening WhatsApp chat with client (0300-3966715)...", {
+                                description: (
+                                  <span className="text-xs">
+                                    Agar WhatsApp auto-open nahi hua, to yahan click karein:{" "}
+                                    <a
+                                      href={result.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-blue-600 hover:text-blue-800 underline font-medium"
+                                    >
+                                      Open WhatsApp Chat →
+                                    </a>
+                                  </span>
+                                ),
+                                duration: 30000,
+                              });
                             },
                           },
                           duration: 12000,

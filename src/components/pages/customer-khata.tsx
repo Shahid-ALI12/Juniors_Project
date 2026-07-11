@@ -315,7 +315,26 @@ export default function CustomerKhataPage() {
         action: {
           label: "Share on WhatsApp",
           onClick: () => {
-            shareBillOnWhatsApp(billResult);
+            const result = shareBillOnWhatsApp(billResult);
+            // Always show a follow-up toast with a clickable link —
+            // this way the user can manually open WhatsApp even if
+            // the browser's popup blocker killed the auto-open.
+            toast.info("Opening WhatsApp chat with client (0300-3966715)...", {
+              description: (
+                <span className="text-xs">
+                  Agar WhatsApp auto-open nahi hua, to yahan click karein:{" "}
+                  <a
+                    href={result.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800 underline font-medium"
+                  >
+                    Open WhatsApp Chat →
+                  </a>
+                </span>
+              ),
+              duration: 30000,
+            });
           },
         },
         duration: 12000,
