@@ -9,27 +9,37 @@
 --   will not modify it.
 --
 -- WHAT THIS MIGRATION DOES:
---   1. REPLACEs `create_sale()` — removes the stock upsert + decrement
---      block. The function still inserts sale rows and the cash_ledger
---      entry. (Same signature, same return type — dropless upgrade.)
---   2. REPLACEs `create_mix_order()` — removes the stock lookup +
---      decrement block. Still inserts the mix_orders row, the sale
---      lines, and the cash_ledger entry.
+--   1. DROPs + recreates `create_sale()` — removes the stock upsert +
+--      decrement block. Still inserts sale rows + cash_ledger entry.
+--   2. DROPs + recreates `create_mix_order()` — removes the stock
+--      lookup + decrement block. Still inserts mix_orders + sale
+--      lines + cash_ledger entry.
 --   3. Leaves `record_purchase()` and `decrement_stock_fallback()`
---      UNTOUCHED — purchases still increment stock. The fallback
---      function is still used by the purchases data layer (with a
---      NEGATIVE qty to increment).
+--      UNTOUCHED — purchases still increment stock.
+--
+-- WHY DROP+CREATE instead of CREATE OR REPLACE:
+--   PostgreSQL forbids CREATE OR REPLACE from changing a function's
+--   RETURN TYPE. If your deployed `create_mix_order()` was an older
+--   version that returned `void` or `bigint` (instead of the current
+--   `TABLE(id bigint)`), CREATE OR REPLACE fails with
+--   "cannot change return type of existing function". DROP+CREATE
+--   sidesteps that — we explicitly drop the old definition first,
+--   then create the new one with the desired return type.
 --
 -- RUN INSTRUCTIONS:
 --   Open Supabase → SQL Editor → paste this whole file → Run.
---   Safe to re-run (uses CREATE OR REPLACE, no data changes).
---   No downtime — both functions keep the same signature so the
---   Next.js API routes keep working without code changes.
+--   Safe to re-run (DROP IF EXISTS + CREATE OR REPLACE pattern).
+--   Brief moment where the function doesn't exist (between DROP and
+--   CREATE) — if a sale arrives in that ~ms window it would error,
+--   but in practice this is instant on Supabase.
 -- ============================================================
 
 -- ════════════════════════════════════════════════════════════
 -- 1. create_sale — NO LONGER DECREMENTS STOCK
 -- ════════════════════════════════════════════════════════════
+-- DROP first to allow return-type changes from older deployed versions.
+DROP FUNCTION IF EXISTS public.create_sale(jsonb,bigint,date,numeric,numeric,text,text,text,bigint);
+
 CREATE OR REPLACE FUNCTION create_sale(
   p_items jsonb,
   p_customer_id bigint,
@@ -84,6 +94,10 @@ $$;
 -- ════════════════════════════════════════════════════════════
 -- 2. create_mix_order — NO LONGER DECREMENTS STOCK
 -- ════════════════════════════════════════════════════════════
+-- DROP first to allow return-type changes from older deployed versions
+-- (older versions returned void or bigint; current returns TABLE(id bigint)).
+DROP FUNCTION IF EXISTS public.create_mix_order(bigint,date,numeric,numeric,text,jsonb,text,numeric,bigint);
+
 CREATE OR REPLACE FUNCTION create_mix_order(
   p_customer_id bigint,
   p_order_date date,
@@ -154,11 +168,8 @@ NOTIFY pgrst, 'reload schema';
 -- ════════════════════════════════════════════════════════════
 -- VERIFICATION (run these manually after, if you want to confirm):
 --
---   -- Should show 'CREATE OR REPLACE FUNCTION create_sale...'
---   -- with no UPDATE product_stock inside the body:
+--   -- Should show the new body with NO UPDATE product_stock inside:
 --   SELECT prosrc FROM pg_proc WHERE proname = 'create_sale';
---
---   -- Same check for mix orders:
 --   SELECT prosrc FROM pg_proc WHERE proname = 'create_mix_order';
 --
 --   -- record_purchase should STILL contain the stock increment
