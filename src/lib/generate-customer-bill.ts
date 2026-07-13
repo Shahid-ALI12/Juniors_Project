@@ -71,6 +71,16 @@ export async function generateCustomerBillPDF(bill: CustomerBillData): Promise<C
   // Mix order bill amount = sum(ingredient qty * rate) + driver_rent (looked up via mixMeta).
   let actualTotalBill = 0;
   let actualTotalCash = 0;
+  // Subtotal EXCLUDING driver rents / rickshaw fares — used for the
+  // "As Rate/Bag" calculation (per-bag rate based on goods value only).
+  let actualSubtotal = 0;
+  // Total bag count across all sales — used for "As Rate/Bag".
+  // Mix order ingredient rows are stored in kg with no bag_weight_kg, so
+  // we derive bags as qty / 40 (40 kg = 1 bag, per business convention).
+  // Solo sale rows in 'bags' use quantity directly; solo rows in 'kg'
+  // use quantity / (bag_weight_kg ?? 40).
+  let actualTotalBags = 0;
+  const BAG_KG = 40;
   const seenMixOrderIds = new Set<number | string>();
   for (const sale of bill.sales) {
     if (sale.mix_order_id) {
@@ -85,12 +95,33 @@ export async function generateCustomerBillPDF(bill: CustomerBillData): Promise<C
       const mixMetaEntry = bill.mixMeta?.[Number(sale.mix_order_id)];
       const driverRent = mixMetaEntry?.driver_rent ?? 0;
       actualTotalBill += ingredientsTotal + driverRent;
+      actualSubtotal += ingredientsTotal; // NO driver rent in subtotal
       actualTotalCash += ingredients.reduce((sum, s) => sum + s.cash_received, 0);
+      // Each mix order ingredient row is in kg — derive bags = qty / 40
+      actualTotalBags += ingredients.reduce(
+        (sum, s) => sum + (s.quantity > 0 ? s.quantity / BAG_KG : 0),
+        0,
+      );
     } else {
       actualTotalBill += sale.quantity * sale.rate_per_bag + sale.rickshaw_fare;
+      actualSubtotal += sale.quantity * sale.rate_per_bag; // NO rickshaw_fare in subtotal
       actualTotalCash += sale.cash_received;
+      // Solo sale: bags = quantity if unit_type='bags' else quantity / (bag_weight_kg ?? 40)
+      if (sale.unit_type === "bags") {
+        actualTotalBags += sale.quantity;
+      } else {
+        const bw = sale.bag_weight_kg ?? BAG_KG;
+        actualTotalBags += bw > 0 ? sale.quantity / bw : sale.quantity;
+      }
     }
   }
+
+  // As Rate/Bag = Subtotal (excluding rents) / Total Bags
+  const hasAsRatePerBag = actualTotalBags > 0 && actualSubtotal > 0;
+  const asRatePerBag = hasAsRatePerBag ? actualSubtotal / actualTotalBags : 0;
+  const asRatePerBagStr = hasAsRatePerBag
+    ? `Rs. ${asRatePerBag.toLocaleString("en-PK", { maximumFractionDigits: 2 })}`
+    : "";
 
   const totalGoodsValue = bill.totalGoodsValue ?? 0;
   const advancePayment = bill.advancePayment ?? 0;
@@ -423,9 +454,10 @@ export async function generateCustomerBillPDF(bill: CustomerBillData): Promise<C
   const tBoxW = 80;
   const tBoxX = pw - m - tBoxW;
   // 4 rows when opening balance > 0, else 3 rows. Add 1 more row when advance > 0.
+  // Add 1 more row when As Rate/Bag is shown (below Total Bill).
   const hasOpening = bill.openingBalance > 0;
   const hasAdvance = advancePayment > 0;
-  const rowCount = (hasOpening ? 4 : 3) + (hasAdvance ? 1 : 0);
+  const rowCount = (hasOpening ? 4 : 3) + (hasAdvance ? 1 : 0) + (hasAsRatePerBag ? 1 : 0);
   const tBoxH = 8 + rowCount * 7 + 10;
 
   doc.setFillColor(...C_WHITE);
@@ -458,6 +490,18 @@ export async function generateCustomerBillPDF(bill: CustomerBillData): Promise<C
   doc.setFont("helvetica", "bold");
   doc.setTextColor(...C_DARK);
   doc.text(totalBillStr, valX, ty, { align: "right" });
+
+  // As Rate/Bag (= Subtotal excluding rents / Total Bags) — below Total Bill
+  if (hasAsRatePerBag) {
+    ty += 7;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...C_GRAY);
+    doc.text(`As Rate/Bag (${actualTotalBags.toLocaleString("en-PK", { maximumFractionDigits: 2 })} bags):`, labelX, ty);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(...C_DARK);
+    doc.text(asRatePerBagStr, valX, ty, { align: "right" });
+  }
 
   // Cash Paid
   ty += 7;

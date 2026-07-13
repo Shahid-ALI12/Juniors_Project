@@ -88,12 +88,18 @@ function printMixBill(order: { id: string | number; customer: string; date: stri
 
   const grandTotal = totalAmount + (order.driverRent && order.driverRent > 0 ? order.driverRent : 0);
 
-  // Bag Per Rate — total bill amount divided by total bags in the order
-  const totalBags = items.reduce((sum, i) => sum + (i.bags ?? 0), 0);
-  const hasBagPerRate = totalBags > 0;
-  const bagPerRate = hasBagPerRate ? grandTotal / totalBags : 0;
-  const bagPerRateLine = hasBagPerRate
-    ? `<div class="trow"><span>Bag Per Rate (${totalBags} bags):</span><strong>Rs. ${bagPerRate.toLocaleString("en-PK", { maximumFractionDigits: 2 })}</strong></div>`
+  // As Rate/Bag — Subtotal (excluding driver rent) divided by total bags.
+  // Total bags per ingredient: use explicit `bags` if entered, else
+  // auto-derive from kg (40 kg = 1 bag).
+  const BAG_KG = 40;
+  const totalBagsCount = items.reduce(
+    (sum, i) => sum + (i.bags && i.bags > 0 ? i.bags : i.weight_kg / BAG_KG),
+    0,
+  );
+  const hasAsRatePerBag = totalBagsCount > 0;
+  const asRatePerBag = hasAsRatePerBag ? totalAmount / totalBagsCount : 0;
+  const asRatePerBagLine = hasAsRatePerBag
+    ? `<div class="trow"><span>As Rate/Bag (${totalBagsCount.toLocaleString("en-PK", { maximumFractionDigits: 2 })} bags):</span><strong>Rs. ${asRatePerBag.toLocaleString("en-PK", { maximumFractionDigits: 2 })}</strong></div>`
     : "";
 
   const html = `<!DOCTYPE html><html><head><style>
@@ -164,9 +170,9 @@ function printMixBill(order: { id: string | number; customer: string; date: stri
     </table>
     <div class="totals-box">
       <div class="trow"><span>Subtotal:</span><strong>Rs. ${fmtRs(totalAmount)}</strong></div>
+      ${asRatePerBagLine}
       ${order.driverRent && order.driverRent > 0 ? `<div class="trow"><span>Driver Rent:</span><strong>Rs. ${fmtRs(order.driverRent)}</strong></div>` : ""}
       <div class="trow grand"><span>GRAND TOTAL:</span><span>Rs. ${fmtRs(grandTotal)}</span></div>
-      ${bagPerRateLine}
       <div class="words">In words: ${numberToRupeeWords(grandTotal)}</div>
     </div>
     <div class="tc-box">
@@ -424,11 +430,19 @@ export default function CustomMixOrder() {
     const product = products.find((p) => p.id === Number(addProduct));
     if (!product) return;
 
-    // Optional bags + rate_per_bag → compute bag_amount for display
+    // Bag fields:
+    //   - bags: if user enters Bags manually, use that. Else auto-derive
+    //     from kg (40 kg = 1 bag). This derived value is stored on the
+    //     ingredient so the bill's "As Rate/Bag" calculation can use it.
+    //   - rate_per_bag + bag_amount: only computed when BOTH bags > 0 AND
+    //     rate_per_bag > 0. These drive the optional "Bag Amt" column.
+    const BAG_KG = 40;
     const bagsNum = addBags ? Number(addBags) : 0;
     const ratePerBagNum = addRatePerBag ? Number(addRatePerBag) : 0;
-    const hasBagInfo = bagsNum > 0 && ratePerBagNum > 0;
-    const bagAmount = hasBagInfo ? bagsNum * ratePerBagNum : null;
+    const derivedBags = weight > 0 ? weight / BAG_KG : 0;
+    const finalBags = bagsNum > 0 ? bagsNum : derivedBags;
+    const hasRatePerBag = ratePerBagNum > 0;
+    const bagAmount = (finalBags > 0 && hasRatePerBag) ? finalBags * ratePerBagNum : null;
 
     const ing: MixIngredient = {
       product: product.name,
@@ -436,8 +450,8 @@ export default function CustomMixOrder() {
       weight_kg: weight,
       rate_per_kg: rate,
       amount: weight * rate,
-      bags: hasBagInfo ? bagsNum : null,
-      rate_per_bag: hasBagInfo ? ratePerBagNum : null,
+      bags: finalBags > 0 ? finalBags : null,
+      rate_per_bag: hasRatePerBag ? ratePerBagNum : null,
       bag_amount: bagAmount,
     };
     store.addIngredient(ing);
@@ -840,23 +854,43 @@ export default function CustomMixOrder() {
           {/* ── Optional bag fields (collapsible-style row) ── */}
           <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3">
             <div className="text-xs font-semibold text-slate-500 uppercase mb-2">
-              Bag details <span className="font-normal normal-case text-slate-400">(optional — fill both to compute Bag Amount)</span>
+              Bag details <span className="font-normal normal-case text-slate-400">(Bags auto-derived from kg at 40 kg/bag — override by typing here. Fill Rate/Bag to compute Bag Amount.)</span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold uppercase text-slate-500">Bags</Label>
                 <Input type="number" min={0} step="any" placeholder="0" value={addBags} onChange={(e) => setAddBags(e.target.value)} />
+                {(!addBags || Number(addBags) <= 0) && Number(addWeight) > 0 && (
+                  <div className="text-[10px] text-slate-500 font-medium">
+                    Auto from kg: <span className="text-slate-700 font-semibold">{(Number(addWeight) / 40).toLocaleString("en-PK", { maximumFractionDigits: 2 })} bags</span>
+                  </div>
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold uppercase text-slate-500">Rate / Bag</Label>
                 <Input type="number" min={0} step="any" placeholder="0" value={addRatePerBag} onChange={(e) => setAddRatePerBag(e.target.value)} />
               </div>
               <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase text-slate-500">Effective Bags (auto)</Label>
+                <div className="h-9 px-3 flex items-center rounded-md border border-slate-200 bg-white text-sm font-semibold tabular-nums text-slate-700">
+                  {(() => {
+                    const manualBags = Number(addBags);
+                    const effective = manualBags > 0 ? manualBags : (Number(addWeight) > 0 ? Number(addWeight) / 40 : 0);
+                    return effective > 0 ? `${effective.toLocaleString("en-PK", { maximumFractionDigits: 2 })} bags` : "—";
+                  })()}
+                </div>
+              </div>
+              <div className="space-y-1.5">
                 <Label className="text-xs font-semibold uppercase text-slate-500">Bag Amount (auto)</Label>
                 <div className="h-9 px-3 flex items-center rounded-md border border-slate-200 bg-white text-sm font-semibold tabular-nums text-slate-700">
-                  {(Number(addBags) > 0 && Number(addRatePerBag) > 0)
-                    ? `Rs. ${(Number(addBags) * Number(addRatePerBag)).toLocaleString("en-PK")}`
-                    : "—"}
+                  {(() => {
+                    const manualBags = Number(addBags);
+                    const effective = manualBags > 0 ? manualBags : (Number(addWeight) > 0 ? Number(addWeight) / 40 : 0);
+                    const ratePerBag = Number(addRatePerBag);
+                    return (effective > 0 && ratePerBag > 0)
+                      ? `Rs. ${(effective * ratePerBag).toLocaleString("en-PK")}`
+                      : "—";
+                  })()}
                 </div>
               </div>
             </div>
@@ -892,6 +926,7 @@ export default function CustomMixOrder() {
                     <TableHead className="text-xs uppercase text-slate-500 font-semibold">#</TableHead>
                     <TableHead className="text-xs uppercase text-slate-500 font-semibold">Product</TableHead>
                     <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Weight (kg)</TableHead>
+                    <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Bags</TableHead>
                     <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Rate/kg</TableHead>
                     <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Amount</TableHead>
                     {totalBagAmount > 0 && <TableHead className="text-xs uppercase text-slate-500 font-semibold text-right">Bag Amt</TableHead>}
@@ -904,6 +939,9 @@ export default function CustomMixOrder() {
                       <TableCell className="text-slate-500 text-xs">{idx + 1}</TableCell>
                       <TableCell className="font-medium text-slate-800 text-sm">{ing.product}</TableCell>
                       <TableCell className="text-right tabular-nums text-sm">{fmtRs(ing.weight_kg)}</TableCell>
+                      <TableCell className="text-right tabular-nums text-sm text-slate-600">
+                        {ing.bags ? ing.bags.toLocaleString("en-PK", { maximumFractionDigits: 2 }) : "—"}
+                      </TableCell>
                       <TableCell className="text-right tabular-nums text-sm">{fmtRs(ing.rate_per_kg)}</TableCell>
                       <TableCell className="text-right tabular-nums text-sm font-semibold text-slate-800">Rs. {fmtRs(ing.amount)}</TableCell>
                       {totalBagAmount > 0 && (
@@ -921,6 +959,9 @@ export default function CustomMixOrder() {
                   <TableRow className="bg-slate-50/60 font-semibold">
                     <TableCell colSpan={2} className="text-slate-600 text-sm">Total</TableCell>
                     <TableCell className="text-right tabular-nums text-sm text-slate-800">{fmtRs(usedWeight)} kg</TableCell>
+                    <TableCell className="text-right tabular-nums text-sm text-slate-800">
+                      {store.ingredients.reduce((s, i) => s + (i.bags ?? 0), 0).toLocaleString("en-PK", { maximumFractionDigits: 2 })}
+                    </TableCell>
                     <TableCell />
                     <TableCell className="text-right tabular-nums text-sm text-slate-800">Rs. {fmtRs(totalAmount)}</TableCell>
                     {totalBagAmount > 0 && (
@@ -941,11 +982,21 @@ export default function CustomMixOrder() {
             <div className="flex-1">
               <div className="text-xs font-bold uppercase text-slate-500">💰 Bill So Far</div>
               <div className="text-2xl font-extrabold text-slate-900 mt-0.5">Rs. {fmtRs(totalAmount)}</div>
-              {totalBagAmount > 0 && (
-                <div className="text-xs font-medium text-slate-500 mt-1">
-                  Bag Amount total: <span className="font-semibold text-slate-700">Rs. {fmtRs(totalBagAmount)}</span>
-                </div>
-              )}
+              <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs font-medium text-slate-500 mt-1">
+                <span>
+                  Total Bags: <span className="font-semibold text-slate-700">{store.ingredients.reduce((s, i) => s + (i.bags ?? 0), 0).toLocaleString("en-PK", { maximumFractionDigits: 2 })}</span>
+                </span>
+                {totalAmount > 0 && store.ingredients.reduce((s, i) => s + (i.bags ?? 0), 0) > 0 && (
+                  <span>
+                    As Rate/Bag: <span className="font-semibold text-slate-700">Rs. {(totalAmount / store.ingredients.reduce((s, i) => s + (i.bags ?? 0), 0)).toLocaleString("en-PK", { maximumFractionDigits: 2 })}</span>
+                  </span>
+                )}
+                {totalBagAmount > 0 && (
+                  <span>
+                    Bag Amount total: <span className="font-semibold text-slate-700">Rs. {fmtRs(totalBagAmount)}</span>
+                  </span>
+                )}
+              </div>
             </div>
             {store.customerType === "credit" && (
               <span className="text-xs font-medium text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-3 py-1">

@@ -277,22 +277,32 @@ export async function generateMixBillPDF(bill: BillData): Promise<BillShareInfo>
 
   /* ════════════════════════════════════════════════════════
    *  TOTALS BOX (right-aligned) + Amount in words (left)
+   *  Subtotal = sum of all ingredient amounts (excluding driver rent)
+   *  As Rate/Bag = Subtotal / Total Bags  (shown below Subtotal)
    *  Grand Total = Subtotal + Driver Rent (if any)
-   *  Bag Per Rate = Grand Total / Total Bags (only when bags exist)
    * ════════════════════════════════════════════════════════ */
   const fy = (doc as any).lastAutoTable.finalY + 8;
   const hasDriverRent = bill.driverRent && bill.driverRent > 0;
   const isCash = bill.customerType === "cash" && bill.cashReceived !== undefined;
+  // Subtotal = bill.totalAmount (sum of ingredient amounts, NO driver rent)
+  const subtotal = bill.totalAmount;
+  const subtotalStr = `Rs. ${subtotal.toLocaleString("en-PK")}`;
   // Grand Total = subtotal + driver rent (this is what customer actually pays)
-  const grandTotal = bill.totalAmount + (hasDriverRent ? bill.driverRent! : 0);
+  const grandTotal = subtotal + (hasDriverRent ? bill.driverRent! : 0);
   const grandTotalStr = `Rs. ${grandTotal.toLocaleString("en-PK")}`;
 
-  // Bag Per Rate — total bill amount divided by total bags in the order
-  const totalBags = bill.items.reduce((sum, i) => sum + (i.bags ?? 0), 0);
-  const hasBagPerRate = totalBags > 0;
-  const bagPerRate = hasBagPerRate ? grandTotal / totalBags : 0;
-  const bagPerRateStr = hasBagPerRate
-    ? `Rs. ${bagPerRate.toLocaleString("en-PK", { maximumFractionDigits: 2 })}`
+  // As Rate/Bag — Subtotal divided by total bags in the order.
+  // Total bags per ingredient: use explicit `bags` if entered, else
+  // auto-derive from kg (40 kg = 1 bag).
+  const BAG_KG = 40;
+  const totalBags = bill.items.reduce(
+    (sum, i) => sum + (i.bags && i.bags > 0 ? i.bags : i.weight_kg / BAG_KG),
+    0,
+  );
+  const hasAsRatePerBag = totalBags > 0;
+  const asRatePerBag = hasAsRatePerBag ? subtotal / totalBags : 0;
+  const asRatePerBagStr = hasAsRatePerBag
+    ? `Rs. ${asRatePerBag.toLocaleString("en-PK", { maximumFractionDigits: 2 })}`
     : "";
 
   // Totals box on right side
@@ -300,8 +310,8 @@ export async function generateMixBillPDF(bill: BillData): Promise<BillShareInfo>
   const tBoxX = pw - m - tBoxW;
   // Calculate height based on rows
   let totalRows = 1; // subtotal
+  if (hasAsRatePerBag) totalRows++; // As Rate/Bag (below subtotal)
   if (hasDriverRent) totalRows++;
-  if (hasBagPerRate) totalRows++; // bag per rate row (below grand total)
   if (isCash) totalRows += 2; // cash + change
   const tBoxH = 8 + totalRows * 7 + 10; // grand total row is taller
 
@@ -322,7 +332,19 @@ export async function generateMixBillPDF(bill: BillData): Promise<BillShareInfo>
   doc.text("Subtotal:", labelX, ty);
   doc.setFont("helvetica", "bold");
   doc.setTextColor(...C_DARK);
-  doc.text(ta, valX, ty, { align: "right" });
+  doc.text(subtotalStr, valX, ty, { align: "right" });
+
+  // As Rate/Bag (= Subtotal / Total Bags) — shown BELOW Subtotal
+  if (hasAsRatePerBag) {
+    ty += 7;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...C_GRAY);
+    doc.text(`As Rate/Bag (${totalBags.toLocaleString("en-PK", { maximumFractionDigits: 2 })} bags):`, labelX, ty);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(...C_DARK);
+    doc.text(asRatePerBagStr, valX, ty, { align: "right" });
+  }
 
   // Driver Rent
   if (hasDriverRent) {
@@ -350,18 +372,6 @@ export async function generateMixBillPDF(bill: BillData): Promise<BillShareInfo>
   doc.setTextColor(...C_GREEN);
   doc.text("GRAND TOTAL", labelX, ty);
   doc.text(grandTotalStr, valX, ty, { align: "right" });
-
-  // Bag Per Rate (= Grand Total / Total Bags) — shown below GRAND TOTAL
-  if (hasBagPerRate) {
-    ty += 7;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
-    doc.setTextColor(...C_GRAY);
-    doc.text(`Bag Per Rate (${totalBags} bags):`, labelX, ty);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(...C_DARK);
-    doc.text(bagPerRateStr, valX, ty, { align: "right" });
-  }
 
   // Cash received + change (change is calculated from grand total, not subtotal)
   if (isCash) {
