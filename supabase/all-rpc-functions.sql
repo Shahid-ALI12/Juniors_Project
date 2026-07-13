@@ -48,8 +48,9 @@ $$;
 
 -- 2. create_sale
 -- p_location_id is now the LAST parameter and defaults to NULL.
--- Stock is ALWAYS decremented (locations concept removed).
--- Handles both 'bags' and 'kg' unit sales (kg → bags conversion).
+-- NOTE: Sales NO LONGER decrement stock (per business decision — stock
+-- is only INCREMENTED on purchases; sales leave product_stock untouched).
+-- Handles both 'bags' and 'kg' unit sales (recorded on the sale row).
 CREATE OR REPLACE FUNCTION create_sale(
   p_items jsonb,
   p_customer_id bigint,
@@ -65,37 +66,11 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$
 DECLARE
   v_item jsonb;
-  v_qty_bags numeric;
-  v_bw numeric;
   v_is_first boolean := true;
 BEGIN
   FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
   LOOP
-    -- ── Calculate how many BAGS to remove from stock ──
-    v_qty_bags := (v_item->>'quantity')::numeric;
-    v_bw := coalesce(nullif(v_item->>'bag_weight_kg','')::numeric, 50);
-
-    IF coalesce(v_item->>'unit_type','bags') = 'kg' THEN
-      -- Convert kg → bags (stock_quantity is in bags)
-      v_qty_bags := CASE WHEN v_bw > 0 THEN v_qty_bags / v_bw ELSE v_qty_bags END;
-    END IF;
-
-    -- ── Upsert stock row (location_id NULL is the new normal) ──
-    INSERT INTO product_stock (product_id, location_id, stock_quantity, last_bag_weight_kg)
-    VALUES ((v_item->>'product_id')::bigint, NULL, 0, NULL)
-    ON CONFLICT (product_id) DO NOTHING;
-
-    -- ── Decrement stock by bags equivalent (clamped to 0) ──
-    UPDATE product_stock SET
-      stock_quantity = GREATEST(stock_quantity - v_qty_bags, 0),
-      last_bag_weight_kg = coalesce(
-        nullif(v_item->>'bag_weight_kg','')::numeric,
-        last_bag_weight_kg
-      )
-    WHERE product_id = (v_item->>'product_id')::bigint
-      AND location_id IS NULL;
-
-    -- ── Insert sale row ──
+    -- ── Insert sale row ONLY (stock NOT decremented) ──
     INSERT INTO sales (
       customer_id, product_id, location_id, quantity, rate_per_bag,
       rickshaw_fare, cash_received, sale_date, unit_type, bag_weight_kg,
@@ -268,7 +243,9 @@ $$;
 --   - p_items JSONB entries can now optionally include rate_per_bag + bags
 --     (each ingredient may have an optional bag-based rate alongside
 --     the required rate_per_kg).
---   - ALSO decrements stock (kg → bags conversion using last known bag weight)
+--   - NOTE: Mix orders NO LONGER decrement stock (per business decision —
+--     stock is only INCREMENTED on purchases; sales/mix orders leave
+--     product_stock untouched).
 CREATE OR REPLACE FUNCTION create_mix_order(
   p_customer_id bigint,
   p_order_date date,
@@ -286,8 +263,6 @@ DECLARE
   v_mix_id bigint;
   v_item jsonb;
   v_qty_kg numeric;
-  v_bw numeric;
-  v_existing_bw numeric;
 BEGIN
   INSERT INTO mix_orders (
     customer_id, location_id, order_date, target_weight_kg,
@@ -302,27 +277,7 @@ BEGIN
   LOOP
     v_qty_kg := (v_item->>'quantity')::numeric;
 
-    -- ── Decrement stock (kg → bags) ──
-    SELECT last_bag_weight_kg INTO v_existing_bw
-      FROM product_stock
-      WHERE product_id = (v_item->>'product_id')::bigint
-        AND location_id IS NULL
-      LIMIT 1;
-    v_bw := coalesce(v_existing_bw, 50);
-
-    INSERT INTO product_stock (product_id, location_id, stock_quantity, last_bag_weight_kg)
-    VALUES ((v_item->>'product_id')::bigint, NULL, 0, NULL)
-    ON CONFLICT (product_id) DO NOTHING;
-
-    UPDATE product_stock SET
-      stock_quantity = GREATEST(
-        stock_quantity - CASE WHEN v_bw > 0 THEN v_qty_kg / v_bw ELSE v_qty_kg END,
-        0
-      )
-    WHERE product_id = (v_item->>'product_id')::bigint
-      AND location_id IS NULL;
-
-    -- ── Insert sale row ──
+    -- ── Insert sale row ONLY (stock NOT decremented) ──
     INSERT INTO sales (
       customer_id, product_id, location_id, quantity, rate_per_bag,
       rickshaw_fare, cash_received, sale_date, unit_type, bag_weight_kg,

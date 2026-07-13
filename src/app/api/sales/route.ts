@@ -118,7 +118,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Sale affects: sales list, customer balances, dashboard, stock, reconciliation, cash
+    // Sale affects: sales list, customer balances, dashboard, reconciliation, cash.
+    // NOTE: stock tag is still invalidated for safety (in case the dashboard
+    // cache joins stock into a sale-related view) but sales no longer
+    // decrement product_stock.
     // If advance was consumed, customer-balance + customer list also need invalidation.
     invalidateByTag(
       userTag(auth.user.id, "sales"),

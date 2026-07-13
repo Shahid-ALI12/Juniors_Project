@@ -163,7 +163,10 @@ export async function deleteSalesByMixOrder(mixOrderId: number): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
-// Atomic sale creation via RPC
+// Atomic sale creation via RPC.
+// NOTE: Sales NO LONGER decrement stock (per business decision). Stock is
+// only INCREMENTED on purchases. The create_sale() RPC inserts the sale
+// rows + cash_ledger entry but leaves product_stock untouched.
 export async function createSaleRPC(params: {
   items: { product_id: number; quantity: number; rate_per_bag: number; unit_type: string; bag_weight_kg: number | null }[];
   customer_id: number;
@@ -191,7 +194,7 @@ async function createSaleRPCImpl(params: {
   entered_by: string | null;
 }): Promise<void> {
   try {
-    // Try RPC first (atomic: sale rows + stock decrement + cash ledger)
+    // Try RPC first (atomic: sale rows + cash ledger — stock NOT touched)
     // Pass items as a NATIVE array (supabase-js serializes it correctly).
     // Avoid JSON.stringify — deployed create_sale() functions do
     // `jsonb_typeof(p_items) <> 'array'` which fails if the value arrives
@@ -224,7 +227,10 @@ async function createSaleRPCImpl(params: {
   }
 }
 
-// Fallback: direct inserts without stock decrement or cash ledger (non-atomic)
+// Fallback: direct inserts WITHOUT stock decrement or cash ledger (non-atomic)
+// NOTE: As of business-decision change, sales no longer decrement stock.
+// Stock is only INCREMENTED on purchases. This fallback previously did
+// a per-item stock decrement loop — that has been removed.
 async function createSaleFallback(params: {
   items: { product_id: number; quantity: number; rate_per_bag: number; unit_type: string; bag_weight_kg: number | null }[];
   customer_id: number;
@@ -282,36 +288,7 @@ async function createSaleFallback(params: {
     console.warn("Cash ledger insert failed (non-critical):", ledgerErr);
   }
 
-  // Always decrement stock at the specified location.
-  // Handle both 'bags' and 'kg' units: convert kg → bags using bag_weight_kg.
-  const locId = params.location_id ?? 2; // default to Shop if missing
-  for (const item of params.items) {
-    try {
-      const bw = item.bag_weight_kg ?? 50;
-      const qtyBags = item.unit_type === "kg"
-        ? (bw > 0 ? item.quantity / bw : item.quantity)
-        : item.quantity;
-      // Upsert stock row at the location
-      await admin
-        .from("product_stock")
-        .upsert(
-          {
-            product_id: item.product_id,
-            location_id: locId,
-            stock_quantity: 0,
-            last_bag_weight_kg: item.bag_weight_kg ?? null,
-          },
-          { onConflict: "product_id,location_id" }
-        );
-      // Decrement (clamped to 0 via RPC)
-      await admin.rpc("decrement_stock_fallback", {
-        p_product_id: item.product_id,
-        p_location_id: locId,
-        p_quantity: qtyBags,
-      });
-    } catch {
-      // Stock decrement is best-effort in fallback mode
-      console.warn(`Stock decrement failed for product ${item.product_id} (non-critical)`);
-    }
-  }
+  // Stock decrement intentionally REMOVED — sales no longer affect stock.
+  // Stock is only modified on the purchases side (record_purchase RPC
+  // and the purchases data layer).
 }
