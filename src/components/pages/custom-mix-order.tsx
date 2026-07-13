@@ -88,6 +88,14 @@ function printMixBill(order: { id: string | number; customer: string; date: stri
 
   const grandTotal = totalAmount + (order.driverRent && order.driverRent > 0 ? order.driverRent : 0);
 
+  // Bag Per Rate — total bill amount divided by total bags in the order
+  const totalBags = items.reduce((sum, i) => sum + (i.bags ?? 0), 0);
+  const hasBagPerRate = totalBags > 0;
+  const bagPerRate = hasBagPerRate ? grandTotal / totalBags : 0;
+  const bagPerRateLine = hasBagPerRate
+    ? `<div class="trow"><span>Bag Per Rate (${totalBags} bags):</span><strong>Rs. ${bagPerRate.toLocaleString("en-PK", { maximumFractionDigits: 2 })}</strong></div>`
+    : "";
+
   const html = `<!DOCTYPE html><html><head><style>
     @page{size:auto;margin:5mm}
     *{margin:0;padding:0;box-sizing:border-box}
@@ -158,6 +166,7 @@ function printMixBill(order: { id: string | number; customer: string; date: stri
       <div class="trow"><span>Subtotal:</span><strong>Rs. ${fmtRs(totalAmount)}</strong></div>
       ${order.driverRent && order.driverRent > 0 ? `<div class="trow"><span>Driver Rent:</span><strong>Rs. ${fmtRs(order.driverRent)}</strong></div>` : ""}
       <div class="trow grand"><span>GRAND TOTAL:</span><span>Rs. ${fmtRs(grandTotal)}</span></div>
+      ${bagPerRateLine}
       <div class="words">In words: ${numberToRupeeWords(grandTotal)}</div>
     </div>
     <div class="tc-box">
